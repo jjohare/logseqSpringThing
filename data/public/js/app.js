@@ -5,7 +5,6 @@ import { GraphDataManager } from './services/graphDataManager.js';
 import { WebXRVisualization } from './components/webXRVisualization.js';
 import { ChatManager } from './components/chatManager.js';
 import { Interface } from './components/interface.js';
-import { RAGflowService } from './services/ragflowService.js';
 import { isGPUAvailable, initGPU } from './gpuUtils.js';
 
 class App {
@@ -14,8 +13,7 @@ class App {
         this.websocketService = new WebsocketService();
         this.graphDataManager = new GraphDataManager(this.websocketService);
         this.visualization = new WebXRVisualization(this.graphDataManager);
-        this.ragflowService = new RAGflowService(this.websocketService);
-        this.chatManager = new ChatManager(this.ragflowService);
+        this.chatManager = new ChatManager(this.websocketService);
         this.interface = new Interface(document);
         
         this.gpuAvailable = isGPUAvailable();
@@ -50,16 +48,6 @@ class App {
         window.addEventListener('graphDataUpdated', (event) => {
             console.log('Graph data updated event received');
             this.visualization.updateVisualization();
-        });
-
-        window.addEventListener('ragflowError', (event) => {
-            console.error('RAGflow error:', event.detail);
-            this.interface.displayErrorMessage(`RAGflow error: ${event.detail}`);
-        });
-
-        window.addEventListener('chatReady', () => {
-            console.log('Chat is ready');
-            this.interface.displayMessage('System', 'Chat is ready. You can start chatting now.');
         });
 
         const fullscreenButton = document.getElementById('fullscreen-button');

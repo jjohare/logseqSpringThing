@@ -3,6 +3,7 @@ use actix_web::{web, App, HttpServer, middleware};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::app_state::AppState;
 use crate::config::Settings;
@@ -14,6 +15,7 @@ use crate::services::ragflow_service::RAGFlowService;
 use crate::services::graph_service::GraphService;
 use crate::utils::websocket_manager::WebSocketManager;
 use crate::utils::gpu_compute::GPUCompute;
+use crate::tts_service::TtsService;
 
 mod app_state;
 mod config;
@@ -21,6 +23,7 @@ mod handlers;
 mod models;
 mod services;
 mod utils;
+mod tts_service;
 
 // Initialize graph data
 async fn initialize_graph_data(app_state: &web::Data<AppState>) -> std::io::Result<()> {
@@ -104,6 +107,19 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    // Create a directory for storing audio files
+    let audio_dir = PathBuf::from("data/audio");
+    std::fs::create_dir_all(&audio_dir)?;
+
+    // Initialize TtsService
+    let tts_service = match TtsService::new(audio_dir.clone()) {
+        Ok(service) => Arc::new(service),
+        Err(e) => {
+            log::error!("Failed to initialize TTS service: {:?}", e);
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to initialize TTS service: {:?}", e)));
+        }
+    };
+
     let app_state = web::Data::new(AppState::new(
         graph_data,
         file_cache,
@@ -113,6 +129,7 @@ async fn main() -> std::io::Result<()> {
         ragflow_service.clone(),
         websocket_manager.clone(),
         gpu_compute,
+        tts_service,
     ));
 
     // Initialize graph data
@@ -149,6 +166,10 @@ async fn main() -> std::io::Result<()> {
             // Serve static files
             .service(
                 Files::new("/", "/app/data/public/dist").index_file("index.html")
+            )
+            // Serve audio files
+            .service(
+                Files::new("/audio", audio_dir.to_str().unwrap()).show_files_listing()
             )
     })
     .bind(("0.0.0.0", 8080))?

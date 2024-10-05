@@ -1,11 +1,12 @@
 // public/js/components/chatManager.js
 
 export class ChatManager {
-  constructor(ragflowService) {
-    this.ragflowService = ragflowService;
+  constructor(websocketService) {
+    this.websocketService = websocketService;
     this.chatInput = null;
     this.sendButton = null;
     this.chatMessages = null;
+    this.audioPlayer = null;
     this.isChatReady = false;
   }
 
@@ -13,6 +14,7 @@ export class ChatManager {
     this.chatInput = document.getElementById('chat-input');
     this.sendButton = document.getElementById('send-button');
     this.chatMessages = document.getElementById('chat-messages');
+    this.audioPlayer = document.getElementById('audio-player');
 
     this.sendButton.addEventListener('click', () => this.sendMessage());
     this.chatInput.addEventListener('keypress', (event) => {
@@ -21,13 +23,18 @@ export class ChatManager {
       }
     });
 
-    window.addEventListener('chatReady', () => this.handleChatReady());
-    window.addEventListener('ragflowAnswer', (event) => this.handleRagflowAnswer(event.detail));
-    window.addEventListener('chatHistoryReceived', (event) => this.handleChatHistory(event.detail));
-    window.addEventListener('ragflowError', (event) => this.handleRagflowError(event.detail));
+    this.websocketService.on('message', (data) => this.handleWebSocketMessage(data));
+  }
 
-    // Request chat history when initialized
-    this.ragflowService.getChatHistory();
+  handleWebSocketMessage(data) {
+    console.log("Received WebSocket message:", data);
+    if (data.type === 'ragflowResponse') {
+      this.handleRagflowAnswer(data);
+    } else if (data.type === 'chatHistory') {
+      this.handleChatHistory(data);
+    } else if (data.type === 'chatReady') {
+      this.handleChatReady();
+    }
   }
 
   handleChatReady() {
@@ -47,7 +54,10 @@ export class ChatManager {
 
       console.log('Sending message:', message);
       this.displayMessage('You', message);
-      this.ragflowService.sendQuery(message);
+      this.websocketService.send({
+        type: 'ragflowQuery',
+        message: message
+      });
       this.chatInput.value = '';
     }
   }
@@ -62,24 +72,28 @@ export class ChatManager {
 
   handleRagflowAnswer(data) {
     console.log("Received RAGFlow answer:", data);
-    if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
-      data.messages.forEach(msg => {
-        this.displayMessage(msg.role === 'user' ? 'You' : 'AI', msg.content);
-      });
-    } else if (data.data && data.data.answer) {
-      this.displayMessage('AI', data.data.answer);
-    } else {
-      console.error("Unexpected RAGFlow answer format:", data);
-      this.displayMessage('System', "Received an unexpected response format.");
+    this.displayMessage('AI', data.text);
+    
+    if (data.audio_path) {
+      this.playAudio(data.audio_path);
     }
     
-    if (data.reference && Array.isArray(data.reference) && data.reference.length > 0) {
-      const referenceElement = document.createElement('div');
-      referenceElement.style.marginBottom = '10px';
-      referenceElement.style.fontStyle = 'italic';
-      referenceElement.innerHTML = '<strong>References:</strong><br>' + data.reference.join('<br>');
-      this.chatMessages.appendChild(referenceElement);
-    }
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+  }
+
+  playAudio(audioPath) {
+    // Clear previous audio player content
+    this.audioPlayer.innerHTML = '';
+
+    const audioElement = document.createElement('audio');
+    audioElement.src = audioPath;
+    audioElement.controls = true;
+    audioElement.style.width = '100%';
+    
+    this.audioPlayer.appendChild(audioElement);
+    
+    // Automatically play the audio
+    audioElement.play().catch(e => console.error("Error playing audio:", e));
   }
 
   handleChatHistory(data) {
@@ -93,10 +107,5 @@ export class ChatManager {
       console.error("Unexpected chat history format:", data);
       this.displayMessage('System', "Failed to load chat history.");
     }
-  }
-
-  handleRagflowError(errorMessage) {
-    console.error("RAGFlow error:", errorMessage);
-    this.displayMessage('System', "Error: " + errorMessage);
   }
 }

@@ -6,6 +6,7 @@ use actix_web::web::Bytes;
 use std::sync::Arc;
 use futures::StreamExt;
 use crate::services::ragflow_service::RAGFlowError;
+use crate::tts_service::TtsService;
 
 #[derive(Serialize, Deserialize)]
 pub struct MessageRequest {
@@ -27,7 +28,6 @@ pub struct InitChatRequest {
     pub user_id: String,
 }
 
-/// Response structure for initiating a chat.
 #[derive(Serialize)]
 pub struct InitChatResponse {
     pub success: bool,
@@ -35,7 +35,12 @@ pub struct InitChatResponse {
     pub message: Option<String>,
 }
 
-// Implement ResponseError for RAGFlowError
+#[derive(Serialize)]
+pub struct MessageResponse {
+    pub text: String,
+    pub audio_path: String,
+}
+
 impl ResponseError for RAGFlowError {
     fn error_response(&self) -> HttpResponse {
         HttpResponse::InternalServerError().json(serde_json::json!({
@@ -44,7 +49,6 @@ impl ResponseError for RAGFlowError {
     }
 }
 
-/// Handler for sending a message to the RAGFlow service.
 pub async fn send_message(state: web::Data<AppState>, msg: web::Json<MessageRequest>) -> Result<HttpResponse, Error> {
     let message_content = msg.messages.last().unwrap().content.clone();
     let quote = msg.quote.unwrap_or(false);
@@ -55,17 +59,41 @@ pub async fn send_message(state: web::Data<AppState>, msg: web::Json<MessageRequ
     info!("Sending message to RAGFlow: {}", message_content);
     info!("Quote: {}, Stream: {}, Doc IDs: {:?}", quote, stream, doc_ids);
 
-    // Clone the Arc<RAGFlowService>
     let ragflow_service = Arc::clone(&state.ragflow_service);
+    let tts_service = Arc::clone(&state.tts_service);
 
-    // Call the async send_message function
     match ragflow_service.send_message(conversation_id, message_content, quote, doc_ids, stream).await {
-        Ok(audio_stream) => {
-            let mapped_stream = audio_stream.map(|result| {
-                result.map(|bytes| Bytes::from(bytes))
-                    .map_err(|e| actix_web::error::ErrorInternalServerError(e))
+        Ok(response_stream) => {
+            let mut full_response = String::new();
+            let mut response = response_stream.map(|result| {
+                result.map(|bytes| {
+                    let chunk = String::from_utf8_lossy(&bytes).to_string();
+                    full_response.push_str(&chunk);
+                    Bytes::from(chunk)
+                }).map_err(|e| actix_web::error::ErrorInternalServerError(e))
             });
-            Ok(HttpResponse::Ok().streaming(mapped_stream))
+
+            // Collect the full response
+            while let Some(chunk) = response.next().await {
+                chunk?;
+            }
+
+            // Generate audio from the full response
+            match tts_service.generate_audio(&full_response) {
+                Ok(audio_path) => {
+                    let response = MessageResponse {
+                        text: full_response,
+                        audio_path: audio_path.to_string_lossy().into_owned(),
+                    };
+                    Ok(HttpResponse::Ok().json(response))
+                },
+                Err(e) => {
+                    error!("Error generating audio: {}", e);
+                    Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                        "error": format!("Failed to generate audio: {}", e)
+                    })))
+                }
+            }
         },
         Err(e) => {
             error!("Error sending message: {}", e);
@@ -76,7 +104,6 @@ pub async fn send_message(state: web::Data<AppState>, msg: web::Json<MessageRequ
     }
 }
 
-/// Handler for initiating a new chat conversation.
 pub async fn init_chat(state: web::Data<AppState>, req: web::Json<InitChatRequest>) -> HttpResponse {
     let user_id = &req.user_id;
 
@@ -99,13 +126,10 @@ pub async fn init_chat(state: web::Data<AppState>, req: web::Json<InitChatReques
     }
 }
 
-/// Handler for retrieving chat history.
 pub async fn get_chat_history(_state: web::Data<AppState>, path: web::Path<String>) -> HttpResponse {
     let conversation_id = path.into_inner();
     info!("Retrieving chat history for conversation: {}", conversation_id);
 
-    // Note: We've removed the get_chat_history method from RAGFlowService
-    // You may want to implement this functionality if needed
     HttpResponse::NotImplemented().json(serde_json::json!({
         "message": "Chat history retrieval is not implemented"
     }))

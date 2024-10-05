@@ -11,6 +11,7 @@ use crate::services::perplexity_service::PerplexityServiceImpl;
 use crate::services::ragflow_service::RAGFlowService;
 use crate::utils::websocket_manager::WebSocketManager;
 use crate::utils::gpu_compute::GPUCompute;
+use crate::tts_service::TtsService;
 
 /// Holds the shared application state accessible across different parts of the application.
 pub struct AppState {
@@ -31,6 +32,8 @@ pub struct AppState {
     /// GPU Compute for graph calculations protected by a read-write lock.
     /// This is an Option as GPU might not be available.
     pub gpu_compute: Option<Arc<RwLock<GPUCompute>>>,
+    /// TTS service for text-to-speech conversion.
+    pub tts_service: Arc<TtsService>,
 }
 
 impl AppState {
@@ -45,6 +48,7 @@ impl AppState {
         ragflow_service: Arc<RAGFlowService>,
         websocket_manager: Arc<WebSocketManager>,
         gpu_compute: Option<Arc<RwLock<GPUCompute>>>,
+        tts_service: Arc<TtsService>,
     ) -> Self {
         Self {
             graph_data,
@@ -55,6 +59,7 @@ impl AppState {
             ragflow_service,
             websocket_manager,
             gpu_compute,
+            tts_service,
         }
     }
 }

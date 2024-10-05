@@ -34,20 +34,17 @@ export class WebsocketService {
 
         // WebSocket message event
         this.socket.onmessage = (event) => {
-            if (event.data instanceof Blob) {
-                // Handle binary data (audio)
-                this.handleAudioData(event.data);
-            } else {
-                // Handle JSON data
-                console.log('Received WebSocket message:', event.data);
-                try {
-                    const data = JSON.parse(event.data);
-                    this.emit('message', data);
-                } catch (err) {
-                    console.error('Error parsing WebSocket message:', err);
-                    console.error('Raw message:', event.data);
-                    this.emit('error', { type: 'parse_error', message: err.message, rawData: event.data });
+            console.log('Received WebSocket message:', event.data);
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'ragflowResponse' && data.audio_path) {
+                    this.handleAudioMessage(data.audio_path);
                 }
+                this.emit('message', data);
+            } catch (err) {
+                console.error('Error parsing WebSocket message:', err);
+                console.error('Raw message:', event.data);
+                this.emit('error', { type: 'parse_error', message: err.message, rawData: event.data });
             }
         };
 
@@ -66,18 +63,19 @@ export class WebsocketService {
     }
 
     /**
-     * Handles incoming audio data.
-     * @param {Blob} audioBlob - The audio data as a Blob.
+     * Handles incoming audio message.
+     * @param {string} audioPath - The path to the audio file.
      */
-    async handleAudioData(audioBlob) {
+    async handleAudioMessage(audioPath) {
         if (!this.audioContext) {
             console.warn('AudioContext not initialized. Call initAudio() first.');
             return;
         }
 
         try {
-            const arrayBuffer = await audioBlob.arrayBuffer();
-            const audioBuffer = await this.decodeWavData(arrayBuffer);
+            const response = await fetch(audioPath);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await this.decodeAudioData(arrayBuffer);
             this.audioQueue.push(audioBuffer);
             if (!this.isPlaying) {
                 this.playNextAudio();
@@ -89,15 +87,15 @@ export class WebsocketService {
     }
 
     /**
-     * Decodes WAV data into an AudioBuffer.
-     * @param {ArrayBuffer} wavData - The WAV data as an ArrayBuffer.
+     * Decodes audio data into an AudioBuffer.
+     * @param {ArrayBuffer} audioData - The audio data as an ArrayBuffer.
      * @returns {Promise<AudioBuffer>} The decoded AudioBuffer.
      */
-    async decodeWavData(wavData) {
+    async decodeAudioData(audioData) {
         return new Promise((resolve, reject) => {
-            this.audioContext.decodeAudioData(wavData, 
+            this.audioContext.decodeAudioData(audioData, 
                 (buffer) => resolve(buffer),
-                (error) => reject(new Error(`Error decoding WAV data: ${error}`))
+                (error) => reject(new Error(`Error decoding audio data: ${error}`))
             );
         });
     }
