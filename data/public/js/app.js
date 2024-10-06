@@ -1,6 +1,7 @@
 // data/public/js/app.js
 
 import { WebsocketService } from './services/websocketService.js';
+import { RAGflowService } from './services/ragflowService.js';
 import { GraphDataManager } from './services/graphDataManager.js';
 import { WebXRVisualization } from './components/webXRVisualization.js';
 import { ChatManager } from './components/chatManager.js';
@@ -11,9 +12,10 @@ class App {
     constructor() {
         console.log('Initializing App');
         this.websocketService = new WebsocketService();
+        this.ragflowService = new RAGflowService(this.websocketService);
         this.graphDataManager = new GraphDataManager(this.websocketService);
         this.visualization = new WebXRVisualization(this.graphDataManager);
-        this.chatManager = new ChatManager(this.websocketService);
+        this.chatManager = new ChatManager(this.ragflowService);
         this.interface = new Interface(document);
         
         this.gpuAvailable = isGPUAvailable();
@@ -27,21 +29,15 @@ class App {
     initializeEventListeners() {
         console.log('Setting up event listeners');
         
-        this.websocketService.on('open', () => {
-            console.log('WebSocket connection established');
+        window.addEventListener('chatReady', () => {
+            console.log('Chat is ready');
             this.updateConnectionStatus(true);
             this.graphDataManager.requestInitialData();
         });
 
-        this.websocketService.on('error', (error) => {
-            console.error('WebSocket error:', error);
-            this.interface.displayErrorMessage('WebSocket connection error.');
-            this.updateConnectionStatus(false);
-        });
-
-        this.websocketService.on('close', () => {
-            console.log('WebSocket connection closed');
-            this.interface.displayErrorMessage('WebSocket connection closed.');
+        window.addEventListener('ragflowError', (event) => {
+            console.error('RAGflow error:', event.detail);
+            this.interface.displayErrorMessage(`RAGflow error: ${event.detail}`);
             this.updateConnectionStatus(false);
         });
 
@@ -56,15 +52,6 @@ class App {
         } else {
             console.warn('Fullscreen button not found');
         }
-
-        // Initialize audio on first user interaction
-        const initAudioOnInteraction = () => {
-            this.initializeAudio();
-            document.removeEventListener('click', initAudioOnInteraction);
-            document.removeEventListener('touchstart', initAudioOnInteraction);
-        };
-        document.addEventListener('click', initAudioOnInteraction);
-        document.addEventListener('touchstart', initAudioOnInteraction);
     }
 
     updateConnectionStatus(isConnected) {
@@ -86,11 +73,6 @@ class App {
                 document.exitFullscreen();
             }
         }
-    }
-
-    initializeAudio() {
-        console.log('Initializing audio');
-        this.websocketService.initAudio();
     }
 
     start() {

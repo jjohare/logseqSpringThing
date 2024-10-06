@@ -7,6 +7,7 @@ use std::sync::Arc;
 use futures::StreamExt;
 use crate::services::ragflow_service::RAGFlowError;
 use crate::tts_service::TtsService;
+use tokio::sync::RwLock;
 
 #[derive(Serialize, Deserialize)]
 pub struct MessageRequest {
@@ -79,7 +80,8 @@ pub async fn send_message(state: web::Data<AppState>, msg: web::Json<MessageRequ
             }
 
             // Generate audio from the full response
-            match tts_service.generate_audio(&full_response) {
+            let mut tts_service = tts_service.write().await;
+            match tts_service.generate_audio(&full_response).await {
                 Ok(audio_path) => {
                     let response = MessageResponse {
                         text: full_response,

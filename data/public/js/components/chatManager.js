@@ -1,12 +1,11 @@
 // public/js/components/chatManager.js
 
 export class ChatManager {
-  constructor(websocketService) {
-    this.websocketService = websocketService;
+  constructor(ragflowService) {
+    this.ragflowService = ragflowService;
     this.chatInput = null;
     this.sendButton = null;
     this.chatMessages = null;
-    this.audioPlayer = null;
     this.isChatReady = false;
   }
 
@@ -14,7 +13,6 @@ export class ChatManager {
     this.chatInput = document.getElementById('chat-input');
     this.sendButton = document.getElementById('send-button');
     this.chatMessages = document.getElementById('chat-messages');
-    this.audioPlayer = document.getElementById('audio-player');
 
     this.sendButton.addEventListener('click', () => this.sendMessage());
     this.chatInput.addEventListener('keypress', (event) => {
@@ -23,18 +21,10 @@ export class ChatManager {
       }
     });
 
-    this.websocketService.on('message', (data) => this.handleWebSocketMessage(data));
-  }
-
-  handleWebSocketMessage(data) {
-    console.log("Received WebSocket message:", data);
-    if (data.type === 'ragflowResponse') {
-      this.handleRagflowAnswer(data);
-    } else if (data.type === 'chatHistory') {
-      this.handleChatHistory(data);
-    } else if (data.type === 'chatReady') {
-      this.handleChatReady();
-    }
+    window.addEventListener('chatReady', () => this.handleChatReady());
+    window.addEventListener('ragflowAnswer', (event) => this.handleRagflowAnswer(event.detail));
+    window.addEventListener('chatHistoryReceived', (event) => this.handleChatHistory(event.detail));
+    window.addEventListener('ragflowError', (event) => this.handleError(event.detail));
   }
 
   handleChatReady() {
@@ -54,10 +44,7 @@ export class ChatManager {
 
       console.log('Sending message:', message);
       this.displayMessage('You', message);
-      this.websocketService.send({
-        type: 'ragflowQuery',
-        message: message
-      });
+      this.ragflowService.sendQuery(message);
       this.chatInput.value = '';
     }
   }
@@ -72,28 +59,13 @@ export class ChatManager {
 
   handleRagflowAnswer(data) {
     console.log("Received RAGFlow answer:", data);
-    this.displayMessage('AI', data.text);
-    
-    if (data.audio_path) {
-      this.playAudio(data.audio_path);
+    if (data.messages && data.messages.length > 0) {
+      this.displayMessage('AI', data.messages[0].content);
     }
     
+    // Audio playback is handled by the RAGflowService
+    
     this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
-  }
-
-  playAudio(audioPath) {
-    // Clear previous audio player content
-    this.audioPlayer.innerHTML = '';
-
-    const audioElement = document.createElement('audio');
-    audioElement.src = audioPath;
-    audioElement.controls = true;
-    audioElement.style.width = '100%';
-    
-    this.audioPlayer.appendChild(audioElement);
-    
-    // Automatically play the audio
-    audioElement.play().catch(e => console.error("Error playing audio:", e));
   }
 
   handleChatHistory(data) {
@@ -107,5 +79,10 @@ export class ChatManager {
       console.error("Unexpected chat history format:", data);
       this.displayMessage('System', "Failed to load chat history.");
     }
+  }
+
+  handleError(error) {
+    console.error('RAGFlow error:', error);
+    this.displayMessage('System', `Error: ${error}`);
   }
 }

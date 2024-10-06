@@ -23,10 +23,10 @@ RUN pnpm run build
 RUN mkdir -p /app/data/public/dist && \
     cp -R /app/data/dist/* /app/data/public/dist/ || true
 
-# Stage 2: Build the Rust Backend
+# Stage 2: Build the Rust Backend and Sonata TTS
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS backend-builder
 
-# Install necessary dependencies for building Rust applications
+# Install necessary dependencies for building Rust applications and Sonata
 RUN apt-get update && apt-get install -y \
     build-essential \
     gnupg2 \
@@ -37,7 +37,21 @@ RUN apt-get update && apt-get install -y \
     libvulkan-dev \
     vulkan-tools \
     libegl1-mesa-dev \
+    libasound2-dev \
+    libclang-dev \
+    llvm-dev \
+    speech-dispatcher \
+    libspeechd-dev \
+    libespeak-ng1 \
+    libespeak-ng-dev \
+    espeak-ng \
+    git \
+    cmake \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
+
+# Set LIBCLANG_PATH
+ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
 
 # Install Rust
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
@@ -51,8 +65,9 @@ WORKDIR /usr/src/app
 # Copy the Cargo.toml and Cargo.lock files
 COPY Cargo.toml Cargo.lock ./ 
 
-# Copy the source code
+# Copy the source code and build script
 COPY src ./src 
+COPY build.rs ./
 
 # Copy settings.toml
 COPY settings.toml ./ 
@@ -66,7 +81,7 @@ FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
 # Set environment variable to avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install necessary runtime dependencies, nginx, GPU libraries, and Python 3.10
+# Install necessary runtime dependencies and nginx
 RUN apt-get update && apt-get install -y \
     curl \
     libssl3 \
@@ -74,20 +89,18 @@ RUN apt-get update && apt-get install -y \
     openssl \
     libvulkan1 \
     libegl1-mesa \
-    software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y python3.10 python3.10-venv python3.10-dev \
+    libasound2 \
+    speech-dispatcher \
+    libspeechd2 \
+    libespeak-ng1 \
+    espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /app
 
 # Create necessary directories
-RUN mkdir -p /app/data/public/dist /app/data/markdown /app/src
-
-# Copy topics.csv file into the container
-COPY data/topics.csv /app/data/topics.csv
+RUN mkdir -p /app/data/public/dist /app/data/markdown /app/src /app/data/audio /app/piper
 
 # Copy the built Rust binary from the backend-builder stage
 COPY --from=backend-builder /usr/src/app/target/release/webxr-graph /app/webxr-graph
@@ -99,8 +112,9 @@ COPY --from=frontend-builder /app/data/public/dist /app/data/public/dist
 COPY --from=backend-builder /usr/src/app/settings.toml /app/settings.toml
 COPY --from=backend-builder /usr/src/app/settings.toml /app/data/public/dist/settings.toml
 
-# Copy the generate_audio.py script
-COPY src/generate_audio.py /app/src/generate_audio.py
+# Download Sonata voice model and config
+RUN curl -L https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx -o /app/piper/en_GB-northern_english_male-medium.onnx && \
+    curl -L https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx.json -o /app/piper/en_GB-northern_english_male-medium.onnx.json
 
 # Set up a persistent volume for Markdown files to ensure data persistence
 VOLUME ["/app/data/markdown"]
@@ -112,7 +126,7 @@ RUN mkdir -p /etc/nginx/ssl
 RUN openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout /etc/nginx/ssl/selfsigned.key \
     -out /etc/nginx/ssl/selfsigned.crt \
-    -subj "/C=US/ST=State/L=City/O=Organization/CN=192.168.0.51"
+    -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
@@ -120,22 +134,17 @@ COPY nginx.conf /etc/nginx/nginx.conf
 # Ensure proper permissions for nginx and application directories
 RUN chown -R www-data:www-data /var/lib/nginx /app
 
-# Create Python virtual environment and install Piper TTS
-RUN python3.10 -m venv /app/venv
-ENV PATH="/app/venv/bin:$PATH"
+# Expose HTTPS port and Sonata TTS gRPC port
+EXPOSE 8443 50051
 
-# Upgrade pip, install wheel, and then install Piper TTS and its dependencies
-RUN pip install --no-cache-dir --upgrade pip wheel && \
-    pip install --no-cache-dir piper-phonemize==1.1.0 && \
-    pip install --no-cache-dir piper-tts==1.2.0 onnxruntime-gpu
-
-# Download Piper voice model and config
-RUN mkdir -p /app/piper && \
-    curl -L https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx -o /app/piper/en_GB-alan-medium.onnx && \
-    curl -L https://huggingface.co/rhasspy/piper-voices/raw/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json -o /app/piper/en_GB-alan-medium.onnx.json
-
-# Expose HTTPS port
-EXPOSE 8443
+# Set environment variables
+ENV TTS_LANGUAGE=en_GB
+ENV TTS_VOICE_TYPE=northern_english_male
+ENV TTS_MODEL_PATH=/app/piper/en_GB-northern_english_male-medium.onnx
+ENV TTS_SETUP_PATH=/app/piper/en_GB-northern_english_male-medium.onnx.json
+ENV TTS_SERVER_ADDR=[::]:50051
+ENV AUDIO_DIR=/app/data/audio
+ENV SERVER_ADDR=0.0.0.0:8080
 
 # Create a startup script that runs nginx and the Rust application
 RUN echo '#!/bin/bash\nset -e\nnginx\nexec /app/webxr-graph' > /app/start.sh && chmod +x /app/start.sh

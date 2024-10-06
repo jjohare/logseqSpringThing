@@ -1,5 +1,3 @@
-// app_state.rs
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -33,7 +31,7 @@ pub struct AppState {
     /// This is an Option as GPU might not be available.
     pub gpu_compute: Option<Arc<RwLock<GPUCompute>>>,
     /// TTS service for text-to-speech conversion.
-    pub tts_service: Arc<TtsService>,
+    pub tts_service: Arc<RwLock<TtsService>>,
 }
 
 impl AppState {
@@ -48,7 +46,7 @@ impl AppState {
         ragflow_service: Arc<RAGFlowService>,
         websocket_manager: Arc<WebSocketManager>,
         gpu_compute: Option<Arc<RwLock<GPUCompute>>>,
-        tts_service: Arc<TtsService>,
+        tts_service: Arc<RwLock<TtsService>>,
     ) -> Self {
         Self {
             graph_data,

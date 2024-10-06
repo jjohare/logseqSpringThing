@@ -5,6 +5,7 @@ export class RAGflowService {
     this.websocketService = websocketService;
     this.setupWebSocketListeners();
     this.isConnected = false;
+    this.audio = new Audio();
   }
 
   setupWebSocketListeners() {
@@ -23,18 +24,14 @@ export class RAGflowService {
 
     this.websocketService.on('message', (data) => {
       console.log('Received message:', data);
-      switch (data.type) {
-        case 'ragflowResponse':
-          this.handleRAGFlowResponse(data);
-          break;
-        case 'chatHistoryResponse':
-          this.handleChatHistoryResponse(data);
-          break;
-        case 'error':
-          this.handleError(data);
-          break;
-        default:
-          console.warn('Unhandled message type:', data.type);
+      if (data.type === 'ragflowResponse') {
+        this.handleRAGFlowResponse(data);
+      } else if (data.type === 'chatHistoryResponse') {
+        this.handleChatHistoryResponse(data);
+      } else if (data.type === 'error') {
+        this.handleError(data);
+      } else {
+        console.warn('Unhandled message type:', data.type);
       }
     });
   }
@@ -62,33 +59,31 @@ export class RAGflowService {
 
   handleRAGFlowResponse(data) {
     console.log('Received RAGFlow response:', data);
-    if (data.data) {
-      let answer, reference;
-      if (data.data.answer) {
-        // Handle response with answer field
-        answer = data.data.answer;
-        reference = data.data.reference || [];
-      } else if (Array.isArray(data.data.message)) {
-        // Handle message array (even if empty)
-        answer = data.data.message.length > 0 ? data.data.message[0].content : "No response received from the server.";
-        reference = [];
-      } else {
-        console.error('Unexpected RAGFlow response format:', data);
-        this.handleError({ message: 'Unexpected response format from server' });
-        return;
-      }
+    if (data.text && data.audio_path) {
+      const answer = data.text;
+      const audioPath = data.audio_path;
 
       const event = new CustomEvent('ragflowAnswer', { 
         detail: {
           messages: [{role: 'assistant', content: answer}],
-          reference: reference
+          reference: data.reference || []
         }
       });
       window.dispatchEvent(event);
+
+      // Play the audio
+      this.playAudio(audioPath);
     } else {
-      console.error('Invalid RAGFlow response:', data);
-      this.handleError({ message: 'Invalid response from server' });
+      console.error('Unexpected RAGFlow response format:', data);
+      this.handleError({ message: 'Unexpected response format from server' });
     }
+  }
+
+  playAudio(audioPath) {
+    this.audio.src = audioPath;
+    this.audio.play().catch(error => {
+      console.error('Error playing audio:', error);
+    });
   }
 
   getChatHistory() {
@@ -102,10 +97,10 @@ export class RAGflowService {
 
   handleChatHistoryResponse(data) {
     console.log('Received chat history:', data);
-    if (data.data && Array.isArray(data.data.message)) {
+    if (data.messages && Array.isArray(data.messages)) {
       const event = new CustomEvent('chatHistoryReceived', { 
         detail: {
-          messages: data.data.message
+          messages: data.messages
         }
       });
       window.dispatchEvent(event);

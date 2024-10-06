@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package sonata_tts;
+
+service Tts {
+  // Unary synthesis method
+  rpc Synthesize (TtsRequest) returns (TtsResponse) {}
+
+  // Server streaming synthesis method
+  rpc SynthesizeStream (TtsRequest) returns (stream TtsResponse) {}
+}
+
+message TtsRequest {
+  string text = 1;
+}
+
+message TtsResponse {
+  bytes audio_data = 1;
+  uint32 sample_rate = 2;
+}

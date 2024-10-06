@@ -4,6 +4,8 @@ pub mod handlers;
 pub mod models;
 pub mod services;
 pub mod utils;
+pub mod tts_service;
+pub mod sonata_tts_service;
 
 // Re-export commonly used types
 pub use app_state::AppState;
@@ -33,3 +35,9 @@ pub use config::Settings;
 
 // Re-export GPUCompute
 pub use utils::gpu_compute::GPUCompute;
+
+// Re-export TtsService
+pub use tts_service::TtsService;
+
+// Re-export SonataTtsService
+pub use sonata_tts_service::SonataTtsService;
