@@ -6,6 +6,7 @@ pub mod services;
 pub mod utils;
 pub mod tts_service;
 pub mod sonata_tts_service;
+pub mod diacritizer;
 
 // Re-export commonly used types
 pub use app_state::AppState;
@@ -41,3 +42,6 @@ pub use tts_service::TtsService;
 
 // Re-export SonataTtsService
 pub use sonata_tts_service::SonataTtsService;
+
+// Re-export Diacritizer
+pub use diacritizer::{Diacritizer, DiacritizerError, DiacritizerResult};

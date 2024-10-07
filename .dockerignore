@@ -1,29 +1,51 @@
-# Git
-.git
-.gitignore
-
-# Rust
+# Exclude target directory
 target/
 
-# Node.js
-node_modules/
-npm-debug.log
+# Exclude Git history
+# DO NOT EXCLUDE: The following lines ensure that Git submodules are included
+!.gitmodules
+!deps/
+!deps/**
 
-# IDEs and editors
+# Exclude Docker-specific files if any
+Dockerfile
+.dockerignore
+
+# Exclude other unnecessary files
+*.log
+
+# Node.js dependencies
+node_modules/
+
+# Editor-specific files
 .vscode/
 .idea/
+
+# Temporary files
+*.tmp
 *.swp
 *.swo
 
-# OS generated files
+# OS-specific files
 .DS_Store
 Thumbs.db
+
+# Backup files
+*~
+
+# Environment files
+.env
+.env.*
+
+# Large binary files or datasets (if any)
+# *.bin
+# *.dat
+
+# Documentation
+docs/
 
 # Test files
 tests/
 
-# Environment variables
-.env
-
-# Documentation
-README.md
+# Exclude sonata-python directory
+src/sonata/sonata-python/

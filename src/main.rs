@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Start Sonata TTS server
     let tts_config = settings.tts.clone();
-    let tts_server_addr = std::env::var("TTS_SERVER_ADDR").unwrap_or_else(|_| "[::1]:50051".to_string());
+    let tts_server_addr = std::env::var("TTS_SERVER_ADDR").unwrap_or_else(|_| "[::]:50051".to_string());
     tokio::spawn(async move {
         if let Err(e) = run_tts_server(&tts_server_addr, tts_config).await {
             log::error!("Failed to start Sonata TTS server: {:?}", e);

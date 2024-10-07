@@ -24,97 +24,119 @@ RUN mkdir -p /app/data/public/dist && \
     cp -R /app/data/dist/* /app/data/public/dist/ || true
 
 # Stage 2: Build the Rust Backend and Sonata TTS
-FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS backend-builder
+FROM nvidia/cuda:11.8.0-devel-ubuntu22.04 AS backend-builder
+
+# Set environment variables
+ENV ROCKET_ENV=production
+ENV CARGO_INCREMENTAL=0
+ENV RUSTFLAGS="-C target-cpu=x86-64"
+ENV SONATA_ESPEAKNG_DATA_DIRECTORY="/usr/src/app/src/sonata/deps/dev"
+ENV RUST_BACKTRACE=1
+
+# Create app directory
+WORKDIR /usr/src/app
 
 # Install necessary dependencies for building Rust applications and Sonata
 RUN apt-get update && apt-get install -y \
     build-essential \
-    gnupg2 \
-    curl \
+    cmake \
     libssl-dev \
     pkg-config \
     libvulkan1 \
     libvulkan-dev \
     vulkan-tools \
     libegl1-mesa-dev \
-    libasound2-dev \
-    libclang-dev \
-    llvm-dev \
     speech-dispatcher \
     libspeechd-dev \
     libespeak-ng1 \
     libespeak-ng-dev \
     espeak-ng \
+    wget \
+    curl \
     git \
-    cmake \
-    protobuf-compiler \
+    software-properties-common \
+    libasound2-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set LIBCLANG_PATH
-ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
+# Install LLVM 18 and Clang 18
+RUN wget https://apt.llvm.org/llvm.sh && \
+    chmod +x llvm.sh && \
+    ./llvm.sh 18 && \
+    apt-get update && \
+    apt-get install -y clang-18 libclang-18-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set LIBCLANG_PATH, LLVM_CONFIG_PATH, and PKG_CONFIG_PATH
+ENV LIBCLANG_PATH=/usr/lib/llvm-18/lib
+ENV LLVM_CONFIG_PATH=/usr/bin/llvm-config-18
+ENV LD_LIBRARY_PATH=/usr/lib/llvm-18/lib:$LD_LIBRARY_PATH
+ENV PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH
+
+# Verify libclang.so exists
+RUN ls -l $LIBCLANG_PATH/libclang.so* || echo "libclang.so not found in $LIBCLANG_PATH"
 
 # Install Rust
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Set the default toolchain to stable
-RUN rustup default stable
+# Update Rust and install additional components
+RUN rustup update && rustup component add rustfmt clippy
 
-WORKDIR /usr/src/app
+# Copy the top-level Cargo.toml and Cargo.lock
+COPY Cargo.toml Cargo.lock ./
 
-# Copy the Cargo.toml and Cargo.lock files
-COPY Cargo.toml Cargo.lock ./ 
+# Copy the entire src directory, excluding the sonata-python directory
+COPY src/ ./src/
+RUN rm -rf ./src/sonata/sonata-python
 
-# Copy the source code and build script
-COPY src ./src 
-COPY build.rs ./
+# Verify the presence of necessary files
+RUN if [ ! -d ./src/sonata ] || [ ! -d ./src/sonata/sonata/core ] || [ ! -d ./src/sonata/sonata/synth ]; then \
+        echo "Required sonata directories not found" && exit 1; \
+    fi
 
-# Copy settings.toml
-COPY settings.toml ./ 
+# Update Rust dependencies
+RUN cargo update
+
+# Clean Cargo cache
+RUN cargo clean
 
 # Build the Rust application in release mode for optimized performance
-RUN cargo build --release
+RUN cargo build --release --verbose
 
 # Stage 3: Create the Final Image
-FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
 
 # Set environment variable to avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install necessary runtime dependencies and nginx
 RUN apt-get update && apt-get install -y \
-    curl \
     libssl3 \
+    ca-certificates \
     nginx \
-    openssl \
-    libvulkan1 \
-    libegl1-mesa \
-    libasound2 \
-    speech-dispatcher \
-    libspeechd2 \
     libespeak-ng1 \
     espeak-ng \
+    libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
 WORKDIR /app
 
 # Create necessary directories
-RUN mkdir -p /app/data/public/dist /app/data/markdown /app/src /app/data/audio /app/piper
+RUN mkdir -p /app/data/public/dist /app/data/markdown /app/src /app/data/audio /app/models
 
 # Copy the built Rust binary from the backend-builder stage
 COPY --from=backend-builder /usr/src/app/target/release/webxr-graph /app/webxr-graph
 
 # Copy the built frontend files from the frontend-builder stage
-COPY --from=frontend-builder /app/data/public/dist /app/data/public/dist
+COPY --from=backend-builder /app/data/public/dist /app/data/public/dist
 
 # Copy settings.toml from the backend-builder stage
 COPY --from=backend-builder /usr/src/app/settings.toml /app/settings.toml
 COPY --from=backend-builder /usr/src/app/settings.toml /app/data/public/dist/settings.toml
 
-# Download Sonata voice model and config
-RUN curl -L https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx -o /app/piper/en_GB-northern_english_male-medium.onnx && \
-    curl -L https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx.json -o /app/piper/en_GB-northern_english_male-medium.onnx.json
+# Copy Sonata models and necessary data
+COPY --from=backend-builder /usr/src/app/models /app/models
 
 # Set up a persistent volume for Markdown files to ensure data persistence
 VOLUME ["/app/data/markdown"]
@@ -140,11 +162,15 @@ EXPOSE 8443 50051
 # Set environment variables
 ENV TTS_LANGUAGE=en_GB
 ENV TTS_VOICE_TYPE=northern_english_male
-ENV TTS_MODEL_PATH=/app/piper/en_GB-northern_english_male-medium.onnx
-ENV TTS_SETUP_PATH=/app/piper/en_GB-northern_english_male-medium.onnx.json
+ENV TTS_MODEL_PATH=/app/models/en_GB-northern_english_male-medium.onnx
+ENV TTS_SETUP_PATH=/app/models/en_GB-northern_english_male-medium.onnx.json
 ENV TTS_SERVER_ADDR=[::]:50051
 ENV AUDIO_DIR=/app/data/audio
 ENV SERVER_ADDR=0.0.0.0:8080
+ENV SONATA_ESPEAKNG_DATA_DIRECTORY=/app/espeak-ng-data
+
+# Copy espeak-ng data
+COPY --from=backend-builder /usr/src/app/src/sonata/espeak-phonemizer/espeak-ng-data /app/espeak-ng-data
 
 # Create a startup script that runs nginx and the Rust application
 RUN echo '#!/bin/bash\nset -e\nnginx\nexec /app/webxr-graph' > /app/start.sh && chmod +x /app/start.sh

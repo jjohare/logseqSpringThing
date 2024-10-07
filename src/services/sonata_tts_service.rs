@@ -5,25 +5,22 @@ use futures::StreamExt;
 use log::{info, error};
 use std::sync::Arc;
 use anyhow::Result;
-use onnxruntime::{environment::Environment, session::Session, tensor::OrtOwnedTensor};
-use ndarray::Array2;
 
-pub mod sonata_tts {
-    tonic::include_proto!("sonata_tts");
-}
-
-use sonata_tts::tts_server::{Tts as TtsServer};
-use sonata_tts::{TtsRequest, TtsResponse};
+use sonata::models::piper::PiperModel;
+use sonata::tts::tts_server::{Tts as TtsServer};
+use sonata::tts::{TtsRequest, TtsResponse};
+use sonata::synth::SonataSpeechSynthesizer;
 
 #[derive(Clone)]
 pub struct SonataTtsService {
-    piper: Arc<Piper>,
+    synthesizer: Arc<SonataSpeechSynthesizer>,
 }
 
 impl SonataTtsService {
     pub fn new(config: &crate::config::TtsConfig) -> Result<Self> {
-        let piper = Arc::new(Piper::new(&config.model_path, &config.setup_path)?);
-        Ok(Self { piper })
+        let piper = Arc::new(PiperModel::new(&config.model_path, &config.setup_path)?);
+        let synthesizer = Arc::new(SonataSpeechSynthesizer::new(piper)?);
+        Ok(Self { synthesizer })
     }
 
     async fn stream_speak(
@@ -31,30 +28,23 @@ impl SonataTtsService {
         text: &str,
     ) -> Result<impl futures::Stream<Item = Result<TtsResponse, Status>>, Status> {
         let (tx, rx) = mpsc::channel(32);
-        let piper = self.piper.clone();
+        let synthesizer = self.synthesizer.clone();
 
         tokio::spawn(async move {
-            let chunks = text.split(|c| c == '.' || c == ',' || c == '!' || c == '?');
-            for chunk in chunks {
-                if chunk.trim().is_empty() {
-                    continue;
+            match synthesizer.speak(text).await {
+                Ok(audio_data) => {
+                    if tx.send(Ok(TtsResponse {
+                        audio_data,
+                        sample_rate: 22050, // Update if different
+                    }))
+                    .await
+                    .is_err()
+                    {
+                        error!("Failed to send audio data");
+                    }
                 }
-                match piper.speak(chunk).await {
-                    Ok(audio_data) => {
-                        if tx.send(Ok(TtsResponse {
-                            audio_data,
-                            sample_rate: 22050, // Update if different
-                        }))
-                        .await
-                        .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Err(Status::internal(format!("Synthesis error: {}", e)))).await;
-                        break;
-                    }
+                Err(e) => {
+                    let _ = tx.send(Err(Status::internal(format!("Synthesis error: {}", e)))).await;
                 }
             }
         });
@@ -70,7 +60,7 @@ impl TtsServer for SonataTtsService {
         request: Request<TtsRequest>,
     ) -> Result<Response<TtsResponse>, Status> {
         let req = request.into_inner();
-        let result = self.piper.speak(&req.text).await
+        let result = self.synthesizer.speak(&req.text).await
             .map_err(|e| Status::internal(format!("Failed to synthesize speech: {}", e)))?;
 
         Ok(Response::new(TtsResponse {
@@ -87,41 +77,7 @@ impl TtsServer for SonataTtsService {
     ) -> Result<Response<Self::SynthesizeStreamStream>, Status> {
         let req = request.into_inner();
         let stream = self.stream_speak(&req.text).await?;
-        Ok(Response::new(ReceiverStream::new(Box::pin(stream))))
-    }
-}
-
-pub struct Piper {
-    session: Session,
-}
-
-impl Piper {
-    pub fn new(model_path: &str, _setup_path: &str) -> Result<Self> {
-        let environment = Environment::builder().build()?;
-        let session = environment.new_session_builder()?
-            .with_model_from_file(model_path)?;
-        Ok(Self { session })
-    }
-
-    pub async fn speak(&self, text: &str) -> Result<Vec<u8>> {
-        // This is a placeholder implementation. You'll need to implement
-        // the actual text-to-phoneme and phoneme-to-audio conversion here.
-        // For now, we'll just return some dummy audio data.
-        let input = Array2::from_shape_vec((1, text.len()), text.bytes().collect())?;
-        let outputs: Vec<OrtOwnedTensor<f32, _>> = self.session.run(vec![input.into()])?;
-        let audio_data = outputs[0].view().to_owned().as_slice().unwrap().to_vec();
-        
-        // Convert f32 to i16 PCM
-        let pcm_data: Vec<i16> = audio_data.iter()
-            .map(|&x| (x * 32767.0) as i16)
-            .collect();
-        
-        // Convert i16 to bytes
-        let bytes: Vec<u8> = pcm_data.iter()
-            .flat_map(|&x| x.to_le_bytes().to_vec())
-            .collect();
-
-        Ok(bytes)
+        Ok(Response::new(stream))
     }
 }
 

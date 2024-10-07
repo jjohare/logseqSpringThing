@@ -1,0 +1,3 @@
+[submodule "src/sonata"]
+	path = src/sonata
+	url = https://github.com/jjohare/sonata
