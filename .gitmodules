@@ -1,3 +1,6 @@
 [submodule "src/sonata"]
 	path = src/sonata
 	url = https://github.com/jjohare/sonata
+[submodule "deps/tqsm"]
+	path = deps/tqsm
+	url = https://www.github.com/jjohare/sonata
