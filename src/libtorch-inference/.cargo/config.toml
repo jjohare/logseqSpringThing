@@ -1,0 +1,3 @@
+[env]
+LIBTORCH_BYPASS_VERSION_CHECK = "1"
+LIBTORCH = "F:\\AI\\libtorch"

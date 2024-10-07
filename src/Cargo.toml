@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "sonata/core",
+    "sonata/synth",
+    "sonata/models/piper",
+    "sonata/models/vocoders",
+    "sonata-grpc",
+    "sonata-python",
+    "libsonata",
+    "sonata-cli",
+    "espeak-phonemizer",
+    "libtorch-inference",
+    "sonic-sys",
+    "audio-ops"
+]
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1

@@ -1,0 +1,22 @@
+[package]
+name = "vocoders"
+version = "0.2.0"
+edition = "2021"
+
+[features]
+hifigan = ["ort",]
+vocos = ["libtorch-inference"]
+
+[dependencies]
+sonata-core = { path = "../../core" }
+ndarray = "0.15.6"
+
+[dependencies.libtorch-inference]
+path = "../../../libtorch-inference"
+optional = true
+
+[dependencies.ort]
+version = "2.0.0-alpha.4"
+default-features = false
+features = ["ndarray",]
+optional = true

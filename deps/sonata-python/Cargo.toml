@@ -1,0 +1,34 @@
+[package]
+name = "sonata-python"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+name = "pysonata"
+crate-type = ["cdylib"]
+
+[features]
+default = []
+ort-dylib = ["ort/load-dynamic"]
+
+[dependencies]
+espeak-phonemizer = { path = "../espeak-phonemizer" }
+sonata-core = { path = "../sonata/core" }
+sonata-synth = { path = "../sonata/synth" }
+sonata-piper = { path = "../sonata/models/piper" }
+once_cell = "1.19.0"
+
+[dependencies.libtashkeel_base]
+version = "1.5.0"
+default-features = false
+features = ["ort", "rayon"]
+
+[dependencies.pyo3]
+version = "0.20.0"
+features = ["extension-module", "abi3-py37"]
+
+[dependencies.ort]
+version = "2.0.0-rc.1"
+
+[build-dependencies]
+fs_extra = "1.3.0"
