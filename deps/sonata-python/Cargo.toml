@@ -18,17 +18,12 @@ sonata-synth = { path = "../sonata/synth" }
 sonata-piper = { path = "../sonata/models/piper" }
 once_cell = "1.19.0"
 
-[dependencies.libtashkeel_base]
-version = "1.5.0"
-default-features = false
-features = ["ort", "rayon"]
-
 [dependencies.pyo3]
 version = "0.20.0"
 features = ["extension-module", "abi3-py37"]
 
 [dependencies.ort]
-version = "2.0.0-rc.1"
+version = "2.0.0-rc.6"
 
 [build-dependencies]
 fs_extra = "1.3.0"

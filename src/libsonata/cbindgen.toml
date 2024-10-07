@@ -1,9 +1,0 @@
-language = "C"
-cpp_compat = true
-line_endings = "LF"
-style = "type"
-usize_is_size_t = true
-
-[parse]
-parse_deps = true
-include = ["ffi-support"]

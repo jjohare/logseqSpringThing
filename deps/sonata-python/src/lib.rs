@@ -4,7 +4,6 @@ use sonata_synth::{
     SonataSpeechSynthesizer, RealtimeSpeechStream
 };
 use sonata_piper::PiperSynthesisConfig;
-use libtashkeel_base::{LibtashkeelResult, DynamicInferenceEngine as TashkeelInferenceEngine, do_tashkeel};
 use once_cell::sync::Lazy;
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
@@ -14,8 +13,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-static LIBTASHKEEL_ENGINE: Lazy<LibtashkeelResult<TashkeelInferenceEngine>>=
-    Lazy::new(|| libtashkeel_base::create_inference_engine(None));
 type PySonataResult<T> = Result<T, PySonataError>;
 
 create_exception!(
@@ -412,21 +409,8 @@ pub fn phonemize_text(
     phoneme_separator: Option<char>,
     remove_lang_switch_flags: Option<bool>,
     remove_stress: Option<bool>,
-    use_tashkeel: Option<bool>
-) -> PyResult<Vec<String>> {
-    let use_tashkeel = (language  == "ar") && use_tashkeel.unwrap_or(true);
-    let text = if use_tashkeel {
-        let engine= match LIBTASHKEEL_ENGINE.as_ref() {
-            Ok(eng) => eng,
-            Err(e) => return Err(SonataException::new_err(e.to_string()))
-        };
-        match do_tashkeel(engine, text, None, false) {
-            Ok(mashkool) => std::borrow::Cow::from(mashkool),
-            Err(e) => return Err(SonataException::new_err(e.to_string()))
-        }
-    } else {
-        std::borrow::Cow::from(text)
-    };
+
+
     match espeak_phonemizer::text_to_phonemes(
         &text,
         language,
@@ -438,7 +422,7 @@ pub fn phonemize_text(
         Ok(phonemes) => Ok(phonemes),
         Err(e) => Err(SonataException::new_err(e.to_string()))
     }
-}
+
 
 
 /// A fast, local neural text-to-speech engine

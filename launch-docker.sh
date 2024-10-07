@@ -9,7 +9,6 @@ HOST_IP="192.168.0.51"
 HOST_PORT="8443"
 CONTAINER_PORT="8443"
 GRPC_PORT="50051"
-SONATA_REPO_URL="https://github.com/mush42/sonata"
 
 # Colors for output
 RED='\033[0;31m'
@@ -30,23 +29,6 @@ check_docker() {
     fi
 }
 
-# Function to initialize and update Git submodules
-init_submodules() {
-    print_color "YELLOW" "Initializing and updating Git submodules..."
-    git submodule update --init --recursive
-    
-    # Verify Sonata submodule
-    if [ ! -d "src/sonata" ] || [ -z "$(ls -A src/sonata)" ]; then
-        print_color "RED" "Error: src/sonata directory is empty or doesn't exist. Submodule initialization may have failed."
-        exit 1
-    fi
-    
-    # Verify essential Sonata components
-    if [ ! -d "src/sonata/sonata/core" ] || [ ! -d "src/sonata/sonata/synth" ]; then
-        print_color "RED" "Error: Essential Sonata components are missing. Submodule initialization may have failed."
-        exit 1
-    fi
-}
 
 # Function to stop and remove existing container
 cleanup_container() {
@@ -101,7 +83,6 @@ display_info() {
 
 # Main execution
 check_docker
-init_submodules
 cleanup_container
 build_image
 check_env_file

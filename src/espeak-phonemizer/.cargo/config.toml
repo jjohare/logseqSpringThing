@@ -1,3 +1,0 @@
-[env]
-# Always run test sequencially, because functions are not thread safe
-RUST_TEST_THREADS = { value = "1", force = true }

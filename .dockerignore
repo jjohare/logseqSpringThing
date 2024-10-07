@@ -1,11 +1,7 @@
 # Exclude target directory
 target/
 
-# Exclude Git history
-# DO NOT EXCLUDE: The following lines ensure that Git submodules are included
-!.gitmodules
-!deps/
-!deps/**
+
 
 # Exclude Docker-specific files if any
 Dockerfile
