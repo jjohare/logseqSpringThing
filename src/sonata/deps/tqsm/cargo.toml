@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "libtqsm",
+    "tqsm",
+    "pytqsm",
+]
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+opt-level = "z"
+# opt-level = 3
