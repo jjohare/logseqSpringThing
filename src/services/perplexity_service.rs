@@ -170,7 +170,7 @@ pub async fn process_markdown(file_content: &str, _settings: &Settings, _api_cli
 /// * `context` - Relevant context extracted from the Markdown content.
 /// * `topics` - List of relevant topics.
 /// * `api_client` - An instance implementing the `ApiClient` trait.
-/// * `perplexity_config` - Configuration settings for the Perplexity API.
+/// * `perplexity_settings` - Configuration settings for the Perplexity API.
 ///
 /// # Returns
 ///
@@ -180,7 +180,7 @@ pub async fn call_perplexity_api(
     context: &[String],
     topics: &[String],
     api_client: &dyn ApiClient,
-    perplexity_config: &crate::config::PerplexityConfig,
+    perplexity_settings: &crate::config::PerplexitySettings,
 ) -> Result<String, PerplexityError> {
     let _permit = REQUEST_SEMAPHORE.acquire().await.unwrap();
 
@@ -194,7 +194,7 @@ pub async fn call_perplexity_api(
     );
 
     let request = PerplexityRequest {
-        model: perplexity_config.perplexity_model.clone(),
+        model: perplexity_settings.perplexity_model.clone(),
         messages: vec![
             Message {
                 role: "system".to_string(),
@@ -208,17 +208,17 @@ pub async fn call_perplexity_api(
                 ),
             },
         ],
-        max_tokens: Some(perplexity_config.perplexity_max_tokens),
-        temperature: Some(perplexity_config.perplexity_temperature),
-        top_p: Some(perplexity_config.perplexity_top_p),
+        max_tokens: Some(perplexity_settings.perplexity_max_tokens),
+        temperature: Some(perplexity_settings.perplexity_temperature),
+        top_p: Some(perplexity_settings.perplexity_top_p),
         return_citations: Some(false),
         stream: Some(false),
-        presence_penalty: Some(perplexity_config.perplexity_presence_penalty),
-        frequency_penalty: Some(perplexity_config.perplexity_frequency_penalty),
+        presence_penalty: Some(perplexity_settings.perplexity_presence_penalty),
+        frequency_penalty: Some(perplexity_settings.perplexity_frequency_penalty),
     };
 
     for attempt in 1..=max_retries {
-        match api_client.post_json(&perplexity_config.perplexity_api_base_url, &request, &perplexity_config.perplexity_api_key).await {
+        match api_client.post_json(&perplexity_settings.perplexity_api_base_url, &request, &perplexity_settings.perplexity_api_key).await {
             Ok(response_text) => {
                 return parse_perplexity_response(&response_text);
             }

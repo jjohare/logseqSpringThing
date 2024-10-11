@@ -32,6 +32,7 @@ export class GraphDataManager {
     handleWebSocketMessage(message) {
         console.log('Received WebSocket message:', message);
         if (message.type === 'graphUpdate') {
+            console.log('Processing graph update message:', message.graphData);
             this.updateGraphData(message.graphData);
         } else {
             console.warn('Unhandled WebSocket message type:', message.type);

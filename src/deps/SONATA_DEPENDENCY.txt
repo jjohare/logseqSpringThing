@@ -1,0 +1,18 @@
+Sonata Dependency Information
+
+The sonata repository has been successfully integrated into this project as a local dependency.
+
+Location: src/deps/sonata
+
+Integration:
+- The sonata dependency has been added to the Cargo.toml file as a local dependency.
+- You can now use sonata in your Rust code by adding `use sonata;` where needed.
+
+Updating:
+To update the sonata dependency in the future, you can either:
+1. Pull the latest changes directly into the src/deps/sonata directory if it's a git repository.
+2. Manually replace the contents of src/deps/sonata with the latest version of the sonata codebase.
+
+After updating, you may need to run `cargo clean` and `cargo build` to ensure all changes are properly incorporated.
+
+Note: Ensure that the version of sonata you're using is compatible with your project's requirements.

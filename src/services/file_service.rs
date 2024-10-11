@@ -1,20 +1,18 @@
-// src/services/file_service.rs
-
 use crate::models::metadata::Metadata;
-use crate::config::{Settings, GitHubConfig};
-// use crate::services::perplexity_service::{PerplexityService, PerplexityServiceImpl, ApiClientImpl};
+use crate::config::Settings;
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use async_trait::async_trait;
-use log::{info, debug};
+use log::{info, debug, error};
 use regex::Regex;
 use sha1::{Sha1, Digest};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use chrono::Utc;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
-/// Represents a file fetched from GitHub.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GithubFile {
     pub name: String,
@@ -22,20 +20,17 @@ pub struct GithubFile {
     pub sha: String,
 }
 
-/// Represents a processed file after applying transformations.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ProcessedFile {
     pub file_name: String,
     pub content: String,
 }
 
-/// Trait defining the GitHub service behavior.
 #[async_trait]
 pub trait GitHubService: Send + Sync {
     async fn fetch_files(&self) -> Result<Vec<GithubFile>, Box<dyn std::error::Error + Send + Sync>>;
 }
 
-/// Represents a GitHub service that uses actual GitHub API calls.
 pub struct RealGitHubService {
     client: Client,
     token: String,
@@ -45,14 +40,19 @@ pub struct RealGitHubService {
 }
 
 impl RealGitHubService {
-    pub fn new(config: GitHubConfig) -> Self {
-        Self {
-            client: Client::new(),
-            token: config.github_access_token,
-            owner: config.github_owner,
-            repo: config.github_repo,
-            base_path: config.github_directory,
+    pub async fn new(settings: Arc<RwLock<Settings>>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let settings = settings.read().await;
+        let github_settings = &settings.github;
+        if github_settings.github_access_token.is_empty() {
+            return Err("GitHub access token is empty".into());
         }
+        Ok(Self {
+            client: Client::new(),
+            token: github_settings.github_access_token.clone(),
+            owner: github_settings.github_owner.clone(),
+            repo: github_settings.github_repo.clone(),
+            base_path: github_settings.github_directory.clone(),
+        })
     }
 
     async fn fetch_directory_contents(&self, path: &str) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
@@ -70,7 +70,12 @@ impl RealGitHubService {
         let response_body = response.text().await?;
         debug!("GitHub API response body: {}", response_body);
 
-        let contents: Vec<serde_json::Value> = serde_json::from_str(&response_body)?;
+        let contents: Vec<serde_json::Value> = serde_json::from_str(&response_body)
+            .map_err(|e| {
+                error!("Failed to parse GitHub API response: {}", e);
+                format!("Failed to parse GitHub API response: {}. Response body: {}", e, response_body)
+            })?;
+
         Ok(contents)
     }
 
@@ -120,20 +125,16 @@ impl GitHubService for RealGitHubService {
     }
 }
 
-/// Service responsible for handling file operations, including fetching from GitHub and processing.
 pub struct FileService;
 
 impl FileService {
-    /// Fetches Markdown files from GitHub and processes them.
     pub async fn fetch_and_process_files(
         github_service: &dyn GitHubService,
-        settings: &Settings,
+        settings: Arc<RwLock<Settings>>,
     ) -> Result<Vec<ProcessedFile>, Box<dyn std::error::Error + Send + Sync>> {
-        // Step 1: Fetch files from GitHub
         let github_files = github_service.fetch_files().await?;
         debug!("Fetched {} files from GitHub", github_files.len());
 
-        // Step 2: Initialize metadata with all file names
         let mut metadata_map = HashMap::new();
         for file in &github_files {
             metadata_map.insert(file.name.clone(), Metadata {
@@ -148,20 +149,17 @@ impl FileService {
             });
         }
         
-        // Step 3: Process the fetched files
         let processed_files = Self::process_files(github_files, settings, &mut metadata_map).await?;
         debug!("Processed {} files", processed_files.len());
 
-        // Step 4: Save the updated metadata
         Self::save_metadata(&metadata_map)?;
 
         Ok(processed_files)
     }
 
-    /// Processes the fetched GitHub files.
     async fn process_files(
         github_files: Vec<GithubFile>,
-        _settings: &Settings,
+        _settings: Arc<RwLock<Settings>>,
         metadata_map: &mut HashMap<String, Metadata>,
     ) -> Result<Vec<ProcessedFile>, Box<dyn std::error::Error + Send + Sync>> {
         let mut processed_files = Vec::new();
@@ -198,7 +196,6 @@ impl FileService {
         Ok(processed_files)
     }
         
-    /// Counts the occurrences of each topic in the content.
     fn count_topics(content: &str, metadata_map: &HashMap<String, Metadata>) -> HashMap<String, usize> {
         metadata_map.keys()
             .filter_map(|file_name| {
@@ -213,7 +210,6 @@ impl FileService {
             .collect()
     }
 
-    /// Saves the metadata to the JSON file.
     fn save_metadata(metadata_map: &HashMap<String, Metadata>) -> Result<(), std::io::Error> {
         let metadata_path = "/app/data/markdown/metadata.json";
         let metadata_without_content: HashMap<_, _> = metadata_map.iter()
@@ -235,20 +231,17 @@ impl FileService {
         Ok(())
     }
 
-    /// Determines whether a file should be processed based on its metadata.
     fn should_process_file(file: &GithubFile) -> bool {
         let first_line = file.content.lines().next().unwrap_or("").trim();
         first_line == "public:: true"
     }
 
-    /// Calculates the SHA1 hash of the given content.
     fn calculate_sha1(content: &str) -> String {
         let mut hasher = Sha1::new();
         hasher.update(content.as_bytes());
         format!("{:x}", hasher.finalize())
     }
 
-    /// Loads local metadata from a JSON file.
     fn load_local_metadata() -> Result<HashMap<String, Metadata>, Box<dyn std::error::Error + Send + Sync>> {
         let metadata_path = "/app/data/markdown/metadata.json";
 
@@ -261,19 +254,16 @@ impl FileService {
         }
     }
 
-    /// Strips double brackets [[ ]] from the content using regular expressions.
     fn strip_double_brackets(content: &str) -> String {
         let re = Regex::new(r"\[\[(.*?)\]\]").unwrap();
         re.replace_all(content, "$1").to_string()
     }
 
-    /// Counts the number of hyperlinks in the content.
     fn count_hyperlinks(content: &str) -> usize {
         let re = Regex::new(r"\[.*?\]\(.*?\)").unwrap();
         re.find_iter(content).count()
     }
 
-    /// Associates the processed content with relevant topics based on the topics list.
     fn process_against_topics(content: &str, metadata_map: &HashMap<String, Metadata>) -> String {
         let mut processed_content = content.to_string();
         for topic in metadata_map.keys() {
@@ -285,7 +275,6 @@ impl FileService {
         processed_content
     }
 
-    /// Saves the processed Markdown file to the persistent volume.
     pub fn save_file_metadata(metadata: Metadata) -> Result<(), std::io::Error> {
         info!("Saving metadata for file: {}", metadata.file_name);
 
@@ -304,7 +293,6 @@ impl FileService {
         Ok(())
     }
 
-    /// Updates the metadata JSON file with the latest file metadata.
     fn update_metadata_file(metadata: &Metadata) -> Result<(), std::io::Error> {
         let metadata_path = "/app/data/markdown/metadata.json";
 
@@ -325,4 +313,3 @@ impl FileService {
         Ok(())
     }
 }
-

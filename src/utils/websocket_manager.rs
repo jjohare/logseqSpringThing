@@ -7,6 +7,8 @@ use std::sync::{Mutex, Arc};
 use serde_json::{json, Value};
 use futures::future::join_all;
 use futures::StreamExt;
+use base64::{Engine as _, engine::general_purpose};
+use serde::{Deserialize, Serialize};
 
 pub struct WebSocketManager {
     pub sessions: Mutex<Vec<Addr<WebSocketSession>>>,
@@ -46,15 +48,35 @@ impl WebSocketManager {
         debug!("Broadcasted message to {} sessions", sessions.len());
         Ok(())
     }
+
+    pub async fn broadcast_audio(&self, audio: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+        let sessions = self.sessions.lock().unwrap().clone();
+        let futures = sessions.iter().map(|session| {
+            session.send(BroadcastAudio(audio.clone()))
+        });
+        
+        join_all(futures).await;
+        debug!("Broadcasted audio to {} sessions", sessions.len());
+        Ok(())
+    }
+
+    pub async fn broadcast_graph_update(&self, graph_data: &crate::models::graph::GraphData) -> Result<(), Box<dyn std::error::Error>> {
+        let json_data = json!({
+            "type": "graphUpdate",
+            "graphData": graph_data
+        });
+        self.broadcast_message(&json_data.to_string()).await
+    }
 }
 
 pub struct WebSocketSession {
     state: web::Data<AppState>,
+    tts_method: String,
 }
 
 impl WebSocketSession {
     fn new(state: web::Data<AppState>) -> Self {
-        WebSocketSession { state }
+        WebSocketSession { state, tts_method: "sonata".to_string() }
     }
 
     fn send_json_response(&self, ctx: &mut ws::WebsocketContext<Self>, data: Value) {
@@ -66,10 +88,11 @@ impl WebSocketSession {
         }
     }
 
-    fn handle_chat_message(&self, ctx: &mut ws::WebsocketContext<Self>, msg: Value) {
+    fn handle_chat_message(&mut self, ctx: &mut ws::WebsocketContext<Self>, msg: Value) {
         info!("Handling chat message: {:?}", msg);
         match msg["type"].as_str() {
             Some("ragflowQuery") => self.handle_ragflow_query(ctx, msg),
+            Some("openaiQuery") => self.handle_openai_query(ctx, msg),
             _ => {
                 error!("Unknown chat message type");
                 self.send_json_response(ctx, json!({
@@ -80,7 +103,7 @@ impl WebSocketSession {
         }
     }
 
-    fn handle_ragflow_query(&self, ctx: &mut ws::WebsocketContext<Self>, msg: Value) {
+    fn handle_ragflow_query(&mut self, ctx: &mut ws::WebsocketContext<Self>, msg: Value) {
         info!("Handling RAGflow query: {:?}", msg);
         let state = self.state.clone();
         let conversation_id = state.websocket_manager.conversation_id.lock().unwrap().clone();
@@ -94,7 +117,28 @@ impl WebSocketSession {
         ctx.spawn(actix::fut::wrap_future(fut));
     }
 
-    async fn process_ragflow_query(state: web::Data<AppState>, conversation_id: Option<String>, msg: Value) -> Result<Vec<u8>, String> {
+    fn handle_openai_query(&mut self, ctx: &mut ws::WebsocketContext<Self>, msg: Value) {
+        info!("Handling OpenAI query: {:?}", msg);
+        let state = self.state.clone();
+        let addr = ctx.address();
+        
+        let fut = async move {
+            if let Some(message) = msg["message"].as_str() {
+                if let Err(e) = state.speech_service.send_message(message.to_string()).await {
+                    error!("Failed to send message to SpeechService: {}", e);
+                    addr.do_send(OpenAIQueryResult(Err(e.to_string())));
+                } else {
+                    addr.do_send(OpenAIQueryResult(Ok(())));
+                }
+            } else {
+                addr.do_send(OpenAIQueryResult(Err("Invalid message format".to_string())));
+            }
+        };
+
+        ctx.spawn(actix::fut::wrap_future(fut));
+    }
+
+    async fn process_ragflow_query(state: web::Data<AppState>, conversation_id: Option<String>, msg: Value) -> Result<(String, Vec<u8>), String> {
         match conversation_id {
             Some(conv_id) => {
                 let message = msg["message"].as_str().unwrap_or("").to_string();
@@ -105,15 +149,19 @@ impl WebSocketSession {
                 let stream = msg["stream"].as_bool().unwrap_or(false);
 
                 match state.ragflow_service.send_message(conv_id, message, quote, doc_ids, stream).await {
-                    Ok(mut audio_stream) => {
+                    Ok(mut response_stream) => {
+                        let mut answer = String::new();
                         let mut audio_data = Vec::new();
-                        while let Some(chunk_result) = audio_stream.next().await {
+                        while let Some(chunk_result) = response_stream.next().await {
                             match chunk_result {
-                                Ok(chunk) => audio_data.extend_from_slice(&chunk),
-                                Err(e) => return Err(format!("Error in audio stream: {}", e)),
+                                Ok((chunk_answer, chunk_audio)) => {
+                                    answer.push_str(&chunk_answer);
+                                    audio_data.extend_from_slice(&chunk_audio);
+                                },
+                                Err(e) => return Err(format!("Error in response stream: {}", e)),
                             }
                         }
-                        Ok(audio_data)
+                        Ok((answer, audio_data))
                     },
                     Err(e) => Err(format!("Failed to send message: {}", e)),
                 }
@@ -122,7 +170,7 @@ impl WebSocketSession {
         }
     }
 
-    fn handle_graph_update(&self, ctx: &mut ws::WebsocketContext<Self>) {
+    fn handle_graph_update(&mut self, ctx: &mut ws::WebsocketContext<Self>) {
         let state = self.state.clone();
         ctx.spawn(async move {
             let graph_data = state.graph_data.read().await;
@@ -144,6 +192,60 @@ impl WebSocketSession {
             act.send_json_response(ctx, response);
         }));
     }
+
+    fn handle_client_message(&mut self, msg: &str, ctx: &mut ws::WebsocketContext<Self>) {
+        match serde_json::from_str::<ClientMessage>(msg) {
+            Ok(ClientMessage::SetTTSMethod { method }) => {
+                self.tts_method = method.clone();
+                info!("TTS method set to: {}", method);
+                // Optionally send acknowledgment
+                self.send_json_response(ctx, json!({
+                    "type": "ttsMethodSet",
+                    "method": method
+                }));
+            },
+            Ok(ClientMessage::ChatMessage { message, use_openai }) => {
+                if use_openai {
+                    self.handle_openai_query(ctx, json!({"message": message}));
+                } else {
+                    self.handle_sonata_tts(ctx, message);
+                }
+            },
+            Err(e) => {
+                error!("Failed to parse client message: {}", e);
+                self.send_json_response(ctx, json!({
+                    "type": "error",
+                    "message": "Invalid message format"
+                }));
+            },
+        }
+    }
+
+    fn handle_sonata_tts(&mut self, ctx: &mut ws::WebsocketContext<Self>, message: String) {
+        let state = self.state.clone();
+        let fut = async move {
+            match state.speech_service.synthesize_with_sonata(&message).await {
+                Ok(audio_bytes) => {
+                    let audio_base64 = general_purpose::STANDARD.encode(&audio_bytes);
+                    json!({
+                        "type": "audio",
+                        "audio": audio_base64
+                    })
+                },
+                Err(e) => {
+                    error!("Sonata TTS synthesis failed: {}", e);
+                    json!({
+                        "type": "error",
+                        "message": "TTS synthesis failed"
+                    })
+                },
+            }
+        }.into_actor(self).map(|response, act, ctx| {
+            act.send_json_response(ctx, response);
+        });
+
+        ctx.spawn(fut);
+    }
 }
 
 impl Actor for WebSocketSession {
@@ -151,7 +253,7 @@ impl Actor for WebSocketSession {
 
     fn started(&mut self, ctx: &mut Self::Context) {
         let addr = ctx.address();
-        self.state.websocket_manager.sessions.lock().unwrap().push(addr);
+        self.state.websocket_manager.sessions.lock().unwrap().push(addr.clone());
         info!("WebSocket session started. Total sessions: {}", self.state.websocket_manager.sessions.lock().unwrap().len());
     }
 
@@ -164,11 +266,19 @@ impl Actor for WebSocketSession {
 
 #[derive(Message)]
 #[rtype(result = "()")]
-struct BroadcastMessage(String);
+pub struct BroadcastMessage(pub String);
 
 #[derive(Message)]
 #[rtype(result = "()")]
-struct RAGFlowQueryResult(Result<Vec<u8>, String>);
+struct RAGFlowQueryResult(Result<(String, Vec<u8>), String>);
+
+#[derive(Message)]
+#[rtype(result = "()")]
+struct OpenAIQueryResult(Result<(), String>);
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct BroadcastAudio(pub Vec<u8>);
 
 impl Handler<BroadcastMessage> for WebSocketSession {
     type Result = ();
@@ -184,8 +294,16 @@ impl Handler<RAGFlowQueryResult> for WebSocketSession {
 
     fn handle(&mut self, msg: RAGFlowQueryResult, ctx: &mut Self::Context) {
         match msg.0 {
-            Ok(audio_data) => {
-                ctx.binary(audio_data);
+            Ok((answer, audio_data)) => {
+                let audio_base64 = general_purpose::STANDARD.encode(&audio_data);
+                let response = json!({
+                    "type": "ragflowResponse",
+                    "data": {
+                        "answer": answer,
+                        "audio": audio_base64
+                    }
+                });
+                self.send_json_response(ctx, response);
             },
             Err(e) => {
                 error!("Error in RAGFlow query: {}", e);
@@ -195,6 +313,34 @@ impl Handler<RAGFlowQueryResult> for WebSocketSession {
                 }));
             }
         }
+    }
+}
+
+impl Handler<OpenAIQueryResult> for WebSocketSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: OpenAIQueryResult, ctx: &mut Self::Context) {
+        match msg.0 {
+            Ok(()) => {
+                debug!("OpenAI query processed successfully");
+            },
+            Err(e) => {
+                error!("Error in OpenAI query: {}", e);
+                self.send_json_response(ctx, json!({
+                    "type": "error",
+                    "message": e
+                }));
+            }
+        }
+    }
+}
+
+impl Handler<BroadcastAudio> for WebSocketSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: BroadcastAudio, ctx: &mut Self::Context) {
+        ctx.binary(msg.0);
+        debug!("Broadcasted audio to client using {}", self.tts_method);
     }
 }
 
@@ -209,45 +355,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
             },
             Ok(ws::Message::Text(text)) => {
                 info!("Received message from client: {}", text);
-                match serde_json::from_str::<Value>(&text) {
-                    Ok(json_data) => {
-                        if let Some(msg_type) = json_data["type"].as_str() {
-                            match msg_type {
-                                "getInitialData" => {
-                                    debug!("Handling getInitialData request");
-                                    self.handle_graph_update(ctx);
-                                },
-                                "ragflowQuery" => {
-                                    debug!("Handling chat message: {}", msg_type);
-                                    self.handle_chat_message(ctx, json_data);
-                                },
-                                _ => {
-                                    error!("Received unknown message type: {}", msg_type);
-                                    let error_response = json!({
-                                        "type": "error",
-                                        "message": format!("Unknown message type: {}", msg_type),
-                                    });
-                                    self.send_json_response(ctx, error_response);
-                                }
-                            }
-                        } else {
-                            error!("Received message without a type field");
-                            let error_response = json!({
-                                "type": "error",
-                                "message": "Message type not specified",
-                            });
-                            self.send_json_response(ctx, error_response);
-                        }
-                    },
-                    Err(e) => {
-                        error!("Failed to parse incoming message as JSON: {}", e);
-                        let error_response = json!({
-                            "type": "error",
-                            "message": "Invalid JSON format",
-                        });
-                        self.send_json_response(ctx, error_response);
-                    }
-                }
+                self.handle_client_message(&text, ctx);
             },
             Ok(ws::Message::Binary(bin)) => {
                 let bin_clone = bin.clone();
@@ -261,4 +369,24 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
             _ => (),
         }
     }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+enum ClientMessage {
+    #[serde(rename = "setTTSMethod")]
+    SetTTSMethod { method: String },
+    #[serde(rename = "chatMessage")]
+    ChatMessage { message: String, use_openai: bool },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+enum ServerMessage {
+    #[serde(rename = "ragflowAnswer")]
+    RagflowAnswer { answer: String },
+    #[serde(rename = "audio")]
+    Audio { audio: String },
+    #[serde(rename = "error")]
+    Error { message: String },
 }

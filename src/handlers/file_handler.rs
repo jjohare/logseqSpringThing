@@ -11,7 +11,7 @@ pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse
     info!("Initiating file fetch and processing");
     
     // Fetch and process files asynchronously
-    match FileService::fetch_and_process_files(&*state.github_service, &state.settings).await {
+    match FileService::fetch_and_process_files(&*state.github_service, state.settings.clone()).await {
         Ok(processed_files) => {
             let file_names: Vec<String> = processed_files.iter()
                 .map(|pf| pf.file_name.clone())
