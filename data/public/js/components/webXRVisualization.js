@@ -1,208 +1,198 @@
-import * as THREE from 'three'; // Importing the Three.js library for 3D graphics
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'; // Importing controls for orbiting the camera
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'; // For post-processing effects
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'; // For rendering the scene
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'; // For bloom effects in the scene
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
-// Constants for Spacemouse sensitivity
-const TRANSLATION_SPEED = 0.01; // Speed at which the camera translates
-const ROTATION_SPEED = 0.01; // Speed at which the camera rotates
-
-/**
- * Class representing a WebXR visualization environment.
- */
 export class WebXRVisualization {
-    /**
-     * Create a WebXR visualization.
-     * @param {Object} graphDataManager - The manager for handling graph data.
-     */
+    static TRANSLATION_SPEED = 0.01;
+    static ROTATION_SPEED = 0.01;
+
+    static LAYERS = {
+        ALL: 0,
+        ENVIRONMENT: 1,
+        NODES: 2,
+        EDGES: 3,
+    };
+
     constructor(graphDataManager) {
-        console.log('WebXRVisualization constructor called'); // Log when the constructor is called
-        this.graphDataManager = graphDataManager; // Store the graph data manager
+        console.log('WebXRVisualization constructor called');
+        this.graphDataManager = graphDataManager;
 
-        // Initialize the scene, camera, and renderer
-        this.scene = new THREE.Scene(); // Create a new Three.js scene
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000); // Create a camera with perspective
-        this.camera.position.set(0, 0, 500); // Set camera position
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        this.camera.position.set(0, 0, 500);
 
-        // Set up the renderer with antialiasing for smoother edges
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(window.innerWidth, window.innerHeight); // Set the renderer size
-        this.renderer.setPixelRatio(window.devicePixelRatio); // Adjust for device pixel ratio
-        this.renderer.toneMapping = THREE.ReinhardToneMapping; // Set tone mapping
-        this.renderer.toneMappingExposure = 1; // Set exposure level
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.toneMapping = THREE.ReinhardToneMapping;
+        this.renderer.toneMappingExposure = 1;
 
-        // Initialize variables for controls, composer, meshes, etc.
-        this.controls = null; // For camera controls
-        this.composer = null; // For post-processing composer
+        this.controls = null;
+        this.bloomComposer = null;
+        this.finalComposer = null;
+        this.finalPass = null;
 
-        // Maps to hold node and edge meshes and their labels
         this.nodeMeshes = new Map();
         this.edgeMeshes = new Map();
         this.nodeLabels = new Map();
 
-        this.hologramGroup = new THREE.Group(); // Group for holographic elements
-        this.animationFrameId = null; // For managing animation frames
+        this.hologramGroup = new THREE.Group();
+        this.animationFrameId = null;
 
-        this.selectedNode = null; // Currently selected node
+        this.selectedNode = null;
 
-        // Initialize separate bloom passes for visual effects
-        this.nodeBloomPass = null;
-        this.edgeBloomPass = null;
-        this.environmentBloomPass = null;
-
-        // Add force-directed layout parameters
         this.forceDirectedIterations = 100;
         this.forceDirectedRepulsion = 1.0;
         this.forceDirectedAttraction = 0.01;
+        this.damping = 0.85;
 
-        // Call method to initialize settings
+        this.renderTargetScene = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+        this.renderTargetBloom = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight);
+
+        this.darkMaterial = new THREE.MeshBasicMaterial({ color: 'black' });
+        this.materials = {};
+
+        this.bloomLayer = new THREE.Layers();
+        this.bloomLayer.set(WebXRVisualization.LAYERS.NODES);
+
         this.initializeSettings();
-        console.log('WebXRVisualization constructor completed'); // Log when constructor is done
+        console.log('WebXRVisualization constructor completed');
     }
 
-    /**
-     * Initialize visualization settings.
-     */
     initializeSettings() {
         console.log('Initializing settings');
-        // Set up various color and visual settings
-        this.nodeColor = 0x1A0B31; // Color for nodes
-        this.edgeColor = 0xff0000; // Color for edges
-        this.hologramColor = 0xFFD700; // Color for holograms
-        this.nodeSizeScalingFactor = 1; // Scaling factor for node sizes
-        this.hologramScale = 1; // Scale factor for holograms
-        this.hologramOpacity = 0.1; // Opacity for holograms
-        this.edgeOpacity = 0.3; // Opacity for edges
-        this.labelFontSize = 48; // Font size for node labels
-        this.fogDensity = 0.002; // Density for fog in the scene
-        this.minNodeSize = 1; // Minimum size for nodes
-        this.maxNodeSize = 5; // Maximum size for nodes
-        this.nodeBloomStrength = 0.1; // Strength of node bloom effect
-        this.nodeBloomRadius = 0.1; // Radius for node bloom effect
-        this.nodeBloomThreshold = 0; // Threshold for node bloom effect
-        this.edgeBloomStrength = 0.2; // Strength of edge bloom effect
-        this.edgeBloomRadius = 0.3; // Radius for edge bloom effect
-        this.edgeBloomThreshold = 0; // Threshold for edge bloom effect
-        this.environmentBloomStrength = 1; // Strength of environmental bloom effect
-        this.environmentBloomRadius = 1; // Radius for environmental bloom effect
-        this.environmentBloomThreshold = 0; // Threshold for environmental bloom effect
-        console.log('Settings initialized'); // Log completion of settings initialization
+        this.nodeColor = 0x1A0B31;
+        this.edgeColor = 0xff0000;
+        this.hologramColor = 0xFFD700;
+        this.nodeSizeScalingFactor = 1;
+        this.hologramScale = 1;
+        this.hologramOpacity = 0.1;
+        this.edgeOpacity = 0.3;
+        this.labelFontSize = 48;
+        this.fogDensity = 0.002;
+        this.minNodeSize = 1;
+        this.maxNodeSize = 5;
+        this.bloomStrength = 1.5;
+        this.bloomRadius = 0.4;
+        this.bloomThreshold = 0.2;
+        console.log('Settings initialized');
     }
 
-    /**
-     * Initialize Three.js components.
-     */
     initThreeJS() {
         console.log('Initializing Three.js');
-        const container = document.getElementById('scene-container'); // Get the container for the scene
+        const container = document.getElementById('scene-container');
         if (container) {
-            container.appendChild(this.renderer.domElement); // Append the renderer's DOM element to the container
+            container.appendChild(this.renderer.domElement);
         } else {
-            console.error("Could not find 'scene-container' element"); // Error if container not found
+            console.error("Could not find 'scene-container' element");
             return;
         }
 
-        // Initialize OrbitControls for the camera
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableDamping = true; // Enable damping for smoother control
-        this.controls.dampingFactor = 0.05; // Set damping factor
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
 
-        // Set up fog in the scene
         this.scene.fog = new THREE.FogExp2(0x000000, this.fogDensity);
-        this.addLights(); // Add lighting to the scene
-        this.initPostProcessing(); // Initialize post-processing effects
-        this.createHologramStructure(); // Create the holographic structure
+        this.addLights();
+        this.initPostProcessing();
+        this.createHologramStructure();
 
-        // Add event listener for window resizing
-        window.addEventListener('resize', this.onWindowResize.bind(this), false);
+        // Add debug cube
+        const debugGeometry = new THREE.BoxGeometry(50, 50, 50);
+        const debugMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const debugCube = new THREE.Mesh(debugGeometry, debugMaterial);
+        debugCube.position.set(0, 0, 0);
+        debugCube.layers.set(WebXRVisualization.LAYERS.NODES);
+        this.scene.add(debugCube);
 
-        this.animate(); // Start the animation loop
-        console.log('Three.js initialization completed'); // Log completion of initialization
+        this.onWindowResize = this.onWindowResize.bind(this);
+        window.addEventListener('resize', this.onWindowResize, false);
+
+        this.animate();
+        console.log('Three.js initialization completed');
     }
 
-    /**
-     * Initialize post-processing effects.
-     */
     initPostProcessing() {
         console.log('Initializing post-processing');
-        this.composer = new EffectComposer(this.renderer); // Create a new EffectComposer for post-processing
-        const renderPass = new RenderPass(this.scene, this.camera); // Create a render pass for the scene
-        this.composer.addPass(renderPass); // Add the render pass to the composer
 
-        // Environmental Bloom Pass (Layer 0)
-        this.environmentBloomPass = new UnrealBloomPass(
+        this.bloomComposer = new EffectComposer(this.renderer);
+        this.bloomComposer.renderToScreen = false;
+
+        const bloomPass = new UnrealBloomPass(
             new THREE.Vector2(window.innerWidth, window.innerHeight),
-            this.environmentBloomStrength,
-            this.environmentBloomRadius,
-            this.environmentBloomThreshold
+            this.bloomStrength,
+            this.bloomRadius,
+            this.bloomThreshold
         );
-        this.environmentBloomPass.renderToScreen = false; // Do not render this pass to the screen directly
-        this.environmentBloomPass.clear = false; // Do not clear the pass
-        this.composer.addPass(this.environmentBloomPass); // Add to composer
+        this.bloomComposer.addPass(new RenderPass(this.scene, this.camera));
+        this.bloomComposer.addPass(bloomPass);
 
-        // Nodes Bloom Pass (Layer 1)
-        this.nodeBloomPass = new UnrealBloomPass(
-            new THREE.Vector2(window.innerWidth, window.innerHeight),
-            this.nodeBloomStrength,
-            this.nodeBloomRadius,
-            this.nodeBloomThreshold
+        this.finalComposer = new EffectComposer(this.renderer);
+        this.finalComposer.addPass(new RenderPass(this.scene, this.camera));
+
+        this.finalPass = new ShaderPass(
+            new THREE.ShaderMaterial({
+                uniforms: {
+                    baseTexture: { value: null },
+                    bloomTexture: { value: null }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D baseTexture;
+                    uniform sampler2D bloomTexture;
+                    varying vec2 vUv;
+
+                    void main() {
+                        vec4 baseColor = texture2D(baseTexture, vUv);
+                        vec4 bloomColor = texture2D(bloomTexture, vUv);
+                        gl_FragColor = baseColor + bloomColor;
+                    }
+                `,
+                defines: {}
+            }), 'baseTexture'
         );
-        this.nodeBloomPass.renderToScreen = false; // Do not render this pass to the screen directly
-        this.nodeBloomPass.clear = false; // Do not clear the pass
-        this.composer.addPass(this.nodeBloomPass); // Add to composer
+        this.finalPass.needsSwap = true;
+        this.finalComposer.addPass(this.finalPass);
 
-        // Edges Bloom Pass (Layer 2)
-        this.edgeBloomPass = new UnrealBloomPass(
-            new THREE.Vector2(window.innerWidth, window.innerHeight),
-            this.edgeBloomStrength,
-            this.edgeBloomRadius,
-            this.edgeBloomThreshold
-        );
-        this.edgeBloomPass.renderToScreen = true; // Render this pass to the screen
-        this.edgeBloomPass.clear = true; // Clear this pass
-        this.composer.addPass(this.edgeBloomPass); // Add to composer
-
-        console.log('Post-processing initialized'); // Log completion of post-processing initialization
+        console.log('Post-processing initialized');
     }
 
-    /**
-     * Add lighting to the scene.
-     */
     addLights() {
         console.log('Adding lights to the scene');
-        // Ambient light to illuminate the scene evenly
         const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
-        this.scene.add(ambientLight); // Add ambient light to the scene
+        this.scene.add(ambientLight);
 
-        // Directional light to create shadows and highlights
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-        directionalLight.position.set(50, 50, 50); // Set position of the light
-        this.scene.add(directionalLight); // Add directional light to the scene
-        console.log('Lights added to the scene'); // Log completion of lighting setup
+        directionalLight.position.set(50, 50, 50);
+        this.scene.add(directionalLight);
+        console.log('Lights added to the scene');
     }
 
-    /**
-     * Create the hologram structure for the visualization.
-     */
     createHologramStructure() {
         console.log('Creating hologram structure');
-        this.hologramGroup.clear(); // Clear any existing hologram group contents
+        this.hologramGroup.clear();
 
-        // Create various geometries to represent the hologram
-        const buckyGeometry = new THREE.IcosahedronGeometry(40 * this.hologramScale, 1); // Create an icosahedron geometry
+        const buckyGeometry = new THREE.IcosahedronGeometry(40 * this.hologramScale, 1);
         const buckyMaterial = new THREE.MeshBasicMaterial({
             color: this.hologramColor,
-            wireframe: true, // Wireframe mode for visibility
+            wireframe: true,
             transparent: true,
-            opacity: this.hologramOpacity // Set opacity
+            opacity: this.hologramOpacity
         });
-        const buckySphere = new THREE.Mesh(buckyGeometry, buckyMaterial); // Create mesh for bucky sphere
-        buckySphere.userData.rotationSpeed = 0.0001; // Rotation speed for animation
-        buckySphere.layers.set(0); // Set layer for the environment
-        this.hologramGroup.add(buckySphere); // Add to hologram group
+        const buckySphere = new THREE.Mesh(buckyGeometry, buckyMaterial);
+        buckySphere.userData.rotationSpeed = 0.0001;
+        buckySphere.layers.set(WebXRVisualization.LAYERS.ENVIRONMENT);
+        this.hologramGroup.add(buckySphere);
 
-        // Create a geodesic dome
         const geodesicGeometry = new THREE.IcosahedronGeometry(10 * this.hologramScale, 1);
         const geodesicMaterial = new THREE.MeshBasicMaterial({
             color: this.hologramColor,
@@ -211,11 +201,10 @@ export class WebXRVisualization {
             opacity: this.hologramOpacity
         });
         const geodesicDome = new THREE.Mesh(geodesicGeometry, geodesicMaterial);
-        geodesicDome.userData.rotationSpeed = 0.0002; // Set rotation speed
-        geodesicDome.layers.set(0); // Set layer for the environment
-        this.hologramGroup.add(geodesicDome); // Add to hologram group
+        geodesicDome.userData.rotationSpeed = 0.0002;
+        geodesicDome.layers.set(WebXRVisualization.LAYERS.ENVIRONMENT);
+        this.hologramGroup.add(geodesicDome);
 
-        // Create a triangle geometry
         const triangleGeometry = new THREE.SphereGeometry(100 * this.hologramScale, 32, 32);
         const triangleMaterial = new THREE.MeshBasicMaterial({
             color: this.hologramColor,
@@ -224,64 +213,58 @@ export class WebXRVisualization {
             opacity: this.hologramOpacity
         });
         const triangleSphere = new THREE.Mesh(triangleGeometry, triangleMaterial);
-        triangleSphere.userData.rotationSpeed = 0.0003; // Set rotation speed
-        triangleSphere.layers.set(0); // Set layer for the environment
-        this.hologramGroup.add(triangleSphere); // Add to hologram group
+        triangleSphere.userData.rotationSpeed = 0.0003;
+        triangleSphere.layers.set(WebXRVisualization.LAYERS.ENVIRONMENT);
+        this.hologramGroup.add(triangleSphere);
 
-        // Add the hologram group to the scene
         this.scene.add(this.hologramGroup);
-        console.log('Hologram structure created'); // Log completion of hologram structure creation
+        console.log('Hologram structure created');
     }
 
-    /**
-     * Update the visualization based on graph data.
-     */
     updateVisualization() {
         console.log('Updating visualization');
-        const graphData = this.graphDataManager.getGraphData(); // Retrieve graph data from the manager
-        if (!graphData) {
-            console.warn('No graph data available for visualization update'); // Warn if no data available
+        const graphData = this.graphDataManager.getGraphData();
+        if (!graphData || !graphData.nodes || !graphData.edges) {
+            console.warn('Incomplete graph data for visualization update');
             return;
         }
-        console.log('Graph data received:', graphData); // Log received graph data
+        console.log('Graph data received:', graphData);
         
-        // Apply force-directed layout
         this.applyForceDirectedLayout(graphData);
         
-        this.updateNodes(graphData.nodes); // Update nodes in the visualization
-        this.updateEdges(graphData.edges); // Update edges in the visualization
-        console.log('Visualization update completed'); // Log completion of update
+        this.updateNodes(graphData.nodes);
+        this.updateEdges(graphData.edges);
+        console.log('Visualization update completed');
     }
 
-    /**
-     * Apply force-directed layout to the graph data.
-     * @param {Object} graphData - The graph data to apply the layout to.
-     */
     applyForceDirectedLayout(graphData) {
         console.log('Applying force-directed layout');
         const nodes = graphData.nodes;
         const edges = graphData.edges;
 
         for (let iteration = 0; iteration < this.forceDirectedIterations; iteration++) {
-            // Calculate repulsive forces
             for (let i = 0; i < nodes.length; i++) {
+                nodes[i].vx = nodes[i].vx || 0;
+                nodes[i].vy = nodes[i].vy || 0;
+                nodes[i].vz = nodes[i].vz || 0;
+
                 for (let j = i + 1; j < nodes.length; j++) {
                     const dx = nodes[j].x - nodes[i].x;
                     const dy = nodes[j].y - nodes[i].y;
                     const dz = nodes[j].z - nodes[i].z;
-                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.1;
+                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (distance < 1e-6) continue;
                     const force = this.forceDirectedRepulsion / (distance * distance);
 
-                    nodes[i].x -= dx * force / distance;
-                    nodes[i].y -= dy * force / distance;
-                    nodes[i].z -= dz * force / distance;
-                    nodes[j].x += dx * force / distance;
-                    nodes[j].y += dy * force / distance;
-                    nodes[j].z += dz * force / distance;
+                    nodes[i].vx -= dx * force / distance;
+                    nodes[i].vy -= dy * force / distance;
+                    nodes[i].vz -= dz * force / distance;
+                    nodes[j].vx += dx * force / distance;
+                    nodes[j].vy += dy * force / distance;
+                    nodes[j].vz += dz * force / distance;
                 }
             }
 
-            // Calculate attractive forces
             for (const edge of edges) {
                 const source = nodes.find(node => node.id === edge.source);
                 const target = nodes.find(node => node.id === edge.target_node);
@@ -289,538 +272,458 @@ export class WebXRVisualization {
                     const dx = target.x - source.x;
                     const dy = target.y - source.y;
                     const dz = target.z - source.z;
-                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.1;
+                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (distance < 1e-6) continue;
                     const force = this.forceDirectedAttraction * distance;
 
-                    source.x += dx * force / distance;
-                    source.y += dy * force / distance;
-                    source.z += dz * force / distance;
-                    target.x -= dx * force / distance;
-                    target.y -= dy * force / distance;
-                    target.z -= dz * force / distance;
+                    source.vx += dx * force / distance;
+                    source.vy += dy * force / distance;
+                    source.vz += dz * force / distance;
+                    target.vx -= dx * force / distance;
+                    target.vy -= dy * force / distance;
+                    target.vz -= dz * force / distance;
                 }
+            }
+
+            // Apply velocities and damping
+            for (const node of nodes) {
+                node.vx *= this.damping;
+                node.vy *= this.damping;
+                node.vz *= this.damping;
+
+                node.x += node.vx;
+                node.y += node.vy;
+                node.z += node.vz;
             }
         }
 
         console.log('Force-directed layout applied');
     }
 
-    /**
-     * Update visual features based on provided changes.
-     * @param {Object} changes - The changes to apply to visual features.
-     */
-    updateVisualFeatures(changes) {
-        console.log('Updating visual features:', changes);
-        let needsUpdate = false; // Flag to track if an update is needed
-        let bloomChanged = false; // Flag to track if any bloom-related property has changed
-        let layoutChanged = false; // Flag to track if any force-directed layout property has changed
-
-        // Iterate over the changes and update properties
-        for (const [name, value] of Object.entries(changes)) {
-            if (this.hasOwnProperty(name)) {
-                console.log(`Setting property ${name} to`, value); // Log property being updated
-                this[name] = value; // Update the property
-                needsUpdate = true; // Mark that an update is needed
-
-                // Check if the changed property is bloom-related
-                if (name.includes('Bloom')) {
-                    bloomChanged = true; // Mark that bloom properties have changed
-                }
-
-                // Check if the changed property is force-directed layout related
-                if (name.includes('forceDirected')) {
-                    layoutChanged = true; // Mark that layout properties have changed
-                }
-            } else {
-                console.warn(`Property ${name} does not exist on WebXRVisualization`); // Warn for unknown properties
-            }
-        }
-
-        if (needsUpdate) {
-            if (layoutChanged) {
-                this.updateVisualization(); // Recalculate layout and update visualization
-            } else {
-                this.updateNodes(this.graphDataManager.getGraphData().nodes);
-                this.updateEdges(this.graphDataManager.getGraphData().edges);
-            }
-            
-            // Specifically handle hologram scale updates
-            if (changes.hologramScale !== undefined) {
-                this.hologramGroup.scale.set(this.hologramScale, this.hologramScale, this.hologramScale); // Scale hologram group
-            }
-        }
-
-        // Always update bloom pass if any bloom-related property has changed
-        if (bloomChanged) {
-            this.updateBloomPass(); // Update bloom passes
-        }
-
-        this.composer.render(); // Render the scene with post-processing
-        console.log('Visual features update completed'); // Log completion of visual feature update
-    }
-
-    /**
-     * Update nodes based on new data.
-     * @param {Array} nodes - The new nodes data.
-     */
     updateNodes(nodes) {
-        console.log(`Updating nodes: ${nodes.length}`); // Log number of nodes being updated
-        const existingNodeIds = new Set(nodes.map(node => node.id)); // Create a set of existing node IDs
+        console.log(`Updating nodes: ${nodes.length}`);
+        const existingNodeIds = new Set(nodes.map(node => node.id));
 
-        // Remove any nodes that are no longer present
         this.nodeMeshes.forEach((mesh, nodeId) => {
             if (!existingNodeIds.has(nodeId)) {
-                this.scene.remove(mesh); // Remove mesh from scene
-                this.nodeMeshes.delete(nodeId); // Remove from node meshes map
+                this.scene.remove(mesh);
+                this.nodeMeshes.delete(nodeId);
                 const label = this.nodeLabels.get(nodeId);
                 if (label) {
-                    this.scene.remove(label); // Remove label from scene
-                    this.nodeLabels.delete(nodeId); // Remove from node labels map
+                    this.scene.remove(label);
+                    this.nodeLabels.delete(nodeId);
                 }
             }
         });
 
-        // Iterate through the new nodes
         nodes.forEach(node => {
-            // Validate node data
             if (!node.id || typeof node.x !== 'number' || typeof node.y !== 'number' || typeof node.z !== 'number') {
-                console.warn('Invalid node data:', node); // Warn for invalid node data
-                return; // Skip invalid nodes
+                console.warn('Invalid node data:', node);
+                return;
             }
-            let mesh = this.nodeMeshes.get(node.id); // Check if mesh already exists
-            const fileSize = node.metadata && node.metadata.file_size ? parseInt(node.metadata.file_size) : 1; // Get file size
+            let mesh = this.nodeMeshes.get(node.id);
+            const fileSize = node.metadata && node.metadata.file_size ? parseInt(node.metadata.file_size) : 1;
             if (isNaN(fileSize) || fileSize <= 0) {
-                console.warn(`Invalid file_size for node ${node.id}:`, node.metadata.file_size); // Warn for invalid file size
-                return; // Skip if file size is invalid
+                console.warn(`Invalid file_size for node ${node.id}:`, node.metadata.file_size);
+                return;
             }
-            const size = this.calculateNodeSize(fileSize); // Calculate node size based on file size
-            const color = this.calculateNodeColor(fileSize); // Calculate node color based on file size
+            const size = this.calculateNodeSize(fileSize);
+            const lastModified = node.metadata && node.metadata.last_modified ? new Date(node.metadata.last_modified) : new Date();
+            const color = this.calculateNodeColor(lastModified);
 
-            console.log(`Node ${node.id}: fileSize = ${fileSize}, calculated size = ${size}`); // Log calculated size and file size
+            console.log(`Node ${node.id}: fileSize = ${fileSize}, calculated size = ${size}`);
 
-            // Create or update the mesh for the node
             if (!mesh) {
-                // Create new mesh if it doesn't exist
-                const geometry = this.createNodeGeometry(size, fileSize); // Create geometry based on size
-                const material = new THREE.MeshStandardMaterial({ color: color }); // Create material for the mesh
-                mesh = new THREE.Mesh(geometry, material); // Create mesh
-                mesh.layers.enable(1); // Set layer for the node
-                this.scene.add(mesh); // Add mesh to the scene
-                this.nodeMeshes.set(node.id, mesh); // Store the mesh in the map
+                const geometry = this.createNodeGeometry(size, fileSize);
+                const material = new THREE.MeshStandardMaterial({ color: color });
+                mesh = new THREE.Mesh(geometry, material);
+                mesh.layers.set(WebXRVisualization.LAYERS.NODES);
+                this.scene.add(mesh);
+                this.nodeMeshes.set(node.id, mesh);
 
-                // Create and add the node label
-                const label = this.createNodeLabel(node.label || node.id, fileSize); // Create label
-                this.scene.add(label); // Add label to the scene
-                this.nodeLabels.set(node.id, label); // Store label in the map
+                const label = this.createNodeLabel(node.label || node.id, fileSize);
+                this.scene.add(label);
+                this.nodeLabels.set(node.id, label);
             } else {
-                // Update existing mesh if it already exists
-                this.updateNodeGeometry(mesh, size, fileSize); // Update geometry
-                mesh.material.color.setHex(color); // Update color
+                this.updateNodeGeometry(mesh, size, fileSize);
+                mesh.material.color.setHex(color);
             }
 
-            // Set position of the mesh
             mesh.position.set(node.x, node.y, node.z);
-            const label = this.nodeLabels.get(node.id); // Get associated label
+            const label = this.nodeLabels.get(node.id);
             if (label) {
-                // Set position of the label above the node
                 label.position.set(node.x, node.y + size + 2, node.z);
-                this.updateNodeLabel(label, node.label || node.id, fileSize); // Update the label text
+                this.updateNodeLabel(label, node.label || node.id, fileSize);
             }
         });
     }
 
-    /**
-     * Calculate the size of a node based on its file size.
-     * @param {number} fileSize - The file size of the node.
-     * @returns {number} - The calculated size of the node.
-     */
     calculateNodeSize(fileSize) {
-        // Logarithmic scaling for better size distribution
-        const logSize = Math.log(fileSize + 1) / Math.log(10); // Calculate log10 of the file size
-        return Math.max(this.minNodeSize, Math.min(this.maxNodeSize, logSize * this.nodeSizeScalingFactor)); // Scale and clamp the size
+        const logSize = Math.log(fileSize + 1) / Math.log(10);
+        return Math.max(this.minNodeSize, Math.min(this.maxNodeSize, logSize * this.nodeSizeScalingFactor));
     }
 
-    /**
-    * Calculate the color of a node based on its last modified date.
-    * @param {Date} lastModified - The last modified date of the node.
-    * @returns {number} - The calculated color of the node.
-    */
     calculateNodeColor(lastModified) {
-        // Normalize the last modified date to a color gradient
-        const now = Date.now(); // Get the current time
-        const timeDifference = now - new Date(lastModified).getTime(); // Calculate the time difference in milliseconds
-
-        // Define thresholds for color scaling based on last modified time
-        const maxAge = 1000 * 60 * 60 * 24 * 30; // 30 days in milliseconds
-        const t = Math.min(timeDifference / maxAge, 1); // Normalize to [0, 1] based on the defined max age
-
-        // Calculate RGB values based on normalized time
-        const r = Math.floor(255 * (1 - t)); // Red component decreases with time
-        const g = Math.floor(255 * t); // Green component increases with time
-        const b = 100; // Keep the blue component constant for visibility
-
-        return (r << 16) | (g << 8) | b; // Combine RGB into a single hexadecimal color value
+        const now = Date.now();
+        const timeDifference = now - lastModified.getTime();
+        const maxAge = 1000 * 60 * 60 * 24 * 30;
+        const t = Math.min(timeDifference / maxAge, 1);
+        const r = Math.floor(255 * (1 - t));
+        const g = Math.floor(255 * t);
+        const b = 100;
+        return (r << 16) | (g << 8) | b;
     }
 
-
-    /**
-     * Create geometry for a node based on its size and file size.
-     * @param {number} size - The size of the node.
-     * @param {number} fileSize - The file size of the node.
-     * @returns {THREE.Geometry} - The created geometry for the node.
-     */
     createNodeGeometry(size, fileSize) {
-        // Create different geometries based on file size ranges
-        if (fileSize < 1000) { // < 1KB
-            return new THREE.SphereGeometry(size, 16, 16); // Sphere for small sizes
-        } else if (fileSize < 1000000) { // < 1MB
-            return new THREE.BoxGeometry(size, size, size); // Box for medium sizes
+        if (fileSize < 1000) {
+            return new THREE.SphereGeometry(size, 16, 16);
+        } else if (fileSize < 1000000) {
+            return new THREE.BoxGeometry(size, size, size);
         } else {
-            return new THREE.OctahedronGeometry(size); // Octahedron for large sizes
+            return new THREE.OctahedronGeometry(size);
         }
     }
 
-    /**
-     * Update the geometry of an existing node mesh.
-     * @param {THREE.Mesh} mesh - The existing node mesh.
-     * @param {number} size - The new size of the node.
-     * @param {number} fileSize - The file size of the node.
-     */
     updateNodeGeometry(mesh, size, fileSize) {
-        const newGeometry = this.createNodeGeometry(size, fileSize); // Create new geometry based on updated size
-        mesh.geometry.dispose(); // Dispose of old geometry
-        mesh.geometry = newGeometry; // Assign new geometry
+        const newGeometry = this.createNodeGeometry(size, fileSize);
+        mesh.geometry.dispose();
+        mesh.geometry = newGeometry;
     }
 
-    /**
-     * Create a label for a node.
-     * @param {string} text - The text for the label.
-     * @param {number} fileSize - The file size associated with the label.
-     * @returns {THREE.Sprite} - The created label as a sprite.
-     */
     createNodeLabel(text, fileSize) {
-        const canvas = document.createElement('canvas'); // Create an off-screen canvas for label
-        const context = canvas.getContext('2d'); // Get the 2D drawing context
-        context.font = `${this.labelFontSize}px Arial`; // Set font for the label
-        const metrics = context.measureText(text); // Measure text width
-        const textWidth = metrics.width; // Get text width
+        const canvasWidth = 256;
+        const canvasHeight = 64;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        const context = canvas.getContext('2d');
 
-        // Set canvas size based on text dimensions
-        canvas.width = textWidth + 20; // Increased padding
-        canvas.height = this.labelFontSize + 30; // Increased height for file size info
-
-        // Draw background and text on the canvas
-        context.fillStyle = 'rgba(0, 0, 0, 0.8)'; // Background color with transparency
-        context.fillRect(0, 0, canvas.width, canvas.height); // Draw background rectangle
-        context.font = `${this.labelFontSize}px Arial`; // Set font for label text
-        context.fillStyle = 'white'; // Set text color to white
-        context.fillText(text, 10, this.labelFontSize); // Draw the main label text
+        context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.font = `${this.labelFontSize}px Arial`;
+        context.fillStyle = 'white';
+        context.fillText(text, 10, this.labelFontSize, canvasWidth - 20);
         
-        // Add file size information
-        context.font = `${this.labelFontSize / 2}px Arial`; // Smaller font for file size
-        context.fillStyle = 'lightgray'; // Set text color to light gray
-        context.fillText(this.formatFileSize(fileSize), 10, this.labelFontSize + 20); // Draw file size text
+        context.font = `${this.labelFontSize / 2}px Arial`;
+        context.fillStyle = 'lightgray';
+        context.fillText(this.formatFileSize(fileSize), 10, this.labelFontSize + 20, canvasWidth - 20);
 
-        const texture = new THREE.CanvasTexture(canvas); // Create texture from canvas
-        const spriteMaterial = new THREE.SpriteMaterial({ map: texture }); // Create sprite material from texture
-        const sprite = new THREE.Sprite(spriteMaterial); // Create sprite for the label
-        sprite.scale.set(canvas.width / 10, canvas.height / 10, 1); // Scale sprite
-        sprite.layers.set(1); // Set layer for the label
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        sprite.scale.set(canvas.width / 10, canvas.height / 10, 1);
+        sprite.layers.set(WebXRVisualization.LAYERS.NODES);
 
-        spriteMaterial.depthWrite = false; // Disable depth writing for transparency
-        spriteMaterial.transparent = true; // Enable transparency for sprite material
+        spriteMaterial.depthWrite = false;
+        spriteMaterial.transparent = true;
 
-        return sprite; // Return the created sprite
+        sprite.userData.text = text;
+        sprite.userData.fileSize = fileSize;
+        return sprite;
     }
 
-    /**
-     * Update an existing node label.
-     * @param {THREE.Sprite} label - The label sprite to update.
-     * @param {string} text - The new text for the label.
-     * @param {number} fileSize - The file size associated with the label.
-     */
     updateNodeLabel(label, text, fileSize) {
-        const canvas = label.material.map.image; // Get the canvas from the label's material
-        const context = canvas.getContext('2d'); // Get the 2D drawing context
-        context.clearRect(0, 0, canvas.width, canvas.height); // Clear previous label content
-
-        // Redraw the updated background and text on the canvas
-        context.fillStyle = 'rgba(0, 0, 0, 0.8)'; // Background color with transparency
-        context.fillRect(0, 0, canvas.width, canvas.height); // Draw background rectangle
-        context.font = `${this.labelFontSize}px Arial`; // Set font for label text
-        context.fillStyle = 'white'; // Set text color to white
-        context.fillText(text, 10, this.labelFontSize); // Draw the main label text
-        
-        context.font = `${this.labelFontSize / 2}px Arial`; // Smaller font for file size
-        context.fillStyle = 'lightgray'; // Set text color to light gray
-        context.fillText(this.formatFileSize(fileSize), 10, this.labelFontSize + 20); // Draw file size text
-
-        label.material.map.needsUpdate = true; // Indicate that the texture needs to be updated
-    }
-
-    /**
-     * Format a file size into a human-readable string.
-     * @param {number} size - The file size in bytes.
-     * @returns {string} - The formatted file size string.
-     */
-    formatFileSize(size) {
-        const units = ['B', 'KB', 'MB', 'GB', 'TB']; // Define size units
-        let i = 0; // Unit index
-        while (size >= 1024 && i < units.length - 1) {
-            size /= 1024; // Convert size to next unit
-            i++; // Increment unit index
+        if (label.userData.text === text && label.userData.fileSize === fileSize) {
+            return; // No change, skip update
         }
-        return `${size.toFixed(2)} ${units[i]}`; // Return formatted size string
+
+        const canvas = label.material.map.image;
+        const context = canvas.getContext('2d');
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        context.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.font = `${this.labelFontSize}px Arial`;
+        context.fillStyle = 'white';
+        context.fillText(text, 10, this.labelFontSize, canvas.width - 20);
+        
+        context.font = `${this.labelFontSize / 2}px Arial`;
+        context.fillStyle = 'lightgray';
+        context.fillText(this.formatFileSize(fileSize), 10, this.labelFontSize + 20, canvas.width - 20);
+
+        if (label.material.map) {
+            label.material.map.dispose();
+        }
+        label.material.map = new THREE.CanvasTexture(canvas);
+        label.material.map.needsUpdate = true;
+        label.userData.text = text;
+        label.userData.fileSize = fileSize;
     }
 
-    /**
-     * Update edges based on new data.
-     * @param {Array} edges - The new edges data.
-     */
-    updateEdges(edges) {
-        console.log(`Updating edges: ${edges.length}`); // Log number of edges being updated
-        const existingEdgeKeys = new Set(edges.map(edge => `${edge.source}-${edge.target_node}`)); // Create a set of existing edge keys
+    formatFileSize(size) {
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let i = 0;
+        while (size >= 1024 && i < units.length - 1) {
+            size /= 1024;
+            i++;
+        }
+        return `${size.toFixed(2)} ${units[i]}`;
+    }
 
-        // Remove any edges that are no longer present
+    updateEdges(edges) {
+        console.log(`Updating edges: ${edges.length}`);
+        const existingEdgeKeys = new Set(edges.map(edge => `${edge.source}-${edge.target_node}`));
+
         this.edgeMeshes.forEach((line, edgeKey) => {
             if (!existingEdgeKeys.has(edgeKey)) {
-                this.scene.remove(line); // Remove line from scene
-                this.edgeMeshes.delete(edgeKey); // Remove from edge meshes map
+                this.scene.remove(line);
+                this.edgeMeshes.delete(edgeKey);
             }
         });
 
-        // Iterate through the new edges
         edges.forEach(edge => {
-            // Validate edge data
             if (!edge.source || !edge.target_node) {
-                console.warn('Invalid edge data:', edge); // Warn for invalid edge data
-                return; // Skip invalid edges
+                console.warn('Invalid edge data:', edge);
+                return;
             }
-            const edgeKey = `${edge.source}-${edge.target_node}`; // Create a unique key for the edge
-            let line = this.edgeMeshes.get(edgeKey); // Check if line already exists
-            const sourceMesh = this.nodeMeshes.get(edge.source); // Get source mesh
-            const targetMesh = this.nodeMeshes.get(edge.target_node); // Get target mesh
+            const edgeKey = `${edge.source}-${edge.target_node}`;
+            let line = this.edgeMeshes.get(edgeKey);
+            const sourceMesh = this.nodeMeshes.get(edge.source);
+            const targetMesh = this.nodeMeshes.get(edge.target_node);
             
             if (!line) {
-                // Create new edge line if it doesn't exist
                 if (sourceMesh && targetMesh) {
-                    const geometry = new THREE.BufferGeometry().setFromPoints([ // Create geometry from source and target positions
+                    const geometry = new THREE.BufferGeometry().setFromPoints([
                         sourceMesh.position,
                         targetMesh.position
                     ]);
-                    const material = new THREE.LineBasicMaterial({ // Create material for the line
+                    const material = new THREE.LineBasicMaterial({
                         color: this.edgeColor,
                         transparent: true,
-                        opacity: this.edgeOpacity // Set opacity for transparency
+                        opacity: this.edgeOpacity
                     });
-                    line = new THREE.Line(geometry, material); // Create line from geometry and material
-                    line.layers.enable(2); // Set layer for the edge
-                    this.scene.add(line); // Add line to the scene
-                    this.edgeMeshes.set(edgeKey, line); // Store the line in the map
+                    line = new THREE.Line(geometry, material);
+                    line.layers.set(WebXRVisualization.LAYERS.EDGES);
+                    this.scene.add(line);
+                    this.edgeMeshes.set(edgeKey, line);
                 } else {
-                    console.warn(`Unable to create edge: ${edgeKey}. Source or target node not found.`); // Warn if nodes not found
+                    console.warn(`Unable to create edge: ${edgeKey}. Source or target node not found.`);
                 }
             } else if (sourceMesh && targetMesh) {
-                // Update existing edge if it already exists
-                const positions = line.geometry.attributes.position.array; // Get position array from geometry
-                // Update positions to match current node positions
+                const positions = line.geometry.attributes.position.array;
                 positions[0] = sourceMesh.position.x;
                 positions[1] = sourceMesh.position.y;
                 positions[2] = sourceMesh.position.z;
                 positions[3] = targetMesh.position.x;
                 positions[4] = targetMesh.position.y;
                 positions[5] = targetMesh.position.z;
-                line.geometry.attributes.position.needsUpdate = true; // Indicate that the geometry needs to be updated
-                line.material.color.setHex(this.edgeColor); // Update color
-                line.material.opacity = this.edgeOpacity; // Update opacity
-                line.material.needsUpdate = true; // Indicate that the material needs to be updated
+                line.geometry.attributes.position.needsUpdate = true;
+                line.material.color.setHex(this.edgeColor);
+                line.material.opacity = this.edgeOpacity;
+                line.material.needsUpdate = true;
             } else {
-                console.warn(`Unable to update edge: ${edgeKey}. Source or target node not found.`); // Warn if nodes not found
+                console.warn(`Unable to update edge: ${edgeKey}. Source or target node not found.`);
             }
         });
     }
 
-    /**
-     * Animate the scene.
-     */
-    animate() {
-        this.animationFrameId = requestAnimationFrame(this.animate.bind(this)); // Request the next animation frame
-        this.controls.update(); // Update controls for camera movement
+    renderBloom(mask) {
+        if (mask) {
+            this.scene.traverse((obj) => {
+                if (obj.isMesh && (obj.layers.mask & this.bloomLayer.mask) === 0) {
+                    this.materials[obj.uuid] = obj.material;
+                    obj.material = this.darkMaterial;
+                }
+            });
+        }
 
-        // Rotate hologram children for animation
-        this.hologramGroup.children.forEach(child => {
-            child.rotation.x += child.userData.rotationSpeed; // Rotate based on defined speed
-            child.rotation.y += child.userData.rotationSpeed; // Rotate based on defined speed
-        });
+        this.bloomComposer.render();
 
-        // Update label orientations to face the camera
-        this.nodeLabels.forEach(label => {
-            label.lookAt(this.camera.position); // Make label face the camera
-        });
-
-        this.composer.render(); // Render the scene with post-processing effects
-    }
-
-    /**
-     * Handle window resize events.
-     */
-    onWindowResize() {
-        console.log('Window resized'); // Log when window is resized
-        this.camera.aspect = window.innerWidth / window.innerHeight; // Update camera aspect ratio
-        this.camera.updateProjectionMatrix(); // Update projection matrix for the camera
-        this.renderer.setSize(window.innerWidth, window.innerHeight); // Update renderer size
-        if (this.composer) {
-            this.composer.setSize(window.innerWidth, window.innerHeight); // Update composer size
+        if (mask) {
+            this.scene.traverse((obj) => {
+                if (this.materials[obj.uuid]) {
+                    obj.material = this.materials[obj.uuid];
+                    delete this.materials[obj.uuid];
+                }
+            });
         }
     }
 
-    /**
-     * Dispose of the visualization and release resources.
-     */
+    animate() {
+        this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+        this.controls.update();
+
+        this.hologramGroup.children.forEach(child => {
+            child.rotation.x += child.userData.rotationSpeed;
+            child.rotation.y += child.userData.rotationSpeed;
+        });
+
+        const worldPosition = new THREE.Vector3();
+        this.camera.getWorldPosition(worldPosition);
+        this.nodeLabels.forEach(label => {
+            label.lookAt(worldPosition);
+        });
+
+        // Render the scene into the render target
+        this.renderer.setRenderTarget(this.renderTargetScene);
+        this.renderer.clear();
+        this.camera.layers.set(WebXRVisualization.LAYERS.ALL);
+        this.renderer.render(this.scene, this.camera);
+
+        // Update the baseTexture uniform
+        this.finalPass.material.uniforms.baseTexture.value = this.renderTargetScene.texture;
+
+        // Render bloom
+        this.camera.layers.set(this.bloomLayer.mask);
+        this.renderBloom(true);
+
+        // Update the bloomTexture uniform
+        this.finalPass.material.uniforms.bloomTexture.value = this.bloomComposer.renderTarget2.texture;
+
+        // Reset camera layers
+        this.camera.layers.set(WebXRVisualization.LAYERS.ALL);
+
+        // Render the final composite
+        this.renderer.setRenderTarget(null); // Render to screen
+        this.finalComposer.render();
+    }
+
+    onWindowResize() {
+        console.log('Window resized');
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        if (this.bloomComposer && this.finalComposer) {
+            this.bloomComposer.setSize(window.innerWidth, window.innerHeight);
+            this.finalComposer.setSize(window.innerWidth, window.innerHeight);
+        }
+    }
+
     dispose() {
-        console.log('Disposing WebXRVisualization'); // Log when disposing
+        console.log('Disposing WebXRVisualization');
         if (this.animationFrameId) {
-            cancelAnimationFrame(this.animationFrameId); // Cancel any running animation frames
+            cancelAnimationFrame(this.animationFrameId);
         }
         this.scene.traverse(object => {
-            // Traverse through the scene and dispose of geometries and materials
             if (object.geometry) {
-                object.geometry.dispose(); // Dispose of geometry
+                object.geometry.dispose();
             }
             if (object.material) {
                 if (Array.isArray(object.material)) {
-                    object.material.forEach(material => material.dispose()); // Dispose of each material if it's an array
+                    object.material.forEach(material => material.dispose());
                 } else {
-                    object.material.dispose(); // Dispose of the material
+                    object.material.dispose();
                 }
             }
         });
-        this.renderer.dispose(); // Dispose of the renderer
-        if (this.controls) {
-            this.controls.dispose(); // Dispose of the controls
-        }
-        console.log('WebXRVisualization disposed'); // Log completion of disposal
-    }
-
-    /**
-     * Update node labels in the scene.
-     */
-    updateNodeLabels() {
-        console.log('Updating node labels'); // Log when updating labels
-        this.nodeLabels.forEach((label, nodeId) => {
-            const node = this.nodeMeshes.get(nodeId); // Get the associated node mesh
-            if (node) {
-                this.scene.remove(label); // Remove the old label from the scene
-                const newLabel = this.createNodeLabel(label.userData.text); // Create a new label
-                newLabel.position.copy(label.position); // Set position to match old label
-                this.scene.add(newLabel); // Add the new label to the scene
-                this.nodeLabels.set(nodeId, newLabel); // Update the map with the new label
+        this.nodeLabels.forEach(label => {
+            if (label.material.map) {
+                label.material.map.dispose();
             }
+            label.material.dispose();
+            this.scene.remove(label);
         });
-        console.log('Node labels update completed'); // Log completion of label update
+        this.renderer.dispose();
+        if (this.controls) {
+            this.controls.dispose();
+        }
+        window.removeEventListener('resize', this.onWindowResize, false);
+        console.log('WebXRVisualization disposed');
     }
 
-    /**
-     * Update bloom passes based on current settings.
-     */
+    updateVisualFeatures(changes) {
+        console.log('Updating visual features:', changes);
+        let needsUpdate = false;
+        let bloomChanged = false;
+        let layoutChanged = false;
+
+        for (const [name, value] of Object.entries(changes)) {
+            if (this.hasOwnProperty(name)) {
+                console.log(`Setting property ${name} to`, value);
+                this[name] = value;
+                needsUpdate = true;
+
+                if (name.includes('bloom')) {
+                    bloomChanged = true;
+                }
+
+                if (name.includes('forceDirected')) {
+                    layoutChanged = true;
+                }
+            } else {
+                console.warn(`Property ${name} does not exist on WebXRVisualization`);
+            }
+        }
+
+        if (needsUpdate) {
+            if (layoutChanged) {
+                this.updateVisualization();
+            } else {
+                this.updateNodes(this.graphDataManager.getGraphData().nodes);
+                this.updateEdges(this.graphDataManager.getGraphData().edges);
+            }
+            
+            if (changes.hologramScale !== undefined) {
+                this.hologramGroup.scale.set(this.hologramScale, this.hologramScale, this.hologramScale);
+            }
+        }
+
+        if (bloomChanged) {
+            this.updateBloomPass();
+        }
+
+        this.finalComposer.render();
+        console.log('Visual features update completed');
+    }
+
     updateBloomPass() {
-        console.log('Updating bloom passes'); // Log when updating bloom passes
-        if (this.nodeBloomPass) {
-            this.nodeBloomPass.strength = this.nodeBloomStrength; // Update strength for node bloom
-            this.nodeBloomPass.radius = this.nodeBloomRadius; // Update radius for node bloom
-            this.nodeBloomPass.threshold = this.nodeBloomThreshold; // Update threshold for node bloom
-            console.log('Node bloom updated:', {
-                strength: this.nodeBloomStrength,
-                radius: this.nodeBloomRadius,
-                threshold: this.nodeBloomThreshold
+        console.log('Updating bloom pass');
+        const bloomPass = this.bloomComposer.passes.find(pass => pass instanceof UnrealBloomPass);
+        if (bloomPass) {
+            bloomPass.strength = this.bloomStrength;
+            bloomPass.radius = this.bloomRadius;
+            bloomPass.threshold = this.bloomThreshold;
+            console.log('Bloom pass updated:', {
+                strength: this.bloomStrength,
+                radius: this.bloomRadius,
+                threshold: this.bloomThreshold
             });
         }
-        if (this.edgeBloomPass) {
-            this.edgeBloomPass.strength = this.edgeBloomStrength; // Update strength for edge bloom
-            this.edgeBloomPass.radius = this.edgeBloomRadius; // Update radius for edge bloom
-            this.edgeBloomPass.threshold = this.edgeBloomThreshold; // Update threshold for edge bloom
-            console.log('Edge bloom updated:', {
-                strength: this.edgeBloomStrength,
-                radius: this.edgeBloomRadius,
-                threshold: this.edgeBloomThreshold
-            });
-        }
-        if (this.environmentBloomPass) {
-            this.environmentBloomPass.strength = this.environmentBloomStrength; // Update strength for environment bloom
-            this.environmentBloomPass.radius = this.environmentBloomRadius; // Update radius for environment bloom
-            this.environmentBloomPass.threshold = this.environmentBloomThreshold; // Update threshold for environment bloom
-            console.log('Environment bloom updated:', {
-                strength: this.environmentBloomStrength,
-                radius: this.environmentBloomRadius,
-                threshold: this.environmentBloomThreshold
-            });
-        }
-        console.log('Bloom passes update completed'); // Log completion of bloom pass updates
     }
 
-    /**
-     * Handle input from a Spacemouse device.
-     * @param {number} x - Movement along the x-axis.
-     * @param {number} y - Movement along the y-axis.
-     * @param {number} z - Movement along the z-axis.
-     * @param {number} rx - Rotation around the x-axis.
-     * @param {number} ry - Rotation around the y-axis.
-     * @param {number} rz - Rotation around the z-axis.
-     */
     handleSpacemouseInput(x, y, z, rx, ry, rz) {
         if (!this.camera || !this.controls) {
-            console.warn('Camera or controls not initialized for Spacemouse input'); // Warn if not initialized
-            return; // Skip input handling if not initialized
+            console.warn('Camera or controls not initialized for Spacemouse input');
+            return;
         }
 
-        // Update camera position based on Spacemouse input
-        this.camera.position.x += x * TRANSLATION_SPEED;
-        this.camera.position.y += y * TRANSLATION_SPEED;
-        this.camera.position.z += z * TRANSLATION_SPEED;
-        
-        // Update camera rotation based on Spacemouse input
-        this.camera.rotation.x += rx * ROTATION_SPEED;
-        this.camera.rotation.y += ry * ROTATION_SPEED;
-        this.camera.rotation.z += rz * ROTATION_SPEED;
-
-        this.controls.update(); // Update controls after position/rotation changes
+        this.controls.rotateLeft(ry * WebXRVisualization.ROTATION_SPEED);
+        this.controls.rotateUp(rx * WebXRVisualization.ROTATION_SPEED);
+        this.controls.pan(-x * WebXRVisualization.TRANSLATION_SPEED, y * WebXRVisualization.TRANSLATION_SPEED);
+        this.controls.dolly(z * WebXRVisualization.TRANSLATION_SPEED);
+        this.controls.update();
     }
 
-    /**
-     * Debugging utility for node labels.
-     */
     debugLabels() {
-        console.log('Debugging labels'); // Log when debugging labels
-        console.log('Total labels:', this.nodeLabels.size); // Log total number of labels
+        console.log('Debugging labels');
+        console.log('Total labels:', this.nodeLabels.size);
 
-        // Update camera matrices for frustum calculations
         this.camera.updateMatrixWorld();
         this.camera.updateProjectionMatrix();
 
-        // Create a frustum based on the camera's projection matrix
         const frustum = new THREE.Frustum();
         const cameraViewProjectionMatrix = new THREE.Matrix4();
         cameraViewProjectionMatrix.multiplyMatrices(
             this.camera.projectionMatrix,
             this.camera.matrixWorldInverse
         );
-        frustum.setFromProjectionMatrix(cameraViewProjectionMatrix); // Set the frustum based on the matrix
+        frustum.setFromProjectionMatrix(cameraViewProjectionMatrix);
 
-        // Log information for each label
         this.nodeLabels.forEach((label, nodeId) => {
             console.log(`Label for node ${nodeId}:`, {
-                position: label.position.toArray(), // Log position of the label
-                visible: label.visible, // Log visibility of the label
-                inFrustum: frustum.containsPoint(label.position), // Check if label is within the camera's frustum
+                position: label.position.toArray(),
+                visible: label.visible,
+                inFrustum: frustum.containsPoint(label.position),
                 material: {
-                    color: label.material.color.getHex(), // Log color of the label's material
-                    opacity: label.material.opacity, // Log opacity of the label's material
-                    transparent: label.material.transparent, // Log transparency setting
-                    visible: label.material.visible // Log visibility of the label's material
+                    color: label.material.color.getHex(),
+                    opacity: label.material.opacity,
+                    transparent: label.material.transparent,
+                    visible: label.material.visible
                 },
                 geometry: {
-                    type: label.geometry.type, // Log geometry type
-                    parameters: label.geometry.parameters // Log geometry parameters
+                    type: label.geometry.type,
+                    parameters: label.geometry.parameters
                 }
             });
         });
