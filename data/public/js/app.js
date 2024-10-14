@@ -77,8 +77,8 @@ class App {
             },
             data() {
                 return {
-                    websocketService: null,
-                    visualization: null
+                    websocketService: this.websocketService,
+                    visualization: this.visualization
                 };
             },
             template: `
@@ -105,7 +105,7 @@ class App {
                             this.updateForceDirectedParams(data.name, data.value);
                         } else {
                             // Handle other visual features
-                        this.visualization.updateVisualFeatures({ [data.name]: data.value });
+                            this.visualization.updateVisualFeatures({ [data.name]: data.value });
                         }
                     } else {
                         console.error('Cannot update visualization: not initialized');
@@ -126,16 +126,19 @@ class App {
                     }
                 },
                 toggleFullscreen() {
-                    // ... (previous code remains unchanged)
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen();
+                    } else {
+                        if (document.exitFullscreen) {
+                            document.exitFullscreen();
+                        }
+                    }
                 },
                 enableSpacemouse() {
-                    // ... (previous code remains unchanged)
+                    enableSpacemouse();
                 }
             },
             mounted() {
-                // Assign the initialized services to the Vue app's data properties
-                this.websocketService = app.config.globalProperties.$websocketService;
-                this.visualization = app.config.globalProperties.$visualization;
                 console.log('Vue app mounted with WebSocketService and Visualization:', this.websocketService, this.visualization);
             }
         });
@@ -147,18 +150,6 @@ class App {
         app.config.warnHandler = (msg, vm, trace) => {
             console.warn('Vue Warning:', msg, trace);
         };
-
-        if (this.websocketService) {
-            app.config.globalProperties.$websocketService = this.websocketService;
-        } else {
-            console.error('WebsocketService not available for Vue app');
-        }
-
-        if (this.visualization) {
-            app.config.globalProperties.$visualization = this.visualization;
-        } else {
-            console.error('Visualization not available for Vue app');
-        }
 
         app.mount('#app');
         console.log('Vue App mounted');

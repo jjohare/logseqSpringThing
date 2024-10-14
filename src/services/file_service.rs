@@ -3,14 +3,11 @@
 use crate::models::metadata::Metadata;
 use crate::config::Settings;
 use serde::{Deserialize, Serialize};
-use reqwest::Client;
 use async_trait::async_trait;
 use log::{info, debug, error};
 use regex::Regex;
-use sha1::{Sha1, Digest};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::Path;
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -167,7 +164,7 @@ impl FileService {
 
     /// Loads existing metadata from the local store or creates a new metadata file if it doesn't exist.
     pub async fn load_or_create_metadata() -> Result<HashMap<String, Metadata>, Box<dyn StdError + Send + Sync>> {
-        if Path::new(METADATA_PATH).exists() {
+        if std::path::Path::new(METADATA_PATH).exists() {
             let metadata_content = fs::read_to_string(METADATA_PATH)?;
             let metadata: HashMap<String, Metadata> = serde_json::from_str(&metadata_content)?;
             Ok(metadata)
@@ -183,7 +180,7 @@ impl FileService {
     pub async fn save_metadata(metadata_map: &HashMap<String, Metadata>) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let metadata_path = METADATA_PATH;
         
-        if let Some(parent_dir) = Path::new(metadata_path).parent() {
+        if let Some(parent_dir) = std::path::Path::new(metadata_path).parent() {
             fs::create_dir_all(parent_dir)?;
             debug!("Ensured directory exists: {}", parent_dir.display());
         }

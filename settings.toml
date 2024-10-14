@@ -53,7 +53,6 @@ max_retries = 3
 retry_delay = 5
 api_client_timeout = 30
 
-
 [visualization]
 node_color = "0x1A0B31"
 edge_color = "0xff0000"
@@ -64,10 +63,8 @@ hologram_opacity = 0.1
 edge_opacity = 0.3
 label_font_size = 36
 fog_density = 0.002
-
-# Force-directed graph settings
 force_directed_iterations = 100
-force_directed_repulsion = 1.0
+force_directed_repulsion = 5.0
 force_directed_attraction = 0.01
 
 # Separate bloom configurations

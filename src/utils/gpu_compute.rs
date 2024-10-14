@@ -1,40 +1,16 @@
 use wgpu::{Device, Queue, Buffer, BindGroup, ComputePipeline, InstanceDescriptor};
 use wgpu::util::DeviceExt;
 use std::io::Error;
-use log::{error, info, debug};
+use log::{error, debug};
 use crate::models::graph::GraphData;
 use crate::models::node::{Node, GPUNode};
 use crate::models::edge::GPUEdge;
-use bytemuck::{Pod, Zeroable};
+use crate::models::simulation_params::SimulationParams;
 use rand::Rng;
 
 // Constants for optimal performance on NVIDIA GPUs
 const WORKGROUP_SIZE: u32 = 256; // Optimal workgroup size for NVIDIA GPUs
 const INITIAL_BUFFER_SIZE: u64 = 1024 * 1024; // 1MB initial buffer size
-
-// Define the simulation parameters structure
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct SimulationParams {
-    iterations: u32,
-    repulsion: f32,
-    attraction: f32,
-    damping: f32,
-    delta_time: f32,
-}
-
-// Implement default values for SimulationParams
-impl Default for SimulationParams {
-    fn default() -> Self {
-        Self {
-            iterations: 100,
-            repulsion: 1.0,
-            attraction: 0.01,
-            damping: 0.9,
-            delta_time: 0.1,
-        }
-    }
-}
 
 /// Struct representing the GPU compute capabilities
 pub struct GPUCompute {
@@ -213,7 +189,7 @@ impl GPUCompute {
 
         // Convert edges to GPU representation
         let gpu_edges: Vec<GPUEdge> = graph.edges.iter().map(|edge| edge.to_gpu_edge(&graph.nodes)).collect();
-
+       
         // Update or recreate the nodes buffer
         let nodes_data = bytemuck::cast_slice(&gpu_nodes);
         if (nodes_data.len() as u64) > self.nodes_buffer.size() {
@@ -258,15 +234,13 @@ impl GPUCompute {
             ],
         });
 
-        info!("Updated GPU buffers: {} nodes, {} edges", self.num_nodes, self.num_edges);
+        debug!("Updated GPU buffers: {} nodes, {} edges", self.num_nodes, self.num_edges);
         Ok(())
     }
 
     /// Updates the force-directed graph parameters
-    pub fn set_force_directed_params(&mut self, iterations: u32, repulsion: f32, attraction: f32) -> Result<(), Error> {
-        self.simulation_params.iterations = iterations;
-        self.simulation_params.repulsion = repulsion;
-        self.simulation_params.attraction = attraction;
+    pub fn set_force_directed_params(&mut self, params: &SimulationParams) -> Result<(), Error> {
+        self.simulation_params = *params;
 
         self.queue.write_buffer(
             &self.simulation_params_buffer,
@@ -311,7 +285,7 @@ impl GPUCompute {
         });
 
         encoder.copy_buffer_to_buffer(&self.nodes_buffer, 0, &staging_buffer, 0, buffer_size as u64);
-
+       
         self.queue.submit(Some(encoder.finish()));
 
         let buffer_slice = staging_buffer.slice(..);

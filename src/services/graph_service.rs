@@ -5,9 +5,10 @@ use crate::models::graph::GraphData;
 use crate::models::node::Node;
 use crate::models::edge::Edge;
 use crate::models::metadata::Metadata;
+use crate::models::simulation_params::SimulationParams;
 use crate::utils::gpu_compute::GPUCompute;
 use log::{info, warn, debug};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tokio::fs;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -82,11 +83,9 @@ impl GraphService {
 
         // Calculate layout using GPU if available, otherwise fall back to CPU
         let settings = app_state.settings.read().await;
-        let fd_iterations = settings.visualization.force_directed_iterations as u32;
-        let fd_repulsion = settings.visualization.force_directed_repulsion;
-        let fd_attraction = settings.visualization.force_directed_attraction;
+        let simulation_params = SimulationParams::from(&settings.visualization);
 
-        Self::calculate_layout(&app_state.gpu_compute, &mut graph, fd_iterations, fd_repulsion, fd_attraction).await?;
+        Self::calculate_layout(&app_state.gpu_compute, &mut graph, &simulation_params).await?;
         
         debug!("Final sample node data after layout calculation: {:?}", graph.nodes.first());
         
@@ -97,16 +96,14 @@ impl GraphService {
     async fn calculate_layout(
         gpu_compute: &Option<Arc<RwLock<GPUCompute>>>,
         graph: &mut GraphData,
-        iterations: u32,
-        repulsion: f32,
-        attraction: f32
+        simulation_params: &SimulationParams
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match gpu_compute {
             Some(gpu) => {
                 info!("Using GPU for layout calculation");
                 let mut gpu_compute = gpu.write().await; // Acquire write lock
                 gpu_compute.set_graph_data(graph)?;
-                gpu_compute.set_force_directed_params(iterations, repulsion, attraction)?;
+                gpu_compute.set_force_directed_params(simulation_params)?;
                 gpu_compute.compute_forces()?;
                 let updated_nodes = gpu_compute.get_updated_positions().await?;
 
@@ -123,7 +120,7 @@ impl GraphService {
             },
             None => {
                 warn!("GPU not available. Falling back to CPU-based layout calculation.");
-                Self::calculate_layout_cpu(graph, iterations, repulsion, attraction);
+                Self::calculate_layout_cpu(graph, simulation_params);
                 debug!("CPU layout calculation complete. Sample updated node: {:?}", graph.nodes.first());
             }
         }
@@ -131,10 +128,10 @@ impl GraphService {
     }
 
     /// Calculates the force-directed layout using CPU.
-    fn calculate_layout_cpu(graph: &mut GraphData, iterations: u32, repulsion: f32, attraction: f32) {
+    fn calculate_layout_cpu(graph: &mut GraphData, simulation_params: &SimulationParams) {
         const DAMPING: f32 = 0.9;
 
-        for _ in 0..iterations {
+        for _ in 0..simulation_params.iterations {
             // Calculate repulsive forces
             for i in 0..graph.nodes.len() {
                 for j in (i + 1)..graph.nodes.len() {
@@ -142,7 +139,7 @@ impl GraphService {
                     let dy = graph.nodes[j].y - graph.nodes[i].y;
                     let dz = graph.nodes[j].z - graph.nodes[i].z;
                     let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(0.1);
-                    let force = repulsion / (distance * distance);
+                    let force = simulation_params.repulsion_strength / (distance * distance);
                     let fx = force * dx / distance;
                     let fy = force * dy / distance;
                     let fz = force * dz / distance;
@@ -164,7 +161,7 @@ impl GraphService {
                 let dy = graph.nodes[target].y - graph.nodes[source].y;
                 let dz = graph.nodes[target].z - graph.nodes[source].z;
                 let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(0.1);
-                let force = attraction * distance * edge.weight;
+                let force = simulation_params.attraction_strength * distance * edge.weight;
                 let fx = force * dx / distance;
                 let fy = force * dy / distance;
                 let fz = force * dz / distance;
@@ -193,26 +190,22 @@ impl GraphService {
     pub fn find_shortest_path(graph: &GraphData, start: &str, end: &str) -> Result<Vec<String>, String> {
         let mut distances: HashMap<String, f32> = HashMap::new();
         let mut previous: HashMap<String, Option<String>> = HashMap::new();
-        let mut unvisited: HashSet<String> = HashSet::new();
+        let mut unvisited: Vec<String> = Vec::new();
     
         for node in &graph.nodes {
             distances.insert(node.id.clone(), f32::INFINITY);
             previous.insert(node.id.clone(), None);
-            unvisited.insert(node.id.clone());
+            unvisited.push(node.id.clone());
         }
         distances.insert(start.to_string(), 0.0);
     
         while !unvisited.is_empty() {
-            let current = unvisited.iter()
-                .min_by(|a, b| distances[*a].partial_cmp(&distances[*b]).unwrap())
-                .cloned()
-                .unwrap();
+            unvisited.sort_by(|a, b| distances[a].partial_cmp(&distances[b]).unwrap());
+            let current = unvisited.remove(0);
     
             if current == end {
                 break;
             }
-    
-            unvisited.remove(&current);
     
             for edge in &graph.edges {
                 if edge.source == current || edge.target_node == current {

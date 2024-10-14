@@ -24,10 +24,10 @@ struct EdgesBuffer {
 // Parameters for the simulation.
 struct SimulationParams {
     iterations: u32,
-    repulsion: f32,
-    attraction: f32,
+    repulsion_strength: f32,
+    attraction_strength: f32,
     damping: f32,
-    delta_time: f32,
+    padding: u32,
 }
 
 // Uniform buffer containing simulation parameters.
@@ -74,7 +74,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 
                 // Check for zero distance to avoid division by zero
                 if (distance_sq > 0.0001) {
-                    let repulsive_force = simulation_params.repulsion / distance_sq;
+                    let repulsive_force = simulation_params.repulsion_strength / distance_sq;
                     force = force + normalize(direction) * repulsive_force;
                 }
             }
@@ -90,17 +90,17 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 let direction = other_node.position - node.position;
                 let distance = length(direction);
                 if (distance > 0.0001) {
-                    let attractive_force = simulation_params.attraction * edge.weight * distance;
+                    let attractive_force = simulation_params.attraction_strength * edge.weight * distance;
                     force = force + normalize(direction) * attractive_force;
                 }
             }
         }
 
         // Apply damping to velocity.
-        node.velocity = (node.velocity + force * simulation_params.delta_time) * simulation_params.damping;
+        node.velocity = (node.velocity + force) * simulation_params.damping;
 
         // Update node's position.
-        node.position = node.position + node.velocity * simulation_params.delta_time;
+        node.position = node.position + node.velocity;
 
         // Ensure final position and velocity are valid
         if (!is_valid_float3(node.position)) {

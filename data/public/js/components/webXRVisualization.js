@@ -6,7 +6,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
  * 
  * This class manages the 3D visualization of a graph using Three.js.
  * It handles the creation and updating of nodes, edges, labels, and a hologram structure.
- * Post-processing effects and debug elements have been removed for simplicity.
  */
 export class WebXRVisualization {
     // Constants for Spacemouse sensitivity
@@ -49,10 +48,13 @@ export class WebXRVisualization {
         this.selectedNode = null;
 
         // Force-directed layout parameters
-        this.forceDirectedIterations = 100;
-        this.forceDirectedRepulsion = 1.0;
-        this.forceDirectedAttraction = 0.01;
-        this.damping = 0.85;
+        this.forceDirectedParams = {
+            iterations: 100,
+            repulsion: 1.0,
+            attraction: 0.01,
+            damping: 0.85,
+            deltaTime: 0.016
+        };
 
         // Materials for temporarily hiding objects during selective rendering
         this.darkMaterial = new THREE.MeshBasicMaterial({ color: 'black' });
@@ -64,205 +66,57 @@ export class WebXRVisualization {
     }
 
     /**
-     * Initializes various settings for the visualization.
+     * Initializes the settings for the visualization.
+     * This method sets up default values and calls initThreeJS.
      */
     initializeSettings() {
-        console.log('Initializing settings');
+        console.log('Initializing WebXRVisualization settings');
+        // Initialize default settings
         this.nodeColor = 0x1A0B31;
         this.edgeColor = 0xff0000;
         this.hologramColor = 0xFFD700;
-        this.nodeSizeScalingFactor = 0.01;
-        this.hologramScale = 1;
+        this.nodeSizeScalingFactor = 5;
+        this.hologramScale = 5;
         this.hologramOpacity = 0.1;
         this.edgeOpacity = 0.3;
-        this.labelFontSize = 20;
+        this.labelFontSize = 36;
         this.fogDensity = 0.002;
-        this.minNodeSize = 1;
-        this.maxNodeSize = 10;
-        console.log('Settings initialized');
+
+        // Initialize Three.js scene
+        this.initThreeJS();
     }
 
     /**
-     * Initializes Three.js components, including renderer, controls, lights, and hologram structure.
+     * Initializes the Three.js scene, including lights, controls, and event listeners.
      */
     initThreeJS() {
         console.log('Initializing Three.js');
-        const container = document.getElementById('scene-container');
-        if (container) {
-            container.appendChild(this.renderer.domElement);
-        } else {
-            console.error("Could not find 'scene-container' element");
-            return;
-        }
+        document.body.appendChild(this.renderer.domElement);
 
-        // Set up OrbitControls for camera manipulation
+        // Set up controls
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
 
-        // Add exponential fog to the scene
+        // Add fog to the scene
         this.scene.fog = new THREE.FogExp2(0x000000, this.fogDensity);
 
-        // Add lighting to the scene
-        this.addLights();
-
-        // Create hologram structures
-        this.createHologramStructure();
-
-        // Add event listener for window resize
-        window.addEventListener('resize', this.onWindowResize.bind(this), false);
-
-        // Start the animation loop
-        this.animate();
-        console.log('Three.js initialization completed');
-    }
-
-    /**
-     * Adds ambient and directional lights to the scene.
-     */
-    addLights() {
-        console.log('Adding lights to the scene');
-        const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Soft white light
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-        directionalLight.position.set(50, 50, 50);
+        // Add directional light
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(0, 1, 0);
         this.scene.add(directionalLight);
-        console.log('Lights added to the scene');
-    }
 
-    /**
-     * Creates the hologram structure composed of various wireframe geometries.
-     */
-    createHologramStructure() {
-        console.log('Creating hologram structure');
-        this.hologramGroup.clear();
-
-        // Icosahedron for hologram
-        const buckyGeometry = new THREE.IcosahedronGeometry(40 * this.hologramScale, 1);
-        const buckyMaterial = new THREE.MeshBasicMaterial({
-            color: this.hologramColor,
-            wireframe: true,
-            transparent: true,
-            opacity: this.hologramOpacity
-        });
-        const buckySphere = new THREE.Mesh(buckyGeometry, buckyMaterial);
-        buckySphere.userData.rotationSpeed = 0.0001;
-        this.hologramGroup.add(buckySphere);
-
-        // Geodesic dome
-        const geodesicGeometry = new THREE.IcosahedronGeometry(10 * this.hologramScale, 1);
-        const geodesicMaterial = new THREE.MeshBasicMaterial({
-            color: this.hologramColor,
-            wireframe: true,
-            transparent: true,
-            opacity: this.hologramOpacity
-        });
-        const geodesicDome = new THREE.Mesh(geodesicGeometry, geodesicMaterial);
-        geodesicDome.userData.rotationSpeed = 0.0002;
-        this.hologramGroup.add(geodesicDome);
-
-        // Sphere for hologram
-        const triangleGeometry = new THREE.SphereGeometry(100 * this.hologramScale, 32, 32);
-        const triangleMaterial = new THREE.MeshBasicMaterial({
-            color: this.hologramColor,
-            wireframe: true,
-            transparent: true,
-            opacity: this.hologramOpacity
-        });
-        const triangleSphere = new THREE.Mesh(triangleGeometry, triangleMaterial);
-        triangleSphere.userData.rotationSpeed = 0.0003;
-        this.hologramGroup.add(triangleSphere);
-
+        // Add hologram group to the scene
         this.scene.add(this.hologramGroup);
-        console.log('Hologram structure created');
-    }
 
-    /**
-     * Updates the visualization based on the latest graph data.
-     */
-    updateVisualization() {
-        console.log('Updating visualization');
-        const graphData = this.graphDataManager.getGraphData();
-        if (!graphData) {
-            console.warn('No graph data available for visualization update');
-            return;
-        }
-        console.log('Graph data received:', graphData);
+        // Set up event listener for window resize
+        window.addEventListener('resize', this.onWindowResize.bind(this), false);
 
-        this.applyForceDirectedLayout(graphData);
-        this.updateNodes(graphData.nodes);
-        this.updateEdges(graphData.edges);
-        console.log('Visualization update completed');
-    }
-
-    /**
-     * Applies a basic force-directed layout to position nodes.
-     * @param {Object} graphData - The graph data containing nodes and edges.
-     */
-    applyForceDirectedLayout(graphData) {
-        console.log('Applying force-directed layout');
-        const nodes = graphData.nodes;
-        const edges = graphData.edges;
-
-        for (let iteration = 0; iteration < this.forceDirectedIterations; iteration++) {
-            // Apply repulsion between nodes
-            for (let i = 0; i < nodes.length; i++) {
-                nodes[i].vx = nodes[i].vx || 0;
-                nodes[i].vy = nodes[i].vy || 0;
-                nodes[i].vz = nodes[i].vz || 0;
-
-                for (let j = i + 1; j < nodes.length; j++) {
-                    const dx = nodes[j].x - nodes[i].x;
-                    const dy = nodes[j].y - nodes[i].y;
-                    const dz = nodes[j].z - nodes[i].z;
-                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    if (distance < 1e-6) continue;
-                    const force = this.forceDirectedRepulsion / (distance * distance);
-
-                    nodes[i].vx -= (dx * force) / distance;
-                    nodes[i].vy -= (dy * force) / distance;
-                    nodes[i].vz -= (dz * force) / distance;
-                    nodes[j].vx += (dx * force) / distance;
-                    nodes[j].vy += (dy * force) / distance;
-                    nodes[j].vz += (dz * force) / distance;
-                }
-            }
-
-            // Apply attraction along edges
-            for (const edge of edges) {
-                const source = nodes.find(node => node.id === edge.source);
-                const target = nodes.find(node => node.id === edge.target_node);
-                if (source && target) {
-                    const dx = target.x - source.x;
-                    const dy = target.y - source.y;
-                    const dz = target.z - source.z;
-                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    if (distance < 1e-6) continue;
-                    const force = this.forceDirectedAttraction * distance;
-
-                    source.vx += (dx * force) / distance;
-                    source.vy += (dy * force) / distance;
-                    source.vz += (dz * force) / distance;
-                    target.vx -= (dx * force) / distance;
-                    target.vy -= (dy * force) / distance;
-                    target.vz -= (dz * force) / distance;
-                }
-            }
-
-            // Apply velocities and damping
-            for (const node of nodes) {
-                node.vx *= this.damping;
-                node.vy *= this.damping;
-                node.vz *= this.damping;
-
-                node.x += node.vx;
-                node.y += node.vy;
-                node.z += node.vz;
-            }
-        }
-
-        console.log('Force-directed layout applied');
+        console.log('Three.js initialization complete');
     }
 
     /**
@@ -273,7 +127,7 @@ export class WebXRVisualization {
         console.log(`Updating nodes: ${nodes.length}`);
         const existingNodeIds = new Set(nodes.map(node => node.id));
 
-        // Remove meshes and labels for nodes that no longer exist
+        // Remove meshes for nodes that no longer exist
         this.nodeMeshes.forEach((mesh, nodeId) => {
             if (!existingNodeIds.has(nodeId)) {
                 this.scene.remove(mesh);
@@ -286,50 +140,37 @@ export class WebXRVisualization {
             }
         });
 
-        // Update or create meshes and labels for existing nodes
+        // Update or create meshes for existing nodes
         nodes.forEach(node => {
-            if (!node.id || typeof node.x !== 'number' || typeof node.y !== 'number' || typeof node.z !== 'number') {
-                console.warn('Invalid node data:', node);
-                return;
-            }
-
             let mesh = this.nodeMeshes.get(node.id);
-            const fileSize = node.metadata && node.metadata.file_size ? parseInt(node.metadata.file_size) : 1;
-            if (isNaN(fileSize) || fileSize <= 0) {
-                console.warn(`Invalid file_size for node ${node.id}:`, node.metadata.file_size);
-                return;
-            }
-
-            const size = Math.max(this.minNodeSize, Math.min(this.maxNodeSize, Math.log(fileSize + 1) * this.nodeSizeScalingFactor));
-            console.log(`Node ID: ${node.id}, File Size: ${fileSize}, Calculated Size: ${size}`);
-
             if (!mesh) {
-                // Create a new mesh for the node
-                const geometry = new THREE.SphereGeometry(size, 32, 32);
-                const material = new THREE.MeshStandardMaterial({ color: this.nodeColor });
+                // Create a new sphere for the node
+                const geometry = new THREE.SphereGeometry(1, 32, 32);
+                const material = new THREE.MeshPhongMaterial({ color: this.nodeColor });
                 mesh = new THREE.Mesh(geometry, material);
                 this.scene.add(mesh);
                 this.nodeMeshes.set(node.id, mesh);
 
-                // Create and add label for the node
-                const label = this.createNodeLabel(node.label || node.id);
+                // Create label for the node
+                const label = this.createNodeLabel(node.label);
                 this.scene.add(label);
                 this.nodeLabels.set(node.id, label);
-            } else {
-                // Update existing mesh's scale and color
-                mesh.scale.setScalar(size);
-                mesh.material.color.setHex(this.nodeColor);
             }
 
-            // Update mesh position
+            // Update node position and scale
             mesh.position.set(node.x, node.y, node.z);
+            const scale = Math.sqrt(node.weight || 1) * this.nodeSizeScalingFactor;
+            mesh.scale.set(scale, scale, scale);
 
             // Update label position
             const label = this.nodeLabels.get(node.id);
             if (label) {
-                label.position.set(node.x, node.y + size + 2, node.z);
+                label.position.set(node.x, node.y + scale + 2, node.z);
+                label.scale.set(scale * 0.5, scale * 0.5, 1);
             }
         });
+
+        console.log(`Node color set to: ${this.nodeColor.toString(16)}`);
     }
 
     /**
@@ -466,6 +307,51 @@ export class WebXRVisualization {
     }
 
     /**
+     * Updates the visualization based on the current graph data.
+     */
+    updateVisualization() {
+        console.log('Updating visualization');
+        if (this.graphDataManager) {
+            const { nodes, edges } = this.graphDataManager.getGraphData();
+            this.updateNodes(nodes);
+            this.updateEdges(edges);
+        } else {
+            console.error('GraphDataManager not available, cannot update visualization');
+        }
+    }
+
+    /**
+     * Updates visual features of the visualization based on provided settings.
+     * @param {Object} settings - Object containing visual settings to update.
+     */
+    updateVisualFeatures(settings) {
+        console.log('Updating visual features:', settings);
+        // Update the relevant properties based on the settings
+        if (settings.nodeColor !== undefined) {
+            this.nodeColor = settings.nodeColor;
+            this.nodeMeshes.forEach(mesh => {
+                mesh.material.color.setHex(this.nodeColor);
+                mesh.material.needsUpdate = true;
+            });
+        }
+        if (settings.edgeColor !== undefined) {
+            this.edgeColor = settings.edgeColor;
+            this.edgeMeshes.forEach(line => {
+                line.material.color.setHex(this.edgeColor);
+                line.material.needsUpdate = true;
+            });
+        }
+        if (settings.edgeOpacity !== undefined) {
+            this.edgeOpacity = settings.edgeOpacity;
+            this.edgeMeshes.forEach(line => {
+                line.material.opacity = this.edgeOpacity;
+                line.material.needsUpdate = true;
+            });
+        }
+        // Add more visual feature updates as needed
+    }
+
+    /**
      * Cleans up resources when disposing of the visualization.
      */
     dispose() {
@@ -506,85 +392,5 @@ export class WebXRVisualization {
         // Remove event listener
         window.removeEventListener('resize', this.onWindowResize.bind(this), false);
         console.log('WebXRVisualization disposed');
-    }
-
-    /**
-     * Updates visual features based on provided changes.
-     * @param {Object} changes - An object containing properties to update.
-     */
-    updateVisualFeatures(changes) {
-        console.log('Updating visual features:', changes);
-        let needsUpdate = false;
-        let layoutChanged = false;
-
-        for (const [name, value] of Object.entries(changes)) {
-            if (this.hasOwnProperty(name)) {
-                console.log(`Setting property ${name} to`, value);
-                this[name] = value;
-                needsUpdate = true;
-
-                if (name.includes('forceDirected')) {
-                    layoutChanged = true;
-                }
-            } else {
-                console.warn(`Property ${name} does not exist on WebXRVisualization`);
-            }
-        }
-
-        if (needsUpdate) {
-            if (layoutChanged) {
-                this.updateVisualization();
-            } else {
-                this.updateNodes(this.graphDataManager.getGraphData().nodes);
-                this.updateEdges(this.graphDataManager.getGraphData().edges);
-            }
-
-            if (changes.hologramScale !== undefined) {
-                this.hologramGroup.scale.set(this.hologramScale, this.hologramScale, this.hologramScale);
-            }
-        }
-
-        console.log('Visual features update completed');
-    }
-
-    /**
-     * Handles input from a spacemouse device to manipulate the camera.
-     * @param {Number} x - Translation along the X-axis.
-     * @param {Number} y - Translation along the Y-axis.
-     * @param {Number} z - Translation along the Z-axis.
-     * @param {Number} rx - Rotation around the X-axis.
-     * @param {Number} ry - Rotation around the Y-axis.
-     * @param {Number} rz - Rotation around the Z-axis.
-     */
-    handleSpacemouseInput(x, y, z, rx, ry, rz) {
-        if (!this.camera || !this.controls) {
-            console.warn('Camera or controls not initialized for Spacemouse input');
-            return;
-        }
-
-        // Translate the camera
-        this.camera.position.x += x * WebXRVisualization.TRANSLATION_SPEED;
-        this.camera.position.y += y * WebXRVisualization.TRANSLATION_SPEED;
-        this.camera.position.z += z * WebXRVisualization.TRANSLATION_SPEED;
-
-        // Rotate the camera
-        this.camera.rotation.x += rx * WebXRVisualization.ROTATION_SPEED;
-        this.camera.rotation.y += ry * WebXRVisualization.ROTATION_SPEED;
-        this.camera.rotation.z += rz * WebXRVisualization.ROTATION_SPEED;
-
-        this.controls.update();
-    }
-
-    /**
-     * Updates all node labels to ensure they face the camera.
-     */
-    updateNodeLabels() {
-        console.log('Updating node labels');
-        const worldPosition = new THREE.Vector3();
-        this.camera.getWorldPosition(worldPosition);
-        this.nodeLabels.forEach(label => {
-            label.lookAt(worldPosition);
-        });
-        console.log('Node labels update completed');
     }
 }
