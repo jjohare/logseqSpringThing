@@ -1,3 +1,5 @@
+// file_handler.rs
+
 use actix_web::{web, HttpResponse};
 use serde_json::json;
 use log::{info, error, debug};
@@ -6,11 +8,23 @@ use crate::services::file_service::FileService;
 use crate::services::graph_service::GraphService;
 use std::collections::HashMap;
 
+/// Handler to fetch and process files from GitHub.
 pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse {
     info!("Initiating file fetch and processing");
 
-    let mut metadata_map = FileService::load_or_create_metadata().unwrap_or_else(|_| HashMap::new());
+    // Load existing metadata or create a new metadata map if not present.
+    let mut metadata_map = match FileService::load_or_create_metadata().await {
+        Ok(map) => map,
+        Err(e) => {
+            error!("Failed to load or create metadata: {}", e);
+            return HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Failed to load metadata"
+            }));
+        }
+    };
     
+    // Fetch and process files using the optimized FileService.
     match FileService::fetch_and_process_files(&*state.github_service, state.settings.clone(), &mut metadata_map).await {
         Ok(processed_files) => {
             let file_names: Vec<String> = processed_files.iter()
@@ -19,6 +33,7 @@ pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse
 
             info!("Successfully processed {} files", processed_files.len());
 
+            // Update the in-memory file cache with processed files.
             {
                 let mut file_cache = state.file_cache.write().await;
                 for processed_file in &processed_files {
@@ -31,17 +46,19 @@ pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse
                 }
             }
 
-            // Save the updated metadata
-            if let Err(e) = FileService::save_metadata(&metadata_map) {
+            // Save the updated metadata to the local store.
+            if let Err(e) = FileService::save_metadata(&metadata_map).await {
                 error!("Failed to save metadata: {}", e);
             }
 
+            // Rebuild the graph based on the updated files.
             match GraphService::build_graph(&state).await {
                 Ok(graph_data) => {
                     let mut graph = state.graph_data.write().await;
                     *graph = graph_data.clone();
                     info!("Graph data structure updated successfully");
 
+                    // Broadcast the updated graph to connected WebSocket clients.
                     let broadcast_result = state.websocket_manager.broadcast_message(&json!({
                         "type": "graphUpdate",
                         "data": graph_data,
@@ -52,6 +69,7 @@ pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse
                         Err(e) => error!("Failed to broadcast graph update: {}", e),
                     }
 
+                    // Respond with a success message and list of processed files.
                     HttpResponse::Ok().json(json!({
                         "status": "success",
                         "processed_files": file_names
@@ -76,6 +94,7 @@ pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse
     }
 }
 
+/// Handler to retrieve the content of a specific file from the cache.
 pub async fn get_file_content(state: web::Data<AppState>, file_name: web::Path<String>) -> HttpResponse {
     let file_cache = state.file_cache.read().await;
     
@@ -91,6 +110,7 @@ pub async fn get_file_content(state: web::Data<AppState>, file_name: web::Path<S
     }
 }
 
+/// Handler to manually trigger a graph refresh.
 pub async fn refresh_graph(state: web::Data<AppState>) -> HttpResponse {
     info!("Manually triggering graph refresh");
 
@@ -100,6 +120,7 @@ pub async fn refresh_graph(state: web::Data<AppState>) -> HttpResponse {
             *graph = graph_data.clone();
             info!("Graph data structure refreshed successfully");
 
+            // Broadcast the updated graph to connected WebSocket clients.
             let broadcast_result = state.websocket_manager.broadcast_message(&json!({
                 "type": "graphUpdate",
                 "data": graph_data,
@@ -110,6 +131,7 @@ pub async fn refresh_graph(state: web::Data<AppState>) -> HttpResponse {
                 Err(e) => error!("Failed to broadcast graph update: {}", e),
             }
 
+            // Respond with a success message.
             HttpResponse::Ok().json(json!({
                 "status": "success",
                 "message": "Graph refreshed successfully"

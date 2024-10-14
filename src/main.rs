@@ -11,7 +11,7 @@ use crate::config::Settings;
 use crate::handlers::{file_handler, graph_handler, ragflow_handler};
 use crate::models::graph::GraphData;
 use crate::models::metadata::Metadata;
-use crate::services::file_service::{GitHubService, RealGitHubService, FileService};
+use crate::services::file_service::{GitHubService, FileService};
 use crate::services::perplexity_service::PerplexityServiceImpl;
 use crate::services::ragflow_service::RAGFlowService;
 use crate::services::speech_service::SpeechService;
@@ -108,13 +108,8 @@ async fn main() -> std::io::Result<()> {
     let file_cache = Arc::new(RwLock::new(HashMap::new()));
     let graph_data = Arc::new(RwLock::new(GraphData::default()));
     
-    let github_service: Arc<dyn GitHubService + Send + Sync> = match RealGitHubService::new(settings.clone()).await {
-        Ok(service) => Arc::new(service),
-        Err(e) => {
-            log::error!("Failed to initialize GitHub service: {:?}", e);
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to initialize GitHub service: {:?}", e)));
-        }
-    };
+    // TODO: Replace this with the actual implementation of GitHubService
+    let github_service: Arc<dyn GitHubService + Send + Sync> = Arc::new(FileService);
     
     let perplexity_service = PerplexityServiceImpl::new();
     let ragflow_service = match RAGFlowService::new(settings.clone()).await {

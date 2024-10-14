@@ -11,7 +11,7 @@ pub use models::graph::GraphData;
 pub use models::edge::Edge;
 pub use models::node::Node;
 pub use models::metadata::Metadata;
-pub use services::file_service::{FileService, GitHubService, GithubFile, ProcessedFile};
+pub use services::file_service::{FileService, GitHubService, GithubFileMetadata, ProcessedFile};
 pub use services::perplexity_service::{
     PerplexityRequest,
     PerplexityError,
