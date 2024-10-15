@@ -84,6 +84,9 @@ WORKDIR /app
 # Create necessary directories
 RUN mkdir -p /app/data/public/dist /app/data/markdown /app/src
 
+# Create an empty metadata.json file
+RUN mkdir -p /app/data/markdown && touch /app/data/markdown/metadata.json && echo "{}" > /app/data/markdown/metadata.json
+
 # Copy topics.csv file into the container
 COPY data/topics.csv /app/data/topics.csv
 
@@ -118,6 +121,9 @@ COPY nginx.conf /etc/nginx/nginx.conf
 # Ensure proper permissions for nginx and application directories
 RUN chown -R www-data:www-data /var/lib/nginx /app
 
+# Set appropriate permissions for metadata.json
+RUN chmod 664 /app/data/markdown/metadata.json
+
 # Create Python virtual environment and install Piper TTS
 RUN python3.10 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
@@ -135,8 +141,21 @@ RUN mkdir -p /app/piper && \
 # Expose HTTPS port
 EXPOSE 8443
 
-# Create a startup script that runs nginx and the Rust application
-RUN echo '#!/bin/bash\nset -e\nnginx\nexec /app/webxr-graph' > /app/start.sh && chmod +x /app/start.sh
+# Update the startup script to ensure metadata.json exists at runtime
+RUN echo '#!/bin/bash\n\
+set -e\n\
+# Ensure metadata.json exists\n\
+if [ ! -f /app/data/markdown/metadata.json ]; then\n\
+    touch /app/data/markdown/metadata.json\n\
+    chown www-data:www-data /app/data/markdown/metadata.json\n\
+    chmod 664 /app/data/markdown/metadata.json\n\
+    echo "{}" > /app/data/markdown/metadata.json\n\
+    echo "Created empty metadata.json file."\n\
+fi\n\
+# Start nginx\n\
+nginx\n\
+# Start the Rust application\n\
+exec /app/webxr-graph' > /app/start.sh && chmod +x /app/start.sh
 
 # Set the command to run the startup script
 CMD ["/app/start.sh"]

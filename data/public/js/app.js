@@ -60,9 +60,11 @@ class App {
         // Setup Event Listeners
         this.setupEventListeners();
 
-        // Request initial data
-        if (this.graphDataManager) {
-            this.graphDataManager.requestInitialData();
+        // Initialize the visualization
+        if (this.visualization) {
+            this.visualization.initThreeJS();
+        } else {
+            console.error('Visualization not initialized, cannot call initThreeJS');
         }
     }
 
@@ -96,9 +98,8 @@ class App {
                     const graphDataManager = inject('graphDataManager');
                     const visualization = inject('visualization');
                     if (graphDataManager) {
-                        if (['iterations', 'repulsion', 'attraction'].includes(data.name)) {
-                            graphDataManager.updateForceDirectedParams(data.name, data.value);
-                            graphDataManager.recalculateLayout();
+                        if (['forceDirectedIterations', 'forceDirectedRepulsion', 'forceDirectedAttraction'].includes(data.name)) {
+                            this.updateForceDirectedParams(data.name, data.value);
                         } else {
                             console.warn('Unhandled control change:', data.name);
                         }
@@ -107,6 +108,20 @@ class App {
                     }
                     if (visualization) {
                         visualization.updateVisualFeatures({ [data.name]: data.value });
+                    }
+                },
+                updateForceDirectedParams(name, value) {
+                    if (this.graphDataManager) {
+                        // Update the force-directed parameters in the graph data manager
+                        this.graphDataManager.updateForceDirectedParams(name, value);
+                        
+                        // Trigger a recalculation of the graph layout
+                        this.graphDataManager.recalculateLayout();
+                        
+                        // Update the visualization with the new layout
+                        this.visualization.updateVisualization();
+                    } else {
+                        console.error('Cannot update force-directed parameters: GraphDataManager not initialized');
                     }
                 },
                 toggleFullscreen() {
