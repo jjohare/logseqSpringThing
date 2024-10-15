@@ -194,31 +194,94 @@ impl WebSocketSession {
     }
 
     fn handle_client_message(&mut self, msg: &str, ctx: &mut ws::WebsocketContext<Self>) {
-        match serde_json::from_str::<ClientMessage>(msg) {
-            Ok(ClientMessage::SetTTSMethod { method }) => {
-                self.tts_method = method.clone();
-                info!("TTS method set to: {}", method);
-                // Optionally send acknowledgment
-                self.send_json_response(ctx, json!({
-                    "type": "ttsMethodSet",
-                    "method": method
-                }));
-            },
-            Ok(ClientMessage::ChatMessage { message, use_openai }) => {
-                if use_openai {
-                    self.handle_openai_query(ctx, json!({"message": message}));
-                } else {
-                    self.handle_sonata_tts(ctx, message);
+        info!("Received client message: {}", msg);
+        match serde_json::from_str::<Value>(msg) {
+            Ok(json_msg) => {
+                match json_msg["type"].as_str() {
+                    Some("setTTSMethod") => {
+                        if let Some(method) = json_msg["method"].as_str() {
+                            self.tts_method = method.to_string();
+                            info!("TTS method set to: {}", method);
+                            self.send_json_response(ctx, json!({
+                                "type": "ttsMethodSet",
+                                "method": method
+                            }));
+                        } else {
+                            error!("Invalid setTTSMethod message: missing 'method' field");
+                            self.send_json_response(ctx, json!({
+                                "type": "error",
+                                "message": "Invalid setTTSMethod message: missing 'method' field"
+                            }));
+                        }
+                    },
+                    Some("chatMessage") => {
+                        if let (Some(message), Some(use_openai)) = (json_msg["message"].as_str(), json_msg["use_openai"].as_bool()) {
+                            info!("Received chat message. Use OpenAI: {}", use_openai);
+                            if use_openai {
+                                self.handle_openai_query(ctx, json!({"message": message}));
+                            } else {
+                                self.handle_sonata_tts(ctx, message.to_string());
+                            }
+                        } else {
+                            error!("Invalid chatMessage: missing 'message' or 'use_openai' field");
+                            self.send_json_response(ctx, json!({
+                                "type": "error",
+                                "message": "Invalid chatMessage: missing 'message' or 'use_openai' field"
+                            }));
+                        }
+                    },
+                    Some("ragflowQuery") => {
+                        info!("Received RAGFlow query");
+                        self.handle_ragflow_query(ctx, json_msg);
+                    },
+                    Some("openaiQuery") => {
+                        info!("Received OpenAI query");
+                        self.handle_openai_query(ctx, json_msg);
+                    },
+                    Some("getInitialData") => {
+                        info!("Received getInitialData request");
+                        self.handle_get_initial_data(ctx);
+                    },
+                    Some(unknown_type) => {
+                        error!("Unknown message type: {}", unknown_type);
+                        self.send_json_response(ctx, json!({
+                            "type": "error",
+                            "message": format!("Unknown message type: {}", unknown_type)
+                        }));
+                    },
+                    None => {
+                        error!("Message type not specified");
+                        self.send_json_response(ctx, json!({
+                            "type": "error",
+                            "message": "Message type not specified"
+                        }));
+                    }
                 }
             },
             Err(e) => {
                 error!("Failed to parse client message: {}", e);
                 self.send_json_response(ctx, json!({
                     "type": "error",
-                    "message": "Invalid message format"
+                    "message": format!("Invalid JSON format: {}", e)
                 }));
             },
         }
+    }
+
+    fn handle_get_initial_data(&self, ctx: &mut ws::WebsocketContext<Self>) {
+        let state = self.state.clone();
+        ctx.spawn(async move {
+            let graph_data = state.graph_data.read().await;
+            json!({
+                "type": "initialData",
+                "data": {
+                    "nodes": graph_data.nodes,
+                    "edges": graph_data.edges,
+                }
+            })
+        }.into_actor(self).map(|response, act, ctx| {
+            act.send_json_response(ctx, response);
+        }));
     }
 
     fn handle_sonata_tts(&mut self, ctx: &mut ws::WebsocketContext<Self>, message: String) {

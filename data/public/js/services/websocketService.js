@@ -36,6 +36,8 @@ class WebsocketService {
                 type: 'setTTSMethod',
                 method: this.ttsMethod
             });
+            // Request initial data
+            this.getInitialData();
         };
 
         // WebSocket message event
@@ -124,6 +126,15 @@ class WebsocketService {
             console.error('Error processing audio data:', error);
             this.emit('error', { type: 'audio_processing_error', message: error.message });
         }
+    }
+
+    /**
+     * Requests initial graph data from the server.
+     */
+    getInitialData() {
+        this.send({
+            type: 'getInitialData'
+        });
     }
 
     /**
@@ -305,6 +316,9 @@ class WebsocketService {
                 break;
             case 'openaiResponse':
                 this.emit('openaiResponse', data.response);
+                break;
+            case 'initialData':
+                this.emit('initialData', data.data);
                 break;
             default:
                 console.warn('Unhandled message type:', data.type);

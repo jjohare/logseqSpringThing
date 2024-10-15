@@ -1,28 +1,22 @@
    <script>
-   import { defineComponent, ref, onUpdated, onBeforeUnmount } from 'vue';
+   import { defineComponent, inject, onMounted, onBeforeUnmount } from 'vue';
 
    export default defineComponent({
        name: 'ChatManager',
        props: {
-           websocketService: {
-               type: Object,
-               required: true
-           }
+           // Removed websocketService prop as it's now injected
        },
        data() {
            return {
                chatInput: '',
                chatMessages: [],
-               useOpenAI: false, // State for TTS toggle
+               useOpenAI: false,
            };
        },
        methods: {
            sendMessage() {
                if (this.chatInput.trim()) {
-                   this.websocketService.sendChatMessage({
-                       message: this.chatInput,
-                       useOpenAI: this.useOpenAI
-                   });
+                   this.websocketService.sendRagflowQuery(this.chatInput, false, null); // Adjust method as needed
                    this.chatMessages.push({ sender: 'You', message: this.chatInput });
                    this.chatInput = '';
                }
@@ -36,33 +30,17 @@
            }
        },
        mounted() {
-           // Ensure that websocketService is available
+           this.websocketService = inject('websocketService');
            if (this.websocketService) {
-               this.websocketService.on('message', this.handleMessage);
+               this.websocketService.on('ragflowAnswer', this.receiveMessage);
            } else {
                console.error('WebSocketService is undefined');
            }
        },
        beforeUnmount() {
-           // Remove the event listener when the component is unmounted
-           this.websocketService.off('message', this.receiveMessage);
-       },
-       setup() {
-           const chatMessagesRef = ref(null);
-
-           const scrollToBottom = () => {
-               if (chatMessagesRef.value) {
-                   chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight;
-               }
-           };
-
-           onUpdated(() => {
-               scrollToBottom();
-           });
-
-           return {
-               chatMessagesRef
-           };
+           if (this.websocketService) {
+               this.websocketService.off('ragflowAnswer', this.receiveMessage);
+           }
        }
    });
    </script>
