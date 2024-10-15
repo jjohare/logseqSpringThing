@@ -9,4 +9,5 @@ data/public/dist
 data/public/node_modules
 dist
 data/markdown
+src/deps/sonata
 
