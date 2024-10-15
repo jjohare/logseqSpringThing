@@ -173,6 +173,7 @@ sequenceDiagram
     participant ChatManager
     participant RAGFlowService
     participant PerplexityAPI
+    participant WebsocketService
 
     rect rgba(200, 255, 200, 0.1)
         activate Server
@@ -190,7 +191,7 @@ sequenceDiagram
             Server->>Server: initialize_graph_data (main.rs)
             Server->>FileService: fetch_and_process_files (services/file_service.rs)
             activate FileService
-                FileService->>GitHub: fetch_files (RealGitHubService::fetch_files)
+                FileService->>GitHub: fetch_files("RealGitHubService::fetch_files")
                 activate GitHub
                     GitHub-->>FileService: Files or Error
                 deactivate GitHub
@@ -298,7 +299,7 @@ sequenceDiagram
     activate Server
         Server->>FileService: fetch_and_process_files (services/file_service.rs)
         activate FileService
-            FileService->>GitHub: fetch_files (RealGitHubService::fetch_files)
+            FileService->>GitHub: fetch_files("RealGitHubService::fetch_files")
             activate GitHub
                 GitHub-->>FileService: Files or Error
             deactivate GitHub
@@ -350,7 +351,7 @@ sequenceDiagram
             Server-->>Client: Success Response
         end
     deactivate Server
-    deactivate Client
+
 ```
 
 ## Installation
