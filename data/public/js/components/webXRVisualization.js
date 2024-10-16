@@ -71,14 +71,12 @@ export class WebXRVisualization {
         this.nodeColor = 0x1A0B31;
         this.edgeColor = 0xff0000;
         this.hologramColor = 0xFFD700;
-        this.nodeSizeScalingFactor = 0.01;
         this.hologramScale = 1;
         this.hologramOpacity = 0.1;
         this.edgeOpacity = 0.3;
         this.labelFontSize = 20;
         this.fogDensity = 0.002;
-        this.minNodeSize = 1;
-        this.maxNodeSize = 10;
+        this.nodeSizeScalingFactor = 0.5; // Adjust this value as needed
         console.log('Settings initialized');
     }
 
@@ -294,18 +292,14 @@ export class WebXRVisualization {
             }
 
             let mesh = this.nodeMeshes.get(node.id);
-            const fileSize = node.metadata && node.metadata.file_size ? parseInt(node.metadata.file_size) : 1;
-            if (isNaN(fileSize) || fileSize <= 0) {
-                console.warn(`Invalid file_size for node ${node.id}:`, node.metadata.file_size);
-                return;
-            }
-
-            const size = Math.max(this.minNodeSize, Math.min(this.maxNodeSize, Math.log(fileSize + 1) * this.nodeSizeScalingFactor));
-            console.log(`Node ID: ${node.id}, File Size: ${fileSize}, Calculated Size: ${size}`);
+            const fileSize = parseInt(node.metadata?.file_size) || 1;
+            const baseSize = Math.log(fileSize + 1) || 1; // Use logarithmic scaling
+            const scaledSize = baseSize * this.nodeSizeScalingFactor;
+            console.log(`Node ID: ${node.id}, File Size: ${fileSize}, Base Size: ${baseSize}, Scaled Size: ${scaledSize}`);
 
             if (!mesh) {
                 // Create a new mesh for the node
-                const geometry = new THREE.SphereGeometry(size, 32, 32);
+                const geometry = new THREE.SphereGeometry(1, 32, 32); // Use a unit sphere
                 const material = new THREE.MeshStandardMaterial({ color: this.nodeColor });
                 mesh = new THREE.Mesh(geometry, material);
                 this.scene.add(mesh);
@@ -315,19 +309,17 @@ export class WebXRVisualization {
                 const label = this.createNodeLabel(node.label || node.id);
                 this.scene.add(label);
                 this.nodeLabels.set(node.id, label);
-            } else {
-                // Update existing mesh's scale and color
-                mesh.scale.setScalar(size);
-                mesh.material.color.setHex(this.nodeColor);
             }
 
-            // Update mesh position
+            // Update mesh position and scale
             mesh.position.set(node.x, node.y, node.z);
+            mesh.scale.setScalar(scaledSize);
+            mesh.material.color.setHex(this.nodeColor);
 
             // Update label position
             const label = this.nodeLabels.get(node.id);
             if (label) {
-                label.position.set(node.x, node.y + size + 2, node.z);
+                label.position.set(node.x, node.y + scaledSize + 2, node.z);
             }
         });
     }
@@ -525,6 +517,11 @@ export class WebXRVisualization {
 
                 if (name.includes('forceDirected')) {
                     layoutChanged = true;
+                }
+
+                // If node size scaling factor changed, we need to update all nodes
+                if (name === 'nodeSizeScalingFactor') {
+                    this.updateNodes(this.graphDataManager.getGraphData().nodes);
                 }
             } else {
                 console.warn(`Property ${name} does not exist on WebXRVisualization`);

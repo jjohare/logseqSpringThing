@@ -52,14 +52,15 @@ export class GraphDataManager {
         console.log('Updating graph data with:', JSON.stringify(newData, null, 2));
         if (newData && Array.isArray(newData.nodes) && Array.isArray(newData.edges)) {
             this.graphData = newData;
-            console.log(`Graph data updated: ${newData.nodes.length} nodes, ${newData.edges.length} edges`);
+
+            console.log(`Graph data updated: ${this.graphData.nodes.length} nodes, ${this.graphData.edges.length} edges`);
             
             // Log some sample data
-            if (newData.nodes.length > 0) {
-                console.log('Sample node:', JSON.stringify(newData.nodes[0], null, 2));
+            if (this.graphData.nodes.length > 0) {
+                console.log('Sample node:', JSON.stringify(this.graphData.nodes[0], null, 2));
             }
-            if (newData.edges.length > 0) {
-                console.log('Sample edge:', JSON.stringify(newData.edges[0], null, 2));
+            if (this.graphData.edges.length > 0) {
+                console.log('Sample edge:', JSON.stringify(this.graphData.edges[0], null, 2));
             }
             
             // Dispatch an event to notify that the graph data has been updated
