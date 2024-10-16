@@ -107,18 +107,31 @@
       <!-- Force-Directed Graph Controls -->
       <div class="control-group">
         <h3>Force-Directed Graph</h3>
-        <div v-for="control in forceDirectedControls" :key="control.name" class="control-item">
-          <label :for="control.name">{{ control.label }}</label>
+        <div class="control-item">
+          <label for="forceDirectedIterations">Iterations</label>
           <input
-            :id="control.name"
+            id="forceDirectedIterations"
             type="range"
-            v-model.number="control.value"
-            :min="control.min"
-            :max="control.max"
-            :step="control.step"
-            @input="emitChange(control.name, control.value)"
+            v-model.number="forceDirectedControls.iterations.value"
+            :min="forceDirectedControls.iterations.min"
+            :max="forceDirectedControls.iterations.max"
+            :step="forceDirectedControls.iterations.step"
+            @input="emitChange('forceDirectedIterations', forceDirectedControls.iterations.value)"
           >
-          <span class="range-value">{{ control.value }}</span>
+          <span class="range-value">{{ forceDirectedControls.iterations.value }}</span>
+        </div>
+        <div class="control-item">
+          <label for="springForce">Spring Force</label>
+          <input
+            id="springForce"
+            type="range"
+            v-model.number="forceDirectedControls.springForce.value"
+            :min="forceDirectedControls.springForce.min"
+            :max="forceDirectedControls.springForce.max"
+            :step="forceDirectedControls.springForce.step"
+            @input="updateSpringForce"
+          >
+          <span class="range-value">{{ forceDirectedControls.springForce.value }}</span>
         </div>
       </div>
 
@@ -192,12 +205,11 @@ export default defineComponent({
                 { name: 'environmentBloomRadius', label: 'Environment Bloom Radius', type: 'range', value: 0.1, min: 0, max: 2, step: 0.01 },
                 { name: 'environmentBloomThreshold', label: 'Environment Bloom Threshold', type: 'range', value: 0, min: 0, max: 1, step: 0.01 },
             ],
-            // Force-directed graph controls mapped to settings.toml
-            forceDirectedControls: [
-                { name: 'forceDirectedIterations', label: 'Iterations', type: 'range', value: 100, min: 10, max: 500, step: 10 },
-                { name: 'forceDirectedRepulsion', label: 'Repulsion', type: 'range', value: 1.0, min: 0.1, max: 10.0, step: 0.1 },
-                { name: 'forceDirectedAttraction', label: 'Attraction', type: 'range', value: 0.01, min: 0.001, max: 0.1, step: 0.001 },
-            ],
+            // Force-directed graph controls
+            forceDirectedControls: {
+                iterations: { value: 100, min: 10, max: 500, step: 10 },
+                springForce: { value: 0.5, min: 0, max: 1, step: 0.01 },
+            },
             // Additional controls mapped to settings.toml
             additionalControls: [
                 { name: 'labelFontSize', label: 'Label Font Size', type: 'range', value: 36, min: 12, max: 72, step: 1 },
@@ -228,10 +240,10 @@ export default defineComponent({
                 control.value = this.getDefaultValue(control.name);
                 this.emitChange(control.name, control.value);
             });
-            this.forceDirectedControls.forEach(control => {
-                control.value = this.getDefaultValue(control.name);
-                this.emitChange(control.name, control.value);
-            });
+            this.forceDirectedControls.iterations.value = this.getDefaultValue('forceDirectedIterations');
+            this.emitChange('forceDirectedIterations', this.forceDirectedControls.iterations.value);
+            this.forceDirectedControls.springForce.value = 0.5;
+            this.updateSpringForce();
             this.additionalControls.forEach(control => {
                 control.value = this.getDefaultValue(control.name);
                 this.emitChange(control.name, control.value);
@@ -264,8 +276,6 @@ export default defineComponent({
                 environmentBloomRadius: 0.1,
                 environmentBloomThreshold: 0,
                 forceDirectedIterations: 100,
-                forceDirectedRepulsion: 1.0,
-                forceDirectedAttraction: 0.01,
             };
             return defaults[name] || '';
         },
@@ -298,6 +308,17 @@ export default defineComponent({
         // Enable Spacemouse
         enableSpacemouse() {
             this.$emit('enable-spacemouse');
+        },
+        // Update spring force and calculate repulsion and attraction
+        updateSpringForce() {
+            const springForce = this.forceDirectedControls.springForce.value;
+            const repulsion = 1 + springForce; // Increase repulsion as spring force increases
+            const attraction = 0.1 - (springForce * 0.09); // Decrease attraction as spring force increases
+            
+            this.emitChange('forceDirectedRepulsion', repulsion);
+            this.emitChange('forceDirectedAttraction', attraction);
+            
+            console.log(`Spring Force updated: ${springForce}, Repulsion: ${repulsion}, Attraction: ${attraction}`);
         }
     },
     mounted() {

@@ -1,6 +1,6 @@
 // data/public/js/app.js
 
-import { createApp, provide, inject } from 'vue';
+import { createApp, provide, inject, ref, onMounted } from 'vue';
 import ControlPanel from './components/ControlPanel.vue';
 import ChatManager from './components/chatManager.vue';
 import { WebXRVisualization } from './components/webXRVisualization.js';
@@ -12,9 +12,9 @@ import { enableSpacemouse } from './services/spacemouse.js';
 class App {
     constructor() {
         console.log('App constructor called');
-        this.websocketService = null;
-        this.graphDataManager = null;
-        this.visualization = null;
+        this.websocketService = new WebsocketService();
+        this.graphDataManager = new GraphDataManager(this.websocketService);
+        this.visualization = new WebXRVisualization(this.graphDataManager);
         this.gpuAvailable = false;
         this.gpuUtils = null;
         this.initializeApp();
@@ -22,28 +22,6 @@ class App {
 
     initializeApp() {
         console.log('Initializing Application');
-
-        // Initialize Services
-        try {
-            this.websocketService = new WebsocketService();
-            console.log('WebsocketService initialized');
-        } catch (error) {
-            console.error('Failed to initialize WebsocketService:', error);
-        }
-
-        if (this.websocketService) {
-            this.graphDataManager = new GraphDataManager(this.websocketService);
-            console.log('GraphDataManager initialized');
-        } else {
-            console.error('Cannot initialize GraphDataManager: WebsocketService is not available');
-        }
-        
-        try {
-            this.visualization = new WebXRVisualization(this.graphDataManager);
-            console.log('WebXRVisualization initialized successfully');
-        } catch (error) {
-            console.error('Failed to initialize WebXRVisualization:', error);
-        }
 
         // Initialize GPU if available
         this.gpuAvailable = isGPUAvailable();
@@ -61,11 +39,7 @@ class App {
         this.setupEventListeners();
 
         // Initialize the visualization
-        if (this.visualization) {
-            this.visualization.initThreeJS();
-        } else {
-            console.error('Visualization not initialized, cannot call initThreeJS');
-        }
+        this.visualization.initThreeJS();
     }
 
     initVueApp() {
@@ -76,7 +50,32 @@ class App {
                 provide('visualization', this.visualization);
                 provide('graphDataManager', this.graphDataManager);
 
-                return {};
+                console.log('Services provided in Vue app setup');
+
+                onMounted(() => {
+                    console.log('Vue app mounted');
+                    this.websocketService.on('graphUpdate', (graphData) => {
+                        console.log('Received graph update from WebSocket');
+                        this.graphDataManager.updateGraphData(graphData);
+                        window.dispatchEvent(new CustomEvent('graphDataUpdated', { detail: graphData }));
+                    });
+
+                    this.websocketService.on('ttsMethodSet', (method) => {
+                        console.log('TTS method set:', method);
+                    });
+
+                    this.websocketService.on('initialData', (data) => {
+                        console.log('Received initial data:', data);
+                        this.graphDataManager.updateGraphData(data);
+                        this.visualization.updateVisualization();
+                    });
+                });
+
+                return {
+                    websocketService: this.websocketService,
+                    visualization: this.visualization,
+                    graphDataManager: this.graphDataManager
+                };
             },
             components: {
                 ControlPanel,
@@ -95,9 +94,7 @@ class App {
             methods: {
                 handleControlChange(data) {
                     console.log('Control changed:', data.name, data.value);
-                    const graphDataManager = inject('graphDataManager');
-                    const visualization = inject('visualization');
-                    if (graphDataManager) {
+                    if (this.graphDataManager) {
                         if (['forceDirectedIterations', 'forceDirectedRepulsion', 'forceDirectedAttraction'].includes(data.name)) {
                             this.updateForceDirectedParams(data.name, data.value);
                         } else {
@@ -106,8 +103,8 @@ class App {
                     } else {
                         console.error('GraphDataManager not available');
                     }
-                    if (visualization) {
-                        visualization.updateVisualFeatures({ [data.name]: data.value });
+                    if (this.visualization) {
+                        this.visualization.updateVisualFeatures({ [data.name]: data.value });
                     }
                 },
                 updateForceDirectedParams(name, value) {
@@ -138,19 +135,12 @@ class App {
                     }
                 },
                 enableSpacemouse() {
-                    const visualization = inject('visualization');
-                    if (visualization) {
-                        enableSpacemouse(visualization.handleSpacemouseInput.bind(visualization));
+                    if (this.visualization) {
+                        enableSpacemouse(this.visualization.handleSpacemouseInput.bind(this.visualization));
                     } else {
                         console.error('Cannot enable Spacemouse: Visualization not initialized');
                     }
                 }
-            },
-            mounted() {
-                const websocketService = inject('websocketService');
-                const visualization = inject('visualization');
-                const graphDataManager = inject('graphDataManager');
-                console.log('Vue app mounted with services:', { websocketService, visualization, graphDataManager });
             }
         });
 
@@ -183,7 +173,7 @@ class App {
         window.addEventListener('layoutRecalculationRequested', (event) => {
             console.log('Layout recalculation requested', event.detail);
             if (this.visualization) {
-                this.visualization.updateLayout(event.detail);
+                this.visualization.updateVisualization();
             } else {
                 console.error('Cannot update layout: Visualization not initialized');
             }
@@ -191,25 +181,15 @@ class App {
 
         // Spacemouse Move Event Listener
         window.addEventListener('spacemouse-move', (event) => {
-            const { x, y, z } = event.detail;
+            const { x, y, z, rx, ry, rz } = event.detail;
             if (this.visualization) {
-                this.visualization.handleSpacemouseInput(x, y, z);
+                this.visualization.handleSpacemouseInput(x, y, z, rx, ry, rz);
             } else {
                 console.error('Cannot handle Spacemouse input: Visualization not initialized');
             }
         });
 
-        // Initialize audio on first user interaction
-        const initAudio = () => {
-            if (this.websocketService) {
-                this.websocketService.initAudio();
-            }
-            document.removeEventListener('click', initAudio);
-            document.removeEventListener('touchstart', initAudio);
-        };
-
-        document.addEventListener('click', initAudio, { once: true });
-        document.addEventListener('touchstart', initAudio, { once: true });
+        console.log('Event listeners set up');
     }
 
     updateConnectionStatus(isConnected) {
@@ -225,7 +205,6 @@ class App {
     start() {
         console.log('Starting the application');
         if (this.visualization) {
-            this.visualization.initThreeJS();
             this.visualization.animate();
         } else {
             console.error('Cannot start animation: Visualization not initialized');

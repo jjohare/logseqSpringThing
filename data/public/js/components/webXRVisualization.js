@@ -58,6 +58,14 @@ export class WebXRVisualization {
         this.darkMaterial = new THREE.MeshBasicMaterial({ color: 'black' });
         this.materials = {};
 
+        // Node scaling and coloring properties
+        this.minNodeSize = 1;
+        this.maxNodeSize = 20;
+        this.nodeSizeScalingFactor = 0.4;
+        this.recentChangeColor = new THREE.Color(0x00ff00); // Green for recent changes
+        this.oldChangeColor = new THREE.Color(0xff0000); // Red for old changes
+        this.maxChangeDays = 30; // Consider changes older than 30 days as "old"
+
         // Initialize settings and Three.js
         this.initializeSettings();
         console.log('WebXRVisualization constructor completed');
@@ -76,7 +84,6 @@ export class WebXRVisualization {
         this.edgeOpacity = 0.3;
         this.labelFontSize = 20;
         this.fogDensity = 0.002;
-        this.nodeSizeScalingFactor = 0.5; // Adjust this value as needed
         console.log('Settings initialized');
     }
 
@@ -111,6 +118,7 @@ export class WebXRVisualization {
         window.addEventListener('resize', this.onWindowResize.bind(this), false);
 
         // Start the animation loop
+        this.animate = this.animate.bind(this);
         this.animate();
         console.log('Three.js initialization completed');
     }
@@ -181,6 +189,10 @@ export class WebXRVisualization {
      */
     updateVisualization() {
         console.log('Updating visualization');
+        if (!this.graphDataManager) {
+            console.warn('GraphDataManager is not available');
+            return;
+        }
         const graphData = this.graphDataManager.getGraphData();
         if (!graphData) {
             console.warn('No graph data available for visualization update');
@@ -202,6 +214,8 @@ export class WebXRVisualization {
         console.log('Applying force-directed layout');
         const nodes = graphData.nodes;
         const edges = graphData.edges;
+
+        console.log(`Force-directed layout parameters: Iterations=${this.forceDirectedIterations}, Repulsion=${this.forceDirectedRepulsion}, Attraction=${this.forceDirectedAttraction}`);
 
         for (let iteration = 0; iteration < this.forceDirectedIterations; iteration++) {
             // Apply repulsion between nodes
@@ -284,6 +298,9 @@ export class WebXRVisualization {
             }
         });
 
+        // Find the maximum file size for scaling
+        const maxFileSize = Math.max(...nodes.map(node => parseInt(node.metadata?.file_size) || 1));
+
         // Update or create meshes and labels for existing nodes
         nodes.forEach(node => {
             if (!node.id || typeof node.x !== 'number' || typeof node.y !== 'number' || typeof node.z !== 'number') {
@@ -293,14 +310,23 @@ export class WebXRVisualization {
 
             let mesh = this.nodeMeshes.get(node.id);
             const fileSize = parseInt(node.metadata?.file_size) || 1;
-            const baseSize = Math.log(fileSize + 1) || 1; // Use logarithmic scaling
-            const scaledSize = baseSize * this.nodeSizeScalingFactor;
-            console.log(`Node ID: ${node.id}, File Size: ${fileSize}, Base Size: ${baseSize}, Scaled Size: ${scaledSize}`);
+            const lastModified = new Date(node.metadata?.last_modified || Date.now());
+            
+            // Calculate node size based on file size
+            const baseSize = Math.log(fileSize + 1) / Math.log(maxFileSize + 1);
+            const scaledSize = this.minNodeSize + (this.maxNodeSize - this.minNodeSize) * baseSize * this.nodeSizeScalingFactor;
+            
+            // Calculate color based on time since last change
+            const daysSinceChange = (Date.now() - lastModified.getTime()) / (1000 * 60 * 60 * 24);
+            const colorScale = Math.min(daysSinceChange / this.maxChangeDays, 1);
+            const color = new THREE.Color().lerpColors(this.recentChangeColor, this.oldChangeColor, colorScale);
+
+            console.log(`Node ID: ${node.id}, File Size: ${fileSize}, Scaled Size: ${scaledSize}, Days Since Change: ${daysSinceChange}, Color: ${color.getHexString()}`);
 
             if (!mesh) {
                 // Create a new mesh for the node
                 const geometry = new THREE.SphereGeometry(1, 32, 32); // Use a unit sphere
-                const material = new THREE.MeshStandardMaterial({ color: this.nodeColor });
+                const material = new THREE.MeshStandardMaterial({ color: color });
                 mesh = new THREE.Mesh(geometry, material);
                 this.scene.add(mesh);
                 this.nodeMeshes.set(node.id, mesh);
@@ -311,10 +337,10 @@ export class WebXRVisualization {
                 this.nodeLabels.set(node.id, label);
             }
 
-            // Update mesh position and scale
+            // Update mesh position, scale, and color
             mesh.position.set(node.x, node.y, node.z);
             mesh.scale.setScalar(scaledSize);
-            mesh.material.color.setHex(this.nodeColor);
+            mesh.material.color = color;
 
             // Update label position
             const label = this.nodeLabels.get(node.id);
@@ -434,7 +460,7 @@ export class WebXRVisualization {
      * Starts the animation loop, updating controls and rendering the scene.
      */
     animate() {
-        this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+        this.animationFrameId = requestAnimationFrame(this.animate);
         this.controls.update();
 
         // Rotate hologram children for animation
