@@ -261,8 +261,11 @@ class WebsocketService {
      */
     send(data) {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            const compressed = pako.deflate(JSON.stringify(data));
-            this.socket.send(compressed);
+            const jsonString = JSON.stringify(data);
+            const compressed = pako.deflate(jsonString);
+            const uint8Array = new Uint8Array(compressed);
+            this.socket.send(uint8Array);
+            console.log('Sent compressed data:', uint8Array);
         } else {
             console.warn('WebSocket is not open. Unable to send message:', data);
             this.emit('error', { type: 'send_error', message: 'WebSocket is not open' });

@@ -169,9 +169,6 @@ import { defineComponent, inject } from 'vue';
 
 export default defineComponent({
     name: 'ControlPanel',
-    props: {
-        // Removed websocketService prop as it's now injected
-    },
     data() {
         return {
             isHidden: false,
@@ -180,6 +177,7 @@ export default defineComponent({
             chatInput: '',
             chatMessages: [],
             useOpenAI: false,
+            websocketService: null,
             // Color controls mapped to settings.toml
             colorControls: [
                 { name: 'nodeColor', label: 'Node Color', type: 'color', value: '#1A0B31' },
@@ -218,15 +216,12 @@ export default defineComponent({
         };
     },
     methods: {
-        // Toggle the visibility of the control panel
         togglePanel() {
             this.isHidden = !this.isHidden;
         },
-        // Emit changes to parent component
         emitChange(name, value) {
             this.$emit('control-change', { name, value });
         },
-        // Reset all controls to their default values
         resetControls() {
             this.colorControls.forEach(control => {
                 control.value = this.getDefaultValue(control.name);
@@ -253,10 +248,8 @@ export default defineComponent({
             this.fisheyeStrength = 0.5;
             this.emitChange('fisheyeStrength', 0.5);
         },
-        // Get default value for a control
         getDefaultValue(name) {
             const defaults = {
-                // Default values mapped to settings.toml
                 nodeColor: '#1A0B31',
                 edgeColor: '#ff0000',
                 hologramColor: '#FFD700',
@@ -279,41 +272,46 @@ export default defineComponent({
             };
             return defaults[name] || '';
         },
-        // Send a chat message
         sendMessage() {
             if (this.chatInput.trim() && this.websocketService) {
-                this.websocketService.sendChatMessage({
-                    message: this.chatInput,
-                    useOpenAI: this.useOpenAI
-                });
-                this.chatMessages.push({ sender: 'You', message: this.chatInput });
-                this.chatInput = '';
+                try {
+                    this.websocketService.sendRagflowQuery(this.chatInput, false, null);
+                    this.chatMessages.push({ sender: 'You', message: this.chatInput });
+                    this.chatInput = '';
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    this.chatMessages.push({ sender: 'System', message: 'Error sending message. Please try again.' });
+                }
+            } else if (!this.websocketService) {
+                console.error('WebSocketService is not available');
+                this.chatMessages.push({ sender: 'System', message: 'Chat service is not available. Please try again later.' });
             }
         },
-        // Toggle between OpenAI and Sonata TTS
         toggleTTS() {
             if (this.websocketService) {
-                this.websocketService.toggleTTS(this.useOpenAI);
-                console.log(`TTS method set to: ${this.useOpenAI ? 'OpenAI' : 'Sonata'}`);
+                try {
+                    this.websocketService.toggleTTS(this.useOpenAI);
+                    console.log(`TTS method set to: ${this.useOpenAI ? 'OpenAI' : 'Sonata'}`);
+                } catch (error) {
+                    console.error('Error toggling TTS:', error);
+                }
+            } else {
+                console.error('WebSocketService is not available');
             }
         },
-        // Receive a message from the AI
         receiveMessage(message) {
             this.chatMessages.push({ sender: 'AI', message });
         },
-        // Toggle fullscreen mode
         toggleFullscreen() {
             this.$emit('toggle-fullscreen');
         },
-        // Enable Spacemouse
         enableSpacemouse() {
             this.$emit('enable-spacemouse');
         },
-        // Update spring force and calculate repulsion and attraction
         updateSpringForce() {
             const springForce = this.forceDirectedControls.springForce.value;
-            const repulsion = 1 + springForce; // Increase repulsion as spring force increases
-            const attraction = 0.1 - (springForce * 0.09); // Decrease attraction as spring force increases
+            const repulsion = 1 + springForce;
+            const attraction = 0.1 - (springForce * 0.09);
             
             this.emitChange('forceDirectedRepulsion', repulsion);
             this.emitChange('forceDirectedAttraction', attraction);
@@ -322,19 +320,25 @@ export default defineComponent({
         }
     },
     mounted() {
-        // Can inject services here if needed
         this.websocketService = inject('websocketService');
         this.visualization = inject('visualization');
-        console.log('ControlPanel mounted with WebSocketService:', this.websocketService);
+        
+        if (this.websocketService) {
+            console.log('ControlPanel mounted with WebSocketService');
+            this.websocketService.on('ragflowAnswer', this.receiveMessage);
+        } else {
+            console.error('WebSocketService is not available');
+        }
     },
     beforeUnmount() {
-        // Cleanup if necessary
+        if (this.websocketService) {
+            this.websocketService.off('ragflowAnswer', this.receiveMessage);
+        }
     }
 });
 </script>
 
 <style scoped>
-/* Styles remain unchanged */
 #control-panel {
   position: fixed;
   top: 20px;
@@ -423,7 +427,6 @@ input[type="range"] {
   background-color: #555;
 }
 
-/* Chat Interface Styles */
 .chat-interface {
   background-color: #222;
   padding: 10px;
@@ -472,7 +475,6 @@ input[type="range"] {
   gap: 10px;
 }
 
-/* Scrollbar styling */
 #control-panel::-webkit-scrollbar {
   width: 10px;
 }

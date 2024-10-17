@@ -98,7 +98,8 @@ class App {
                         if (['forceDirectedIterations', 'forceDirectedRepulsion', 'forceDirectedAttraction'].includes(data.name)) {
                             this.updateForceDirectedParams(data.name, data.value);
                         } else {
-                            console.warn('Unhandled control change:', data.name);
+                            // Handle all other control changes
+                            this.graphDataManager.updateParameter(data.name, data.value);
                         }
                     } else {
                         console.error('GraphDataManager not available');
