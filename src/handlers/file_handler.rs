@@ -6,7 +6,6 @@ use log::{info, error, debug};
 use crate::AppState;
 use crate::services::file_service::FileService;
 use crate::services::graph_service::GraphService;
-use std::collections::HashMap;
 
 /// Handler to fetch and process files from GitHub.
 pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse {
@@ -59,7 +58,7 @@ pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse
                     info!("Graph data structure updated successfully");
 
                     // Broadcast the updated graph to connected WebSocket clients.
-                    let broadcast_result = state.websocket_manager.broadcast_message(&json!({
+                    let broadcast_result = state.websocket_manager.broadcast_message_compressed(&json!({
                         "type": "graphUpdate",
                         "data": graph_data,
                     }).to_string()).await;
@@ -121,7 +120,7 @@ pub async fn refresh_graph(state: web::Data<AppState>) -> HttpResponse {
             info!("Graph data structure refreshed successfully");
 
             // Broadcast the updated graph to connected WebSocket clients.
-            let broadcast_result = state.websocket_manager.broadcast_message(&json!({
+            let broadcast_result = state.websocket_manager.broadcast_message_compressed(&json!({
                 "type": "graphUpdate",
                 "data": graph_data,
             }).to_string()).await;

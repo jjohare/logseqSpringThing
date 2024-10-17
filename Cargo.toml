@@ -78,6 +78,9 @@ url = "2.3"
 # Base64 Encoding/Decoding
 base64 = "0.21"
 
+# Compression
+flate2 = "1.0"
+
 # Development Dependencies
 [dev-dependencies]
 mockall = "0.11"

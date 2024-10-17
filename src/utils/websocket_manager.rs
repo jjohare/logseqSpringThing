@@ -9,6 +9,9 @@ use futures::future::join_all;
 use futures::StreamExt;
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
+use flate2::write::{GzEncoder, GzDecoder};
+use flate2::Compression;
+use std::io::prelude::*;
 
 pub struct WebSocketManager {
     pub sessions: Mutex<Vec<Addr<WebSocketSession>>>,
@@ -38,14 +41,17 @@ impl WebSocketManager {
         Ok(resp)
     }
 
-    pub async fn broadcast_message(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn broadcast_message_compressed(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(message.as_bytes())?;
+        let compressed = encoder.finish()?;
+        
         let sessions = self.sessions.lock().unwrap().clone();
         let futures = sessions.iter().map(|session| {
-            session.send(BroadcastMessage(message.to_string()))
+            session.send(BroadcastCompressed(compressed.clone()))
         });
         
         join_all(futures).await;
-        debug!("Broadcasted message to {} sessions", sessions.len());
         Ok(())
     }
 
@@ -56,7 +62,6 @@ impl WebSocketManager {
         });
         
         join_all(futures).await;
-        debug!("Broadcasted audio to {} sessions", sessions.len());
         Ok(())
     }
 
@@ -65,7 +70,7 @@ impl WebSocketManager {
             "type": "graphUpdate",
             "graphData": graph_data
         });
-        self.broadcast_message(&json_data.to_string()).await
+        self.broadcast_message_compressed(&json_data.to_string()).await
     }
 }
 
@@ -343,12 +348,24 @@ struct OpenAIQueryResult(Result<(), String>);
 #[rtype(result = "()")]
 pub struct BroadcastAudio(pub Vec<u8>);
 
+#[derive(Message)]
+#[rtype(result = "()")]
+pub struct BroadcastCompressed(pub Vec<u8>);
+
 impl Handler<BroadcastMessage> for WebSocketSession {
     type Result = ();
 
     fn handle(&mut self, msg: BroadcastMessage, ctx: &mut Self::Context) {
         ctx.text(msg.0);
         debug!("Broadcasted message to client");
+    }
+}
+
+impl Handler<BroadcastCompressed> for WebSocketSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: BroadcastCompressed, ctx: &mut Self::Context) {
+        ctx.binary(msg.0);
     }
 }
 
@@ -417,13 +434,27 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
                 // Optionally handle pong responses.
             },
             Ok(ws::Message::Text(text)) => {
-                info!("Received message from client: {}", text);
+                info!("Received message from client");
                 self.handle_client_message(&text, ctx);
             },
             Ok(ws::Message::Binary(bin)) => {
-                let bin_clone = bin.clone();
-                ctx.binary(bin);
-                debug!("Received binary message of {} bytes", bin_clone.len());
+                let mut decoder = GzDecoder::new(Vec::new());
+                if decoder.write_all(&bin).is_ok() {
+                    match decoder.finish() {
+                        Ok(decompressed_vec) => {
+                            if let Ok(decompressed) = String::from_utf8(decompressed_vec) {
+                                self.handle_client_message(&decompressed, ctx);
+                            } else {
+                                error!("Failed to convert decompressed data to UTF-8 string");
+                            }
+                        },
+                        Err(e) => {
+                            error!("Failed to finish decompression: {}", e);
+                        }
+                    }
+                } else {
+                    error!("Failed to write binary data to decoder");
+                }
             },
             Ok(ws::Message::Close(reason)) => {
                 info!("WebSocket closed: {:?}", reason);

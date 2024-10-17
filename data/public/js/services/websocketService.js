@@ -1,5 +1,7 @@
 // public/js/services/websocketService.js
 
+import pako from 'pako';
+
 /**
  * WebsocketService handles the WebSocket connection and communication with the server.
  */
@@ -25,6 +27,7 @@ class WebsocketService {
         const url = 'wss://192.168.0.51:8443/ws';
         console.log('Attempting to connect to WebSocket at:', url);
         this.socket = new WebSocket(url);
+        this.socket.binaryType = 'arraybuffer';
 
         // WebSocket open event
         this.socket.onopen = () => {
@@ -43,8 +46,15 @@ class WebsocketService {
         // WebSocket message event
         this.socket.onmessage = (event) => {
             try {
-                const data = JSON.parse(event.data);
-                this.emit('message', data);
+                let data;
+                if (event.data instanceof ArrayBuffer) {
+                    // Decompress the message
+                    const decompressed = pako.inflate(new Uint8Array(event.data), { to: 'string' });
+                    data = JSON.parse(decompressed);
+                } else {
+                    data = JSON.parse(event.data);
+                }
+                this.handleServerMessage(data);
             } catch (error) {
                 console.error('Error parsing WebSocket message:', error);
                 console.error('Raw message:', event.data);
@@ -251,7 +261,8 @@ class WebsocketService {
      */
     send(data) {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify(data));
+            const compressed = pako.deflate(JSON.stringify(data));
+            this.socket.send(compressed);
         } else {
             console.warn('WebSocket is not open. Unable to send message:', data);
             this.emit('error', { type: 'send_error', message: 'WebSocket is not open' });
