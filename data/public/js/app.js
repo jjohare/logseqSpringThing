@@ -5,44 +5,43 @@ import { WebXRVisualization } from './visualization/WebXRVisualization.js';
 import { WebsocketService } from './services/websocketService.js';
 import { GraphDataManager } from './services/graphDataManager.js';
 import { enableSpacemouse } from './services/spacemouse.js';
-import * as THREE from 'three';
+import { WebGLRenderer } from 'three';
 
-// TODO: The following utility files are currently unused but preserved for potential future use:
-// - utils/colorUtils.js: Contains functions for calculating node and edge colors.
-// - utils/gpuUtils.js: Contains utilities for GPU-accelerated computations.
-// - utils/labelUtils.js: Contains functions for creating and managing node labels.
-// - utils/postProcessing.js: Placeholder for post-processing effects.
-// - utils/sizeUtils.js: Contains utilities for calculating sizes of graph elements.
-// Consider integrating these utilities when implementing new features or optimizations.
+console.log('App.js: Starting initialization');
 
 class App {
     constructor() {
+        console.log('App: Constructor called');
         this.websocketService = new WebsocketService();
+        console.log('App: WebsocketService created');
         this.graphDataManager = new GraphDataManager(this.websocketService);
+        console.log('App: GraphDataManager created');
         this.visualization = null;
         this.simulationMode = 'local'; // Default to local
-        this.renderer = new THREE.WebGLRenderer({ antialias: true }); // Initialize renderer
+        this.renderer = new WebGLRenderer({ antialias: true }); // Initialize renderer
+        console.log('App: THREE.WebGLRenderer created');
         this.setupWebsocketListeners = this.setupWebsocketListeners.bind(this);
         this.initializeApp();
     }
 
     initializeApp() {
+        console.log('App: Initializing app');
         this.initVueApp();
         this.setupEventListeners();
     }
 
-    /**
-     * Sets up the Vue application and provides necessary services and methods.
-     */
     initVueApp() {
+        console.log('App: Initializing Vue app');
         const app = createApp({
             setup: () => {
+                console.log('App: Vue app setup function called');
                 provide('websocketService', this.websocketService);
                 provide('graphDataManager', this.graphDataManager);
                 provide('renderer', this.renderer);
                 provide('simulationMode', this.simulationMode);
                 
                 onMounted(() => {
+                    console.log('App: Vue app mounted');
                     this.setupWebsocketListeners();
                 });
 
@@ -64,6 +63,7 @@ class App {
             `,
             methods: {
                 handleRenderModeChange(mode) {
+                    console.log(`App: Render mode changed to ${mode}`);
                     this.renderMode = mode;
                     if (this.visualization) {
                         this.visualization.switchSimulationMode(mode);
@@ -72,6 +72,7 @@ class App {
                     }
                 },
                 handleSimulationModeChange(mode) {
+                    console.log(`App: Simulation mode changed to ${mode}`);
                     this.simulationMode = mode;
                     if (this.visualization) {
                         this.visualization.switchSimulationMode(mode);
@@ -81,7 +82,6 @@ class App {
                     } else {
                         this.graphDataManager.disableRemoteSimulation();
                     }
-                    console.log(`Simulation mode is now: ${mode}`);
                 }
             }
         });
@@ -95,13 +95,13 @@ class App {
         };
 
         app.mount('#app');
+        console.log('App: Vue app mounted to #app');
     }
 
-    /**
-     * Sets up global event listeners and WebSocket event handlers.
-     */
     setupEventListeners() {
+        console.log('App: Setting up event listeners');
         window.addEventListener('graphDataUpdated', (event) => {
+            console.log('App: graphDataUpdated event received');
             if (this.visualization) {
                 this.visualization.updateVisualization();
             } else {
@@ -110,6 +110,7 @@ class App {
         });
 
         window.addEventListener('layoutRecalculationRequested', (event) => {
+            console.log('App: layoutRecalculationRequested event received');
             if (this.visualization) {
                 this.visualization.updateVisualization();
             } else {
@@ -118,6 +119,7 @@ class App {
         });
 
         window.addEventListener('spacemouse-move', (event) => {
+            console.log('App: spacemouse-move event received');
             const { x, y, z, rx, ry, rz } = event.detail;
             if (this.visualization) {
                 this.visualization.handleSpacemouseInput(x, y, z, rx, ry, rz);
@@ -126,18 +128,16 @@ class App {
             }
         });
 
-        // Add event listener for enable-spacemouse
         this.websocketService.on('enable-spacemouse', () => {
+            console.log('App: enable-spacemouse event received');
             enableSpacemouse();
         });
     }
 
-    /**
-     * Sets up WebSocket listeners for incoming data.
-     * This method is now part of the App class and is provided to the Vue component.
-     */
     setupWebsocketListeners() {
+        console.log('App: Setting up WebSocket listeners');
         this.websocketService.on('graphUpdate', (graphData) => {
+            console.log('App: graphUpdate event received');
             this.graphDataManager.updateGraphData(graphData);
             if (this.visualization && this.simulationMode === 'remote') {
                 this.visualization.updateVisualization();
@@ -145,6 +145,7 @@ class App {
         });
 
         this.websocketService.on('initialData', (data) => {
+            console.log('App: initialData event received');
             this.graphDataManager.updateGraphData(data);
             if (!this.visualization) {
                 this.initVisualization();
@@ -154,16 +155,24 @@ class App {
         });
     }
 
-    /**
-     * Initializes the visualization component.
-     */
     initVisualization() {
-        this.visualization = new WebXRVisualization(this.graphDataManager, this.renderer);
-        this.visualization.initThreeJS();
-        this.visualization.updateVisualization();
+        console.log('App: Initializing visualization');
+        try {
+            this.visualization = new WebXRVisualization(this.graphDataManager, this.renderer);
+            console.log('App: WebXRVisualization created');
+            this.visualization.initThreeJS();
+            console.log('App: Three.js initialized');
+            this.visualization.updateVisualization();
+            console.log('App: Visualization updated');
+        } catch (error) {
+            console.error('Error initializing visualization:', error);
+        }
     }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+    console.log('DOMContentLoaded event fired');
     new App();
 });
+
+console.log('App.js: Finished loading');

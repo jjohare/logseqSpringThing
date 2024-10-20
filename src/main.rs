@@ -1,5 +1,6 @@
 use actix_files::Files;
 use actix_web::{web, App, HttpServer, middleware, HttpResponse};
+use actix_web::http::header;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::collections::HashMap;
@@ -142,7 +143,6 @@ async fn main() -> std::io::Result<()> {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to initialize SpeechService: {:?}", e)));
     }
 
-    // **Fixed Closing Delimiter Here**
     let app_state = web::Data::new(AppState::new(
         graph_data,
         file_cache,
@@ -155,7 +155,7 @@ async fn main() -> std::io::Result<()> {
         gpu_compute.clone(),
         ragflow_conversation_id,
         None, // Initialize graph_service as None
-    )); // Added the missing closing parenthesis here
+    ));
 
     let app_state = Arc::new(app_state);
     let graph_service = Arc::new(GraphService::new(Arc::clone(&app_state)));
@@ -182,6 +182,10 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_state.clone())
             .wrap(middleware::Logger::default())
+            .wrap(middleware::DefaultHeaders::new()
+                .add((header::X_CONTENT_TYPE_OPTIONS, "nosniff"))
+                .add((header::CACHE_CONTROL, "max-age=31536000, immutable"))
+            )
             .service(
                 web::scope("/api/files")
                     .route("/fetch", web::get().to(file_handler::fetch_and_process_files))
@@ -200,7 +204,9 @@ async fn main() -> std::io::Result<()> {
             .route("/ws", web::get().to(WebSocketManager::handle_websocket))
             .route("/test_speech", web::get().to(test_speech_service))
             .service(
-                Files::new("/", "/app/data/public/dist").index_file("index.html")
+                Files::new("/", "/app/data/public/dist")
+                    .index_file("index.html")
+                    .use_last_modified(true)
             )
     })
     .bind(&bind_address)?

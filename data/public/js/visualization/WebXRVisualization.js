@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { Scene, PerspectiveCamera, FogExp2, AmbientLight, DirectionalLight, IcosahedronGeometry, SphereGeometry, MeshBasicMaterial, Mesh, Group, Vector3, Color } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GraphSimulation } from '../graph/graphSimulation.js';
 import { NodeManager } from '../graph/nodeManager.js';
@@ -12,8 +12,8 @@ export class WebXRVisualization {
         this.renderer = renderer;
 
         // Initialize Three.js essentials
-        this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(
+        this.scene = new Scene();
+        this.camera = new PerspectiveCamera(
             75,
             window.innerWidth / window.innerHeight,
             0.1,
@@ -46,7 +46,7 @@ export class WebXRVisualization {
         this.nodeManager.setGraphSimulation(this.simulation);
 
         // Group for hologram structures
-        this.hologramGroup = new THREE.Group();
+        this.hologramGroup = new Group();
         this.hologram = new Hologram(this.scene, 0xFFD700, 1, 0.1);
 
         this.scene.add(this.hologramGroup);
@@ -58,8 +58,8 @@ export class WebXRVisualization {
         this.minNodeSize = 1;
         this.maxNodeSize = 20;
         this.nodeSizeScalingFactor = 0.4;
-        this.recentChangeColor = new THREE.Color(0x00ff00); // Green for recent changes
-        this.oldChangeColor = new THREE.Color(0xff0000); // Red for old changes
+        this.recentChangeColor = new Color(0x00ff00); // Green for recent changes
+        this.oldChangeColor = new Color(0xff0000); // Red for old changes
         this.maxChangeDays = 30; // Consider changes older than 30 days as "old"
 
         // Initialize settings and Three.js
@@ -92,7 +92,7 @@ export class WebXRVisualization {
         }
 
         // Add exponential fog to the scene
-        this.scene.fog = new THREE.FogExp2(0x000000, this.fogDensity);
+        this.scene.fog = new FogExp2(0x000000, this.fogDensity);
 
         // Add lighting to the scene
         this.addLights();
@@ -111,10 +111,10 @@ export class WebXRVisualization {
 
     addLights() {
         console.log('Adding lights to the scene');
-        const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Soft white light
+        const ambientLight = new AmbientLight(0x404040, 1.5); // Soft white light
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        const directionalLight = new DirectionalLight(0xffffff, 1);
         directionalLight.position.set(50, 50, 50);
         this.scene.add(directionalLight);
         console.log('Lights added to the scene');
@@ -125,38 +125,38 @@ export class WebXRVisualization {
         this.hologramGroup.clear();
 
         // Icosahedron for hologram
-        const buckyGeometry = new THREE.IcosahedronGeometry(40 * this.hologramScale, 1);
-        const buckyMaterial = new THREE.MeshBasicMaterial({
+        const buckyGeometry = new IcosahedronGeometry(40 * this.hologramScale, 1);
+        const buckyMaterial = new MeshBasicMaterial({
             color: this.hologramColor,
             wireframe: true,
             transparent: true,
             opacity: this.hologramOpacity
         });
-        const buckySphere = new THREE.Mesh(buckyGeometry, buckyMaterial);
+        const buckySphere = new Mesh(buckyGeometry, buckyMaterial);
         buckySphere.userData.rotationSpeed = 0.0001;
         this.hologramGroup.add(buckySphere);
 
         // Geodesic dome
-        const geodesicGeometry = new THREE.IcosahedronGeometry(10 * this.hologramScale, 1);
-        const geodesicMaterial = new THREE.MeshBasicMaterial({
+        const geodesicGeometry = new IcosahedronGeometry(10 * this.hologramScale, 1);
+        const geodesicMaterial = new MeshBasicMaterial({
             color: this.hologramColor,
             wireframe: true,
             transparent: true,
             opacity: this.hologramOpacity
         });
-        const geodesicDome = new THREE.Mesh(geodesicGeometry, geodesicMaterial);
+        const geodesicDome = new Mesh(geodesicGeometry, geodesicMaterial);
         geodesicDome.userData.rotationSpeed = 0.0002;
         this.hologramGroup.add(geodesicDome);
 
         // Sphere for hologram
-        const triangleGeometry = new THREE.SphereGeometry(100 * this.hologramScale, 32, 32);
-        const triangleMaterial = new THREE.MeshBasicMaterial({
+        const triangleGeometry = new SphereGeometry(100 * this.hologramScale, 32, 32);
+        const triangleMaterial = new MeshBasicMaterial({
             color: this.hologramColor,
             wireframe: true,
             transparent: true,
             opacity: this.hologramOpacity
         });
-        const triangleSphere = new THREE.Mesh(triangleGeometry, triangleMaterial);
+        const triangleSphere = new Mesh(triangleGeometry, triangleMaterial);
         triangleSphere.userData.rotationSpeed = 0.0003;
         this.hologramGroup.add(triangleSphere);
 
@@ -341,7 +341,7 @@ export class WebXRVisualization {
 
     updateNodeLabels() {
         console.log('Updating node labels');
-        const worldPosition = new THREE.Vector3();
+        const worldPosition = new Vector3();
         this.camera.getWorldPosition(worldPosition);
         this.nodeManager.updateLabels(worldPosition);
         console.log('Node labels update completed');
@@ -358,3 +358,7 @@ export class WebXRVisualization {
         console.log(`Switched simulation mode to ${mode}`);
     }
 }
+
+// Define static properties
+WebXRVisualization.TRANSLATION_SPEED = 0.1;
+WebXRVisualization.ROTATION_SPEED = 0.01;

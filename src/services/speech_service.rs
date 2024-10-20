@@ -70,6 +70,7 @@ impl SpeechService {
                             .header("Sec-WebSocket-Key", tungstenite::handshake::client::generate_key())
                             .header("Connection", "Upgrade")
                             .header("Upgrade", "websocket")
+                            .header("Host", "api.openai.com") // Add the Host header
                             .body(())
                             .expect("Failed to build request");
                         drop(settings_read);
