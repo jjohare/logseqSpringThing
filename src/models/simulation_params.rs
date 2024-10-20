@@ -11,6 +11,12 @@ pub struct SimulationParams {
     pub padding: u32, // Added to ensure 20-byte size
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SimulationMode {
+    Local,
+    Remote,
+}
+
 impl Default for SimulationParams {
     fn default() -> Self {
         Self {

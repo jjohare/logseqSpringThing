@@ -20,6 +20,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tungstenite::client::IntoClientRequest;
 use tungstenite::http::header::{HeaderValue, AUTHORIZATION};
 use crate::services::ragflow_service::RAGFlowError;
+use crate::models::simulation_params::SimulationMode;
 
 pub struct WebSocketManager {
     pub sessions: Mutex<Vec<Addr<WebSocketSession>>>,
@@ -80,12 +81,22 @@ impl WebSocketManager {
         });
         self.broadcast_message_compressed(&json_data.to_string()).await
     }
+
+    pub async fn broadcast_simulation_update(&self, graph_data: &crate::models::graph::GraphData) -> Result<(), Box<dyn std::error::Error>> {
+        let json_data = json!({
+            "type": "remoteSimulationUpdate",
+            "graphData": graph_data
+        });
+        self.broadcast_message_compressed(&json_data.to_string()).await
+    }
 }
 
 pub struct WebSocketSession {
     state: web::Data<AppState>,
     tts_method: String,
+    #[allow(dead_code)]
     openai_ws: Option<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>,
+    simulation_mode: SimulationMode,
 }
 
 impl WebSocketSession {
@@ -94,9 +105,11 @@ impl WebSocketSession {
             state, 
             tts_method: "sonata".to_string(),
             openai_ws: None,
+            simulation_mode: SimulationMode::Local,
         }
     }
 
+    #[allow(dead_code)]
     async fn connect_to_openai(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
         
@@ -141,6 +154,7 @@ impl WebSocketSession {
         }
     }
 
+    #[allow(dead_code)]
     fn handle_chat_message(&mut self, ctx: &mut ws::WebsocketContext<Self>, msg: Value) {
         info!("Handling chat message: {:?}", msg);
         match msg["type"].as_str() {
@@ -217,6 +231,7 @@ impl WebSocketSession {
         }
     }
 
+    #[allow(dead_code)]
     fn handle_graph_update(&mut self, ctx: &mut ws::WebsocketContext<Self>) {
         let state = self.state.clone();
         ctx.spawn(async move {
@@ -285,6 +300,20 @@ impl WebSocketSession {
                         info!("Received OpenAI query");
                         self.handle_openai_query(ctx, json_msg);
                     },
+                    Some("setSimulationMode") => {
+                        if let Some(mode) = json_msg["mode"].as_str() {
+                            self.handle_set_simulation_mode(ctx, mode);
+                        } else {
+                            error!("Invalid setSimulationMode message: missing 'mode' field");
+                            self.send_json_response(ctx, json!({
+                                "type": "error",
+                                "message": "Invalid setSimulationMode message: missing 'mode' field"
+                            }));
+                        }
+                    },
+                    Some("requestForceCalculation") => {
+                        self.handle_request_force_calculation(ctx);
+                    },
                     Some("getInitialData") => {
                         info!("Received getInitialData request");
                         self.handle_get_initial_data(ctx);
@@ -322,7 +351,13 @@ impl WebSocketSession {
             json!({
                 "type": "initialData",
                 "data": {
-                    "nodes": graph_data.nodes,
+                    "nodes": graph_data.nodes.iter().map(|node| {
+                        let mut node_data = json!(node);
+                        if let Some(metadata) = graph_data.metadata.get(&node.id) {
+                            node_data["metadata"]["file_size"] = json!(metadata.file_size);
+                        }
+                        node_data
+                    }).collect::<Vec<_>>(),
                     "edges": graph_data.edges,
                 }
             })
@@ -357,6 +392,7 @@ impl WebSocketSession {
         ctx.spawn(fut);
     }
 
+    #[allow(dead_code)]
     async fn handle_openai_voice(&mut self, text: String) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         if self.openai_ws.is_none() {
             self.connect_to_openai().await?;
@@ -411,6 +447,65 @@ impl WebSocketSession {
         }
 
         Ok(audio_data)
+    }
+
+    fn handle_set_simulation_mode(&mut self, ctx: &mut ws::WebsocketContext<Self>, mode: &str) {
+        match mode {
+            "local" => {
+                self.simulation_mode = SimulationMode::Local;
+                info!("Simulation mode set to Local");
+            },
+            "remote" => {
+                self.simulation_mode = SimulationMode::Remote;
+                info!("Simulation mode set to Remote");
+            },
+            _ => {
+                error!("Invalid simulation mode: {}", mode);
+                self.send_json_response(ctx, json!({
+                    "type": "error",
+                    "message": format!("Invalid simulation mode: {}", mode)
+                }));
+                return;
+            }
+        }
+        self.send_json_response(ctx, json!({
+            "type": "simulationModeSet",
+            "mode": mode
+        }));
+    }
+
+    fn handle_request_force_calculation(&self, ctx: &mut ws::WebsocketContext<Self>) {
+        if self.simulation_mode == SimulationMode::Remote {
+            let state = self.state.clone();
+            ctx.spawn(async move {
+                let graph_service = state.graph_service.read().await;
+                if let Some(graph_service) = graph_service.as_ref() {
+                    if let Err(e) = graph_service.perform_remote_simulation().await {
+                        error!("Failed to perform remote simulation: {}", e);
+                        json!({
+                            "type": "error",
+                            "message": format!("Failed to perform remote simulation: {}", e)
+                        })
+                    } else {
+                        json!({
+                            "type": "forceCalculationComplete"
+                        })
+                    }
+                } else {
+                    json!({
+                        "type": "error",
+                        "message": "GraphService not initialized"
+                    })
+                }
+            }.into_actor(self).map(|response, act, ctx| {
+                act.send_json_response(ctx, response);
+            }));
+        } else {
+            self.send_json_response(ctx, json!({
+                "type": "error",
+                "message": "Force calculation can only be requested in remote simulation mode"
+            }));
+        }
     }
 }
 

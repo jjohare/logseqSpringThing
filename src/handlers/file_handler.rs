@@ -5,7 +5,6 @@ use serde_json::json;
 use log::{info, error, debug};
 use crate::AppState;
 use crate::services::file_service::FileService;
-use crate::services::graph_service::GraphService;
 
 /// Handler to fetch and process files from GitHub.
 pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse {
@@ -51,36 +50,45 @@ pub async fn fetch_and_process_files(state: web::Data<AppState>) -> HttpResponse
             }
 
             // Rebuild the graph based on the updated files.
-            match GraphService::build_graph(&state).await {
-                Ok(graph_data) => {
-                    let mut graph = state.graph_data.write().await;
-                    *graph = graph_data.clone();
-                    info!("Graph data structure updated successfully");
+            let graph_service = state.graph_service.read().await;
+            if let Some(gs) = graph_service.as_ref() {
+                match gs.build_graph().await {
+                    Ok(graph_data) => {
+                        let mut graph = state.graph_data.write().await;
+                        *graph = graph_data.clone();
+                        info!("Graph data structure updated successfully");
 
-                    // Broadcast the updated graph to connected WebSocket clients.
-                    let broadcast_result = state.websocket_manager.broadcast_message_compressed(&json!({
-                        "type": "graphUpdate",
-                        "data": graph_data,
-                    }).to_string()).await;
+                        // Broadcast the updated graph to connected WebSocket clients.
+                        let broadcast_result = state.websocket_manager.broadcast_message_compressed(&json!({
+                            "type": "graphUpdate",
+                            "data": graph_data,
+                        }).to_string()).await;
 
-                    match broadcast_result {
-                        Ok(_) => debug!("Graph update broadcasted successfully"),
-                        Err(e) => error!("Failed to broadcast graph update: {}", e),
+                        match broadcast_result {
+                            Ok(_) => debug!("Graph update broadcasted successfully"),
+                            Err(e) => error!("Failed to broadcast graph update: {}", e),
+                        }
+
+                        // Respond with a success message and list of processed files.
+                        HttpResponse::Ok().json(json!({
+                            "status": "success",
+                            "processed_files": file_names
+                        }))
+                    },
+                    Err(e) => {
+                        error!("Failed to build graph data: {}", e);
+                        HttpResponse::InternalServerError().json(json!({
+                            "status": "error",
+                            "message": format!("Failed to build graph data: {}", e)
+                        }))
                     }
-
-                    // Respond with a success message and list of processed files.
-                    HttpResponse::Ok().json(json!({
-                        "status": "success",
-                        "processed_files": file_names
-                    }))
-                },
-                Err(e) => {
-                    error!("Failed to build graph data: {}", e);
-                    HttpResponse::InternalServerError().json(json!({
-                        "status": "error",
-                        "message": format!("Failed to build graph data: {}", e)
-                    }))
                 }
+            } else {
+                error!("GraphService not initialized");
+                HttpResponse::InternalServerError().json(json!({
+                    "status": "error",
+                    "message": "GraphService not initialized"
+                }))
             }
         },
         Err(e) => {
@@ -113,35 +121,44 @@ pub async fn get_file_content(state: web::Data<AppState>, file_name: web::Path<S
 pub async fn refresh_graph(state: web::Data<AppState>) -> HttpResponse {
     info!("Manually triggering graph refresh");
 
-    match GraphService::build_graph(&state).await {
-        Ok(graph_data) => {
-            let mut graph = state.graph_data.write().await;
-            *graph = graph_data.clone();
-            info!("Graph data structure refreshed successfully");
+    let graph_service = state.graph_service.read().await;
+    if let Some(gs) = graph_service.as_ref() {
+        match gs.build_graph().await {
+            Ok(graph_data) => {
+                let mut graph = state.graph_data.write().await;
+                *graph = graph_data.clone();
+                info!("Graph data structure refreshed successfully");
 
-            // Broadcast the updated graph to connected WebSocket clients.
-            let broadcast_result = state.websocket_manager.broadcast_message_compressed(&json!({
-                "type": "graphUpdate",
-                "data": graph_data,
-            }).to_string()).await;
+                // Broadcast the updated graph to connected WebSocket clients.
+                let broadcast_result = state.websocket_manager.broadcast_message_compressed(&json!({
+                    "type": "graphUpdate",
+                    "data": graph_data,
+                }).to_string()).await;
 
-            match broadcast_result {
-                Ok(_) => debug!("Graph update broadcasted successfully"),
-                Err(e) => error!("Failed to broadcast graph update: {}", e),
+                match broadcast_result {
+                    Ok(_) => debug!("Graph update broadcasted successfully"),
+                    Err(e) => error!("Failed to broadcast graph update: {}", e),
+                }
+
+                // Respond with a success message.
+                HttpResponse::Ok().json(json!({
+                    "status": "success",
+                    "message": "Graph refreshed successfully"
+                }))
+            },
+            Err(e) => {
+                error!("Failed to refresh graph data: {}", e);
+                HttpResponse::InternalServerError().json(json!({
+                    "status": "error",
+                    "message": format!("Failed to refresh graph data: {}", e)
+                }))
             }
-
-            // Respond with a success message.
-            HttpResponse::Ok().json(json!({
-                "status": "success",
-                "message": "Graph refreshed successfully"
-            }))
-        },
-        Err(e) => {
-            error!("Failed to refresh graph data: {}", e);
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": format!("Failed to refresh graph data: {}", e)
-            }))
         }
+    } else {
+        error!("GraphService not initialized");
+        HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "GraphService not initialized"
+        }))
     }
 }

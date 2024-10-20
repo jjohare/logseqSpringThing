@@ -13,13 +13,20 @@ use tokio::fs;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use serde_json;
+use actix_web::web;
 
 /// Service responsible for building and managing the graph data structure.
-pub struct GraphService;
+pub struct GraphService {
+    app_state: Arc<web::Data<AppState>>,
+}
 
 impl GraphService {
+    pub fn new(app_state: Arc<web::Data<AppState>>) -> Self {
+        GraphService { app_state }
+    }
+
     /// Builds the graph data structure from processed Markdown files.
-    pub async fn build_graph(app_state: &AppState) -> Result<GraphData, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn build_graph(&self) -> Result<GraphData, Box<dyn std::error::Error + Send + Sync>> {
         info!("Building graph data from metadata");
         let metadata_path = "/app/data/markdown/metadata.json";
         let metadata_content = fs::read_to_string(metadata_path).await?;
@@ -82,10 +89,10 @@ impl GraphService {
         debug!("Sample edge data: {:?}", graph.edges.first());
 
         // Calculate layout using GPU if available, otherwise fall back to CPU
-        let settings = app_state.settings.read().await;
+        let settings = self.app_state.settings.read().await;
         let simulation_params = SimulationParams::from(&settings.visualization);
 
-        Self::calculate_layout(&app_state.gpu_compute, &mut graph, &simulation_params).await?;
+        Self::calculate_layout(&self.app_state.gpu_compute, &mut graph, &simulation_params).await?;
         
         debug!("Final sample node data after layout calculation: {:?}", graph.nodes.first());
         
@@ -235,5 +242,20 @@ impl GraphService {
         }
     
         Err("No path found".to_string())
+    }
+
+    /// Performs a remote simulation on the graph.
+    pub async fn perform_remote_simulation(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        info!("Starting remote simulation");
+        
+        // TODO: Implement the actual remote simulation logic here
+        // This could involve making API calls to a remote service,
+        // processing the results, and updating the graph accordingly
+
+        // Placeholder for simulation logic
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        info!("Remote simulation completed successfully");
+        Ok(())
     }
 }

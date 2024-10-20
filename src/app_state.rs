@@ -8,9 +8,11 @@ use crate::services::file_service::GitHubService;
 use crate::services::perplexity_service::PerplexityServiceImpl;
 use crate::services::ragflow_service::RAGFlowService;
 use crate::services::speech_service::SpeechService;
+use crate::services::graph_service::GraphService;
 use crate::utils::websocket_manager::WebSocketManager;
 use crate::utils::gpu_compute::GPUCompute;
 
+#[derive(Clone)]
 pub struct AppState {
     pub graph_data: Arc<RwLock<GraphData>>,
     pub file_cache: Arc<RwLock<HashMap<String, String>>>,
@@ -22,6 +24,7 @@ pub struct AppState {
     pub websocket_manager: Arc<WebSocketManager>,
     pub gpu_compute: Option<Arc<RwLock<GPUCompute>>>,
     pub ragflow_conversation_id: String,
+    pub graph_service: Arc<RwLock<Option<Arc<GraphService>>>>,
 }
 
 impl AppState {
@@ -36,6 +39,7 @@ impl AppState {
         websocket_manager: Arc<WebSocketManager>,
         gpu_compute: Option<Arc<RwLock<GPUCompute>>>,
         ragflow_conversation_id: String,
+        graph_service: Option<Arc<GraphService>>,
     ) -> Self {
         Self {
             graph_data,
@@ -48,6 +52,12 @@ impl AppState {
             websocket_manager,
             gpu_compute,
             ragflow_conversation_id,
+            graph_service: Arc::new(RwLock::new(graph_service)),
         }
+    }
+
+    pub async fn set_graph_service(&self, graph_service: Arc<GraphService>) {
+        let mut gs = self.graph_service.write().await;
+        *gs = Some(graph_service);
     }
 }

@@ -272,6 +272,7 @@ fn parse_perplexity_response(response_text: &str) -> Result<String, PerplexityEr
 /// # Returns
 ///
 /// A vector of Markdown blocks as strings.
+#[allow(dead_code)]
 fn split_markdown_blocks(content: &str) -> Vec<String> {
     let parser = Parser::new(content);
     let mut blocks = Vec::new();
@@ -382,6 +383,7 @@ pub trait PerplexityService: Send + Sync {
 }
 
 /// Implementation of the PerplexityService.
+#[derive(Clone)]
 pub struct PerplexityServiceImpl;
 
 impl PerplexityServiceImpl {

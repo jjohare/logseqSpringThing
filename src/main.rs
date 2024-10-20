@@ -4,13 +4,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::collections::HashMap;
 use std::env;
-use tokio::time::{interval, Duration};
-
 use crate::app_state::AppState;
 use crate::config::Settings;
 use crate::handlers::{file_handler, graph_handler, ragflow_handler};
 use crate::models::graph::GraphData;
-use crate::models::metadata::Metadata;
 use crate::services::file_service::{GitHubService, FileService};
 use crate::services::perplexity_service::PerplexityServiceImpl;
 use crate::services::ragflow_service::RAGFlowService;
@@ -40,17 +37,24 @@ async fn initialize_graph_data(app_state: &web::Data<AppState>) -> std::io::Resu
                 file_cache.insert(processed_file.file_name.clone(), processed_file.content.clone());
             }
 
-            match GraphService::build_graph(&app_state).await {
-                Ok(graph_data) => {
-                    let mut graph = app_state.graph_data.write().await;
-                    *graph = graph_data;
-                    log::info!("Graph data structure initialized successfully");
-                    Ok(())
-                },
-                Err(e) => {
-                    log::error!("Failed to build graph data: {}", e);
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to build graph data: {}", e)))
+            // Use the graph_service from app_state
+            let graph_service = app_state.graph_service.read().await;
+            if let Some(service) = graph_service.as_ref() {
+                match service.build_graph().await {
+                    Ok(graph_data) => {
+                        let mut graph = app_state.graph_data.write().await;
+                        *graph = graph_data;
+                        log::info!("Graph data structure initialized successfully");
+                        Ok(())
+                    },
+                    Err(e) => {
+                        log::error!("Failed to build graph data: {}", e);
+                        Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to build graph data: {}", e)))
+                    }
                 }
+            } else {
+                log::error!("Graph service not initialized");
+                Err(std::io::Error::new(std::io::ErrorKind::Other, "Graph service not initialized"))
             }
         },
         Err(e) => {
@@ -64,26 +68,6 @@ async fn test_speech_service(app_state: web::Data<AppState>) -> HttpResponse {
     match app_state.speech_service.send_message("Hello, OpenAI!".to_string()).await {
         Ok(_) => HttpResponse::Ok().body("Message sent successfully"),
         Err(e) => HttpResponse::InternalServerError().body(format!("Error: {}", e)),
-    }
-}
-
-async fn randomize_nodes_periodically(app_state: web::Data<AppState>) {
-    let mut interval = interval(Duration::from_secs(30));
-
-    loop {
-        interval.tick().await;
-        
-        // Recalculate graph data
-        if let Err(e) = GraphService::build_graph(&app_state).await {
-            log::error!("Failed to rebuild graph: {}", e);
-            continue;
-        }
-
-        // Notify WebSocket clients about the updated graph data
-        let graph_data = app_state.graph_data.read().await;
-        if let Err(e) = app_state.websocket_manager.broadcast_graph_update(&graph_data).await {
-            log::error!("Failed to broadcast graph update: {}", e);
-        }
     }
 }
 
@@ -158,6 +142,7 @@ async fn main() -> std::io::Result<()> {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to initialize SpeechService: {:?}", e)));
     }
 
+    // **Fixed Closing Delimiter Here**
     let app_state = web::Data::new(AppState::new(
         graph_data,
         file_cache,
@@ -167,9 +152,16 @@ async fn main() -> std::io::Result<()> {
         ragflow_service.clone(),
         speech_service,
         websocket_manager.clone(),
-        gpu_compute,
+        gpu_compute.clone(),
         ragflow_conversation_id,
-    ));
+        None, // Initialize graph_service as None
+    )); // Added the missing closing parenthesis here
+
+    let app_state = Arc::new(app_state);
+    let graph_service = Arc::new(GraphService::new(Arc::clone(&app_state)));
+    
+    // Update the graph_service in app_state
+    app_state.graph_service.write().await.replace(Arc::clone(&graph_service));
 
     if let Err(e) = initialize_graph_data(&app_state).await {
         log::error!("Failed to initialize graph data: {:?}", e);
@@ -180,12 +172,6 @@ async fn main() -> std::io::Result<()> {
         log::error!("Failed to initialize RAGflow conversation: {:?}", e);
         return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to initialize RAGflow conversation: {:?}", e)));
     }
-
-    // Spawn the randomization task
-    let randomization_state = app_state.clone();
-    tokio::spawn(async move {
-        randomize_nodes_periodically(randomization_state).await;
-    });
 
     let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let bind_address = format!("0.0.0.0:{}", port);
@@ -203,6 +189,7 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api/graph")
                     .route("/data", web::get().to(graph_handler::get_graph_data))
+                    .route("/simulate", web::post().to(graph_handler::trigger_remote_simulation))
             )
             .service(
                 web::scope("/api/chat")

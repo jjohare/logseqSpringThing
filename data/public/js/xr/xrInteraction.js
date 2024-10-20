@@ -1,6 +1,7 @@
 // public/js/xr/xrInteraction.js
 
 import * as THREE from 'three';
+import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 
 /**
  * Initializes XR controller interactions.
@@ -10,25 +11,41 @@ import * as THREE from 'three';
  * @param {function} onSelect - Callback function when an object is selected.
  */
 export function initXRInteraction(scene, camera, renderer, onSelect) {
-    const controller1 = renderer.xr.getController(0);
-    const controller2 = renderer.xr.getController(1);
+    if (!renderer.xr) {
+        console.error('WebXR not supported by the renderer');
+        return;
+    }
 
-    controller1.addEventListener('select', onSelect);
-    controller2.addEventListener('select', onSelect);
+    try {
+        const controller1 = renderer.xr.getController(0);
+        const controller2 = renderer.xr.getController(1);
 
-    scene.add(controller1);
-    scene.add(controller2);
+        controller1.addEventListener('select', onSelect);
+        controller2.addEventListener('select', onSelect);
 
-    // Optional: Add visual indicators for controllers
-    const controllerModelFactory = new THREE.XRControllerModelFactory();
+        scene.add(controller1);
+        scene.add(controller2);
 
-    const controllerGrip1 = renderer.xr.getControllerGrip(0);
-    controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
-    scene.add(controllerGrip1);
+        // Add visual indicators for controllers
+        const controllerModelFactory = new XRControllerModelFactory();
 
-    const controllerGrip2 = renderer.xr.getControllerGrip(1);
-    controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
-    scene.add(controllerGrip2);
+        addControllerModel(renderer, scene, 0, controllerModelFactory);
+        addControllerModel(renderer, scene, 1, controllerModelFactory);
+
+    } catch (error) {
+        console.error('Error initializing XR interactions:', error);
+    }
+}
+
+function addControllerModel(renderer, scene, index, factory) {
+    try {
+        const controllerGrip = renderer.xr.getControllerGrip(index);
+        const model = factory.createControllerModel(controllerGrip);
+        controllerGrip.add(model);
+        scene.add(controllerGrip);
+    } catch (error) {
+        console.error(`Error adding controller model for index ${index}:`, error);
+    }
 }
 
 /**
@@ -51,9 +68,25 @@ export function handleControllerSelection(intersects, onSelect) {
  */
 export function addNodeLabels(scene, camera, nodes) {
     const loader = new THREE.FontLoader();
+    const fallbackFont = 'Arial';
+    const fontUrl = '/fonts/helvetiker_regular.typeface.json'; // Assuming the font is bundled locally
 
-    loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function (font) {
-        nodes.forEach(node => {
+    loader.load(
+        fontUrl,
+        (font) => {
+            createLabels(scene, camera, nodes, font);
+        },
+        undefined,
+        (error) => {
+            console.error('Error loading font:', error);
+            createLabelsWithFallbackFont(scene, camera, nodes, fallbackFont);
+        }
+    );
+}
+
+function createLabels(scene, camera, nodes, font) {
+    nodes.forEach(node => {
+        try {
             const textGeometry = new THREE.TextGeometry(node.name, {
                 font: font,
                 size: 1,
@@ -71,7 +104,40 @@ export function addNodeLabels(scene, camera, nodes) {
 
             scene.add(textMesh);
             node.labelMesh = textMesh; // Store reference for updates
-        });
+        } catch (error) {
+            console.error(`Error creating label for node ${node.name}:`, error);
+        }
+    });
+}
+
+function createLabelsWithFallbackFont(scene, camera, nodes, fallbackFont) {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    nodes.forEach(node => {
+        try {
+            context.font = `12px ${fallbackFont}`;
+            const textWidth = context.measureText(node.name).width;
+
+            canvas.width = textWidth;
+            canvas.height = 20;
+
+            context.font = `12px ${fallbackFont}`;
+            context.fillStyle = 'white';
+            context.fillText(node.name, 0, 15);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(material);
+
+            sprite.scale.set(0.1 * textWidth, 2, 1);
+            sprite.position.set(node.x, node.y + 3, node.z);
+
+            scene.add(sprite);
+            node.labelMesh = sprite; // Store reference for updates
+        } catch (error) {
+            console.error(`Error creating fallback label for node ${node.name}:`, error);
+        }
     });
 }
 
@@ -83,7 +149,15 @@ export function addNodeLabels(scene, camera, nodes) {
 export function updateLabelOrientations(camera, nodes) {
     nodes.forEach(node => {
         if (node.labelMesh) {
-            node.labelMesh.lookAt(camera.position);
+            try {
+                if (node.labelMesh instanceof THREE.Sprite) {
+                    node.labelMesh.position.set(node.x, node.y + 3, node.z);
+                } else {
+                    node.labelMesh.lookAt(camera.position);
+                }
+            } catch (error) {
+                console.error(`Error updating label orientation for node ${node.name}:`, error);
+            }
         }
     });
 }

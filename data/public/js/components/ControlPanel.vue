@@ -4,24 +4,8 @@
       {{ isHidden ? '>' : '<' }}
     </button>
     <div class="panel-content" v-show="!isHidden">
-      <!-- Chat Interface -->
-      <div class="chat-interface">
-        <div class="chat-messages" ref="chatMessagesRef">
-          <div v-for="(message, index) in chatMessages" :key="index" :class="['chat-message', message.sender === 'You' ? 'user' : 'ai']">
-            <strong>{{ message.sender }}:</strong> {{ message.message }}
-          </div>
-        </div>
-        <div class="chat-input-container">
-          <input type="text" v-model="chatInput" @keyup.enter="sendMessage" placeholder="Type a message..." />
-          <button @click="sendMessage">Send</button>
-        </div>
-        <div class="tts-toggle">
-          <label>
-            <input type="checkbox" v-model="useOpenAI" @change="toggleTTS" />
-            Use OpenAI TTS
-          </label>
-        </div>
-      </div>
+      <!-- Chat Manager Component -->
+      <ChatManager />
 
       <!-- Fisheye Distortion Controls -->
       <div class="control-group">
@@ -166,18 +150,18 @@
 
 <script>
 import { defineComponent, inject } from 'vue';
+import ChatManager from './ChatManager.vue';
 
 export default defineComponent({
     name: 'ControlPanel',
+    components: {
+        ChatManager
+    },
     data() {
         return {
             isHidden: false,
             fisheyeEnabled: false,
             fisheyeStrength: 0.5,
-            chatInput: '',
-            chatMessages: [],
-            useOpenAI: false,
-            websocketService: null,
             // Color controls mapped to settings.toml
             colorControls: [
                 { name: 'nodeColor', label: 'Node Color', type: 'color', value: '#1A0B31' },
@@ -272,36 +256,6 @@ export default defineComponent({
             };
             return defaults[name] || '';
         },
-        sendMessage() {
-            if (this.chatInput.trim() && this.websocketService) {
-                try {
-                    this.websocketService.sendRagflowQuery(this.chatInput, false, null);
-                    this.chatMessages.push({ sender: 'You', message: this.chatInput });
-                    this.chatInput = '';
-                } catch (error) {
-                    console.error('Error sending message:', error);
-                    this.chatMessages.push({ sender: 'System', message: 'Error sending message. Please try again.' });
-                }
-            } else if (!this.websocketService) {
-                console.error('WebSocketService is not available');
-                this.chatMessages.push({ sender: 'System', message: 'Chat service is not available. Please try again later.' });
-            }
-        },
-        toggleTTS() {
-            if (this.websocketService) {
-                try {
-                    this.websocketService.toggleTTS(this.useOpenAI);
-                    console.log(`TTS method set to: ${this.useOpenAI ? 'OpenAI' : 'Sonata'}`);
-                } catch (error) {
-                    console.error('Error toggling TTS:', error);
-                }
-            } else {
-                console.error('WebSocketService is not available');
-            }
-        },
-        receiveMessage(message) {
-            this.chatMessages.push({ sender: 'AI', message });
-        },
         toggleFullscreen() {
             this.$emit('toggle-fullscreen');
         },
@@ -320,25 +274,13 @@ export default defineComponent({
         }
     },
     mounted() {
-        this.websocketService = inject('websocketService');
         this.visualization = inject('visualization');
-        
-        if (this.websocketService) {
-            console.log('ControlPanel mounted with WebSocketService');
-            this.websocketService.on('ragflowAnswer', this.receiveMessage);
-        } else {
-            console.error('WebSocketService is not available');
-        }
-    },
-    beforeUnmount() {
-        if (this.websocketService) {
-            this.websocketService.off('ragflowAnswer', this.receiveMessage);
-        }
     }
 });
 </script>
 
 <style scoped>
+/* Styles remain unchanged */
 #control-panel {
   position: fixed;
   top: 20px;
@@ -427,54 +369,13 @@ input[type="range"] {
   background-color: #555;
 }
 
-.chat-interface {
-  background-color: #222;
-  padding: 10px;
-  border-radius: 5px;
-  margin-bottom: 15px;
-}
-
-.chat-messages {
-  max-height: 200px;
-  overflow-y: auto;
-  background-color: #333;
-  padding: 10px;
-  border-radius: 5px;
-}
-
-.chat-message {
-  margin-bottom: 10px;
-}
-
-.chat-message.user {
-  text-align: right;
-}
-
-.chat-input-container {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.chat-input-container input[type="text"] {
-  flex-grow: 1;
-  padding: 5px;
-}
-
-.chat-input-container button {
-  padding: 5px 10px;
-}
-
-.tts-toggle {
-  margin-top: 10px;
-}
-
 .button-group {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
+/* Scrollbar styling */
 #control-panel::-webkit-scrollbar {
   width: 10px;
 }
@@ -492,3 +393,4 @@ input[type="range"] {
   background: #555;
 }
 </style>
+

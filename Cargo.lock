@@ -4014,6 +4014,7 @@ dependencies = [
  "config",
  "dotenv",
  "env_logger",
+ "flate2",
  "futures",
  "futures-intrusive",
  "lazy_static",
