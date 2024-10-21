@@ -181,8 +181,10 @@ dependencies = [
  "actix-utils",
  "futures-core",
  "impl-more",
+ "openssl",
  "pin-project-lite",
  "tokio",
+ "tokio-openssl",
  "tokio-rustls",
  "tokio-util",
  "tracing",
@@ -3579,6 +3581,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-openssl"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59df6849caa43bb7567f9a36f863c447d95a11d5903c9cc334ba32576a27eadd"
+dependencies = [
+ "openssl",
+ "openssl-sys",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-rustls"
 version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4021,6 +4034,7 @@ dependencies = [
  "log",
  "mockall",
  "once_cell",
+ "openssl",
  "pulldown-cmark",
  "rand 0.8.5",
  "rayon",

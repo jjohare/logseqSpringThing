@@ -17,6 +17,12 @@ pub enum SimulationMode {
     Remote,
 }
 
+impl Default for SimulationMode {
+    fn default() -> Self {
+        SimulationMode::Local
+    }
+}
+
 impl Default for SimulationParams {
     fn default() -> Self {
         Self {

@@ -65,37 +65,69 @@ class App {
                 };
             },
             components: {
-                ControlPanel
+                ControlPanel,
+                ChatManager
             },
             template: `
                 <div>
+                    <chat-manager :websocketService="websocketService"></chat-manager>
                     <control-panel 
-                        @renderModeChange="handleRenderModeChange" 
-                        @simulationModeChange="handleSimulationModeChange"
+                        :websocketService="websocketService"
+                        :gpuAvailable="gpuAvailable"
+                        @control-change="handleControlChange"
+                        @toggle-fullscreen="toggleFullscreen"
+                        @enable-spacemouse="enableSpacemouse"
                     ></control-panel>
                 </div>
             `,
             methods: {
-                handleRenderModeChange(mode) {
-                    console.log(`App: Render mode changed to ${mode}`);
-                    this.renderMode = mode;
+                handleControlChange(data) {
+                    console.log('Control changed:', data.name, data.value);
                     if (this.visualization) {
-                        this.visualization.switchSimulationMode(mode);
+                        console.log('Updating visualization:', data);
+                        
+                        if (data.name === 'simulationMode') {
+                            this.visualization.switchSimulationMode(data.value);
+                        } else if (data.name === 'forceDirectedIterations' || 
+                            data.name === 'forceDirectedRepulsion' || 
+                            data.name === 'forceDirectedAttraction') {
+                            this.updateForceDirectedParams(data.name, data.value);
+                        } else {
+                            // Handle other visual features
+                            this.visualization.updateVisualFeatures({ [data.name]: data.value });
+                        }
                     } else {
-                        console.warn('Visualization not initialized yet');
+                        console.error('Cannot update visualization: not initialized');
                     }
                 },
-                handleSimulationModeChange(mode) {
-                    console.log(`App: Simulation mode changed to ${mode}`);
-                    this.simulationMode = mode;
-                    if (this.visualization) {
-                        this.visualization.switchSimulationMode(mode);
-                    }
-                    if (mode === 'remote') {
-                        this.graphDataManager.enableRemoteSimulation();
+                updateForceDirectedParams(name, value) {
+                    if (this.graphDataManager) {
+                        // Update the force-directed parameters in the graph data manager
+                        this.graphDataManager.updateForceDirectedParams(name, value);
+                        
+                        // Trigger a recalculation of the graph layout
+                        this.graphDataManager.recalculateLayout();
+                        
+                        // Update the visualization with the new layout
+                        if (this.visualization) {
+                            this.visualization.updateVisualization();
+                        }
                     } else {
-                        this.graphDataManager.disableRemoteSimulation();
+                        console.error('Cannot update force-directed parameters: GraphDataManager not initialized');
                     }
+                },
+                toggleFullscreen() {
+                    const elem = document.documentElement;
+                    if (!document.fullscreenElement) {
+                        elem.requestFullscreen().catch(err => {
+                            console.error(`Error attempting to enable fullscreen: ${err.message}`);
+                        });
+                    } else {
+                        document.exitFullscreen();
+                    }
+                },
+                enableSpacemouse() {
+                    enableSpacemouse();
                 }
             }
         });
@@ -141,15 +173,25 @@ class App {
                 console.warn('Cannot handle Spacemouse input: Visualization not initialized');
             }
         });
-
-        this.websocketService.on('enable-spacemouse', () => {
-            console.log('App: enable-spacemouse event received');
-            enableSpacemouse();
-        });
     }
 
     setupWebsocketListeners() {
         console.log('App: Setting up WebSocket listeners');
+        this.websocketService.on('open', () => {
+            console.log('WebSocket connection opened');
+            // You can add any initialization logic here
+        });
+
+        this.websocketService.on('error', (error) => {
+            console.error('WebSocket error:', error);
+            // Handle WebSocket errors
+        });
+
+        this.websocketService.on('close', () => {
+            console.log('WebSocket connection closed');
+            // Handle WebSocket closure
+        });
+
         this.websocketService.on('graphUpdate', (graphData) => {
             console.log('App: graphUpdate event received');
             this.graphDataManager.updateGraphData(graphData);

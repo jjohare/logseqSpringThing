@@ -1,5 +1,5 @@
 use actix_files::Files;
-use actix_web::{web, App, HttpServer, middleware, HttpResponse};
+use actix_web::{web, App, HttpServer, middleware, HttpResponse, Error};
 use actix_web::http::header;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -16,7 +16,9 @@ use crate::services::speech_service::SpeechService;
 use crate::services::sonata_service::SonataService;
 use crate::services::graph_service::GraphService;
 use crate::utils::websocket_manager::WebSocketManager;
-use crate::utils::gpu_compute::GPUCompute;
+
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
+use actix_web_openssl::OpensslAcceptorExt; // Add this import
 
 mod app_state;
 mod config;
@@ -25,9 +27,10 @@ mod models;
 mod services;
 mod utils;
 
+/// Initializes graph data by fetching and processing files, then building the graph.
 async fn initialize_graph_data(app_state: &web::Data<AppState>) -> std::io::Result<()> {
     log::info!("Initializing graph data...");
-    
+
     let mut metadata_map = HashMap::new();
     match FileService::fetch_and_process_files(&*app_state.github_service, app_state.settings.clone(), &mut metadata_map).await {
         Ok(processed_files) => {
@@ -49,18 +52,18 @@ async fn initialize_graph_data(app_state: &web::Data<AppState>) -> std::io::Resu
                         Ok(())
                     },
                     Err(e) => {
-                        log::error!("Failed to build graph data: {}", e);
-                        Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to build graph data: {}", e)))
+                        log::error!("Failed to build graph: {:?}", e);
+                        Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to build graph"))
                     }
                 }
             } else {
-                log::error!("Graph service not initialized");
-                Err(std::io::Error::new(std::io::ErrorKind::Other, "Graph service not initialized"))
+                log::error!("GraphService is not initialized");
+                Err(std::io::Error::new(std::io::ErrorKind::Other, "GraphService is not initialized"))
             }
         },
         Err(e) => {
-            log::error!("Error processing files: {:?}", e);
-            Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error processing files: {:?}", e)))
+            log::error!("Failed to fetch and process files: {:?}", e);
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to fetch and process files"))
         }
     }
 }
@@ -70,6 +73,14 @@ async fn test_speech_service(app_state: web::Data<AppState>) -> HttpResponse {
         Ok(_) => HttpResponse::Ok().body("Message sent successfully"),
         Err(e) => HttpResponse::InternalServerError().body(format!("Error: {}", e)),
     }
+}
+
+async fn handle_websocket(
+    req: actix_web::HttpRequest,
+    stream: web::Payload,
+    app_state: web::Data<AppState>
+) -> Result<HttpResponse, Error> {
+    app_state.websocket_manager.handle_websocket(req, stream, app_state)
 }
 
 #[actix_web::main]
@@ -93,10 +104,10 @@ async fn main() -> std::io::Result<()> {
     let file_cache = Arc::new(RwLock::new(HashMap::new()));
     let graph_data = Arc::new(RwLock::new(GraphData::default()));
     
-    // TODO: Replace this with the actual implementation of GitHubService
+    // Initialize services
     let github_service: Arc<dyn GitHubService + Send + Sync> = Arc::new(FileService);
-    
     let perplexity_service = PerplexityServiceImpl::new();
+    
     let ragflow_service = match RAGFlowService::new(settings.clone()).await {
         Ok(service) => Arc::new(service),
         Err(e) => {
@@ -105,31 +116,7 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
-    // Create a single RAGFlow conversation
-    let ragflow_conversation_id = match ragflow_service.create_conversation("default_user".to_string()).await {
-        Ok(id) => {
-            log::info!("Created RAGFlow conversation with ID: {}", id);
-            id
-        },
-        Err(e) => {
-            log::error!("Failed to create RAGFlow conversation: {:?}", e);
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to create RAGFlow conversation: {:?}", e)));
-        }
-    };
-
     let websocket_manager = Arc::new(WebSocketManager::new());
-    
-    let gpu_compute = match GPUCompute::new().await {
-        Ok(gpu) => {
-            log::info!("GPU initialization successful");
-            Some(Arc::new(RwLock::new(gpu)))
-        },
-        Err(e) => {
-            log::warn!("Failed to initialize GPU: {}. Falling back to CPU computations.", e);
-            None
-        }
-    };
-
     let sonata_service = match SonataService::new(settings.clone()).await {
         Ok(service) => Arc::new(service),
         Err(e) => {
@@ -138,46 +125,50 @@ async fn main() -> std::io::Result<()> {
         }
     };
     let speech_service = Arc::new(SpeechService::new(sonata_service.clone(), websocket_manager.clone(), settings.clone()));
-    if let Err(e) = speech_service.initialize().await {
-        log::error!("Failed to initialize SpeechService: {:?}", e);
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to initialize SpeechService: {:?}", e)));
-    }
 
-    let app_state = web::Data::new(AppState::new(
+    let app_state = AppState::new(
         graph_data,
         file_cache,
         settings.clone(),
         github_service,
         perplexity_service,
-        ragflow_service.clone(),
+        ragflow_service,
         speech_service,
         websocket_manager.clone(),
-        gpu_compute.clone(),
-        ragflow_conversation_id,
-        None, // Initialize graph_service as None
-    ));
+        None,
+        "conversation_id_placeholder".to_string(),
+        None,
+    );
 
-    let app_state = Arc::new(app_state);
-    let graph_service = Arc::new(GraphService::new(Arc::clone(&app_state)));
-    
-    // Update the graph_service in app_state
-    app_state.graph_service.write().await.replace(Arc::clone(&graph_service));
+    let app_state = web::Data::new(app_state);
 
-    if let Err(e) = initialize_graph_data(&app_state).await {
-        log::error!("Failed to initialize graph data: {:?}", e);
-        return Err(e);
+    // Corrected line with `.into()`
+    let graph_service = Arc::new(GraphService::new(app_state.clone().into()));
+    app_state.graph_service.write().await.replace(graph_service);
+
+    // Initialize Graph Data
+    initialize_graph_data(&app_state).await?;
+
+    // Initialize WebSocket Manager
+    if let Err(e) = websocket_manager.initialize(&app_state.ragflow_service).await {
+        log::error!("Failed to initialize WebSocket Manager: {:?}", e);
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "Failed to initialize WebSocket Manager"));
     }
 
-    if let Err(e) = websocket_manager.initialize(&ragflow_service).await {
-        log::error!("Failed to initialize RAGflow conversation: {:?}", e);
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to initialize RAGflow conversation: {:?}", e)));
-    }
-
-    let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    // Define the bind address with port 8443
+    let port = env::var("PORT").unwrap_or_else(|_| "8443".to_string());
     let bind_address = format!("0.0.0.0:{}", port);
 
     log::info!("Starting server on {}", bind_address);
 
+    // Initialize SSL with self-signed certificates
+    let mut ssl_builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
+    ssl_builder.set_private_key_file("path/to/privkey.pem", SslFiletype::PEM)
+        .expect("Failed to set private key file");
+    ssl_builder.set_certificate_chain_file("path/to/fullchain.pem")
+        .expect("Failed to set certificate chain file");
+
+    // Start the HTTPS server with SSL using actix-web-openssl
     HttpServer::new(move || {
         App::new()
             .app_data(app_state.clone())
@@ -201,7 +192,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/message", web::post().to(ragflow_handler::send_message))
                     .route("/history", web::get().to(ragflow_handler::get_chat_history))
             )
-            .route("/ws", web::get().to(WebSocketManager::handle_websocket))
+            .route("/ws", web::get().to(handle_websocket))
             .route("/test_speech", web::get().to(test_speech_service))
             .service(
                 Files::new("/", "/app/data/public/dist")
@@ -209,7 +200,7 @@ async fn main() -> std::io::Result<()> {
                     .use_last_modified(true)
             )
     })
-    .bind(&bind_address)?
+    .bind_openssl(&bind_address, ssl_builder)?
     .run()
     .await
 }
