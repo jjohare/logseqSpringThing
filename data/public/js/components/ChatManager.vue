@@ -19,58 +19,56 @@
 </template>
 
 <script>
-import { defineComponent, inject, ref } from 'vue';
+import { defineComponent } from 'vue';
 
 export default defineComponent({
-  name: 'ChatManager',
-  setup() {
-    const websocketService = inject('websocketService');
-    const chatInput = ref('');
-    const chatMessages = ref([]);
-    const useOpenAI = ref(false);
-
-    const sendMessage = () => {
-      if (chatInput.value.trim() && websocketService) {
-        // Initialize AudioContext on first user interaction
-        if (useOpenAI.value && !websocketService.audioContext) {
-          websocketService.initAudio();
+    name: 'ChatManager',
+    props: {
+        websocketService: {
+            type: Object,
+            required: true
         }
-
-        websocketService.sendChatMessage({
-          message: chatInput.value,
-          useOpenAI: useOpenAI.value
-        });
-        chatMessages.value.push({ sender: 'You', message: chatInput.value });
-        chatInput.value = '';
-      }
-    };
-
-    const toggleTTS = () => {
-      if (websocketService) {
-        websocketService.toggleTTS(useOpenAI.value);
-        if (useOpenAI.value && !websocketService.audioContext) {
-          websocketService.initAudio();
+    },
+    data() {
+        return {
+            chatInput: '',
+            chatMessages: [],
+            useOpenAI: false, // State for TTS toggle
+        };
+    },
+    methods: {
+        sendMessage() {
+            if (this.chatInput.trim()) {
+                this.websocketService.sendChatMessage({
+                    message: this.chatInput,
+                    useOpenAI: this.useOpenAI
+                });
+                this.chatMessages.push({ sender: 'You', message: this.chatInput });
+                this.chatInput = '';
+            }
+        },
+        toggleTTS() {
+            this.websocketService.toggleTTS(this.useOpenAI);
+            console.log(`TTS method set to: ${this.useOpenAI ? 'OpenAI' : 'Sonata'}`);
+        },
+        receiveMessage(message) {
+            this.chatMessages.push({ sender: 'AI', message });
         }
-        console.log(`TTS method set to: ${useOpenAI.value ? 'OpenAI' : 'Sonata'}`);
-      }
-    };
-
-    const receiveMessage = (message) => {
-      chatMessages.value.push({ sender: 'AI', message });
-    };
-
-    if (websocketService) {
-      websocketService.on('chatMessage', receiveMessage);
+    },
+    mounted() {
+        // Ensure that websocketService is available
+        if (this.websocketService) {
+            this.websocketService.on('message', this.receiveMessage);
+        } else {
+            console.error('WebSocketService is undefined');
+        }
+    },
+    beforeUnmount() {
+        // Remove the event listener when the component is unmounted
+        if (this.websocketService) {
+            this.websocketService.off('message', this.receiveMessage);
+        }
     }
-
-    return {
-      chatInput,
-      chatMessages,
-      useOpenAI,
-      sendMessage,
-      toggleTTS
-    };
-  }
 });
 </script>
 

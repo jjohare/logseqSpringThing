@@ -6,6 +6,7 @@ import { WebsocketService } from './services/websocketService.js';
 import { GraphDataManager } from './services/graphDataManager.js';
 import { enableSpacemouse } from './services/spacemouse.js';
 import { WebGLRenderer } from 'three';
+import { isGPUAvailable, initGPUCompute } from './gpuUtils.js';
 
 console.log('App.js: Starting initialization');
 
@@ -17,7 +18,8 @@ class App {
         this.graphDataManager = new GraphDataManager(this.websocketService);
         console.log('App: GraphDataManager created');
         this.visualization = null;
-        this.simulationMode = 'local'; // Default to local
+        this.gpuCompute = null;
+        this.simulationMode = 'cpu'; // Default simulation mode
         this.renderer = new WebGLRenderer({ antialias: true }); // Initialize renderer
         console.log('App: THREE.WebGLRenderer created');
         this.setupWebsocketListeners = this.setupWebsocketListeners.bind(this);
@@ -26,8 +28,20 @@ class App {
 
     initializeApp() {
         console.log('App: Initializing app');
+        this.initGPU();
         this.initVueApp();
         this.setupEventListeners();
+    }
+
+    initGPU() {
+        // Initialize GPU if available
+        this.gpuAvailable = isGPUAvailable(this.renderer);
+        if (this.gpuAvailable) {
+            this.gpuCompute = initGPUCompute(1024, 1024, this.renderer); // Adjust dimensions as needed
+            console.log('GPU computation initialized');
+        } else {
+            console.warn('GPU acceleration not available, using CPU fallback');
+        }
     }
 
     initVueApp() {
@@ -158,7 +172,7 @@ class App {
     initVisualization() {
         console.log('App: Initializing visualization');
         try {
-            this.visualization = new WebXRVisualization(this.graphDataManager, this.renderer);
+            this.visualization = new WebXRVisualization(this.graphDataManager, this.renderer, this.gpuCompute);
             console.log('App: WebXRVisualization created');
             this.visualization.initThreeJS();
             console.log('App: Three.js initialized');

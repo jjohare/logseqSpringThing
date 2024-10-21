@@ -4,9 +4,6 @@
       {{ isHidden ? '>' : '<' }}
     </button>
     <div class="panel-content" v-show="!isHidden">
-      <!-- Chat Manager Component -->
-      <ChatManager />
-
       <!-- Fisheye Distortion Controls -->
       <div class="control-group">
         <h3>Fisheye Distortion</h3>
@@ -92,30 +89,29 @@
       <div class="control-group">
         <h3>Force-Directed Graph</h3>
         <div class="control-item">
-          <label for="forceDirectedIterations">Iterations</label>
-          <input
-            id="forceDirectedIterations"
-            type="range"
-            v-model.number="forceDirectedControls.iterations.value"
-            :min="forceDirectedControls.iterations.min"
-            :max="forceDirectedControls.iterations.max"
-            :step="forceDirectedControls.iterations.step"
-            @input="emitChange('forceDirectedIterations', forceDirectedControls.iterations.value)"
+          <label for="simulation_mode">Simulation Mode</label>
+          <select
+            id="simulation_mode"
+            v-model="simulationMode"
+            @change="emitChange('simulationMode', simulationMode)"
           >
-          <span class="range-value">{{ forceDirectedControls.iterations.value }}</span>
+            <option value="cpu">CPU</option>
+            <option value="gpu" :disabled="!gpuAvailable">GPU</option>
+            <option value="remote">Remote</option>
+          </select>
         </div>
-        <div class="control-item">
-          <label for="springForce">Spring Force</label>
+        <div v-for="control in forceDirectedControls" :key="control.name" class="control-item">
+          <label :for="control.name">{{ control.label }}</label>
           <input
-            id="springForce"
+            :id="control.name"
             type="range"
-            v-model.number="forceDirectedControls.springForce.value"
-            :min="forceDirectedControls.springForce.min"
-            :max="forceDirectedControls.springForce.max"
-            :step="forceDirectedControls.springForce.step"
-            @input="updateSpringForce"
+            v-model.number="control.value"
+            :min="control.min"
+            :max="control.max"
+            :step="control.step"
+            @input="emitChange(control.name, control.value)"
           >
-          <span class="range-value">{{ forceDirectedControls.springForce.value }}</span>
+          <span class="range-value">{{ control.value }}</span>
         </div>
       </div>
 
@@ -149,19 +145,26 @@
 </template>
 
 <script>
-import { defineComponent, inject } from 'vue';
-import ChatManager from './ChatManager.vue';
+import { defineComponent } from 'vue';
 
 export default defineComponent({
     name: 'ControlPanel',
-    components: {
-        ChatManager
+    props: {
+        websocketService: {
+            type: Object,
+            required: true
+        },
+        gpuAvailable: {
+            type: Boolean,
+            required: true
+        }
     },
     data() {
         return {
             isHidden: false,
             fisheyeEnabled: false,
             fisheyeStrength: 0.5,
+            simulationMode: 'cpu',
             // Color controls mapped to settings.toml
             colorControls: [
                 { name: 'nodeColor', label: 'Node Color', type: 'color', value: '#1A0B31' },
@@ -187,11 +190,12 @@ export default defineComponent({
                 { name: 'environmentBloomRadius', label: 'Environment Bloom Radius', type: 'range', value: 0.1, min: 0, max: 2, step: 0.01 },
                 { name: 'environmentBloomThreshold', label: 'Environment Bloom Threshold', type: 'range', value: 0, min: 0, max: 1, step: 0.01 },
             ],
-            // Force-directed graph controls
-            forceDirectedControls: {
-                iterations: { value: 100, min: 10, max: 500, step: 10 },
-                springForce: { value: 0.5, min: 0, max: 1, step: 0.01 },
-            },
+            // Force-directed graph controls mapped to settings.toml
+            forceDirectedControls: [
+                { name: 'forceDirectedIterations', label: 'Iterations', type: 'range', value: 100, min: 10, max: 500, step: 10 },
+                { name: 'forceDirectedRepulsion', label: 'Repulsion', type: 'range', value: 1.0, min: 0.1, max: 10.0, step: 0.1 },
+                { name: 'forceDirectedAttraction', label: 'Attraction', type: 'range', value: 0.01, min: 0.001, max: 0.1, step: 0.001 },
+            ],
             // Additional controls mapped to settings.toml
             additionalControls: [
                 { name: 'labelFontSize', label: 'Label Font Size', type: 'range', value: 36, min: 12, max: 72, step: 1 },
@@ -200,12 +204,22 @@ export default defineComponent({
         };
     },
     methods: {
+        // Toggle the visibility of the control panel
         togglePanel() {
             this.isHidden = !this.isHidden;
         },
+        // Emit changes to parent component
         emitChange(name, value) {
+            if (this.isColorControl(name)) {
+                value = parseInt(value.replace('#', '0x'), 16);
+            }
             this.$emit('control-change', { name, value });
         },
+        // Check if a control is a color control
+        isColorControl(name) {
+            return this.colorControls.some(control => control.name === name);
+        },
+        // Reset all controls to their default values
         resetControls() {
             this.colorControls.forEach(control => {
                 control.value = this.getDefaultValue(control.name);
@@ -219,10 +233,10 @@ export default defineComponent({
                 control.value = this.getDefaultValue(control.name);
                 this.emitChange(control.name, control.value);
             });
-            this.forceDirectedControls.iterations.value = this.getDefaultValue('forceDirectedIterations');
-            this.emitChange('forceDirectedIterations', this.forceDirectedControls.iterations.value);
-            this.forceDirectedControls.springForce.value = 0.5;
-            this.updateSpringForce();
+            this.forceDirectedControls.forEach(control => {
+                control.value = this.getDefaultValue(control.name);
+                this.emitChange(control.name, control.value);
+            });
             this.additionalControls.forEach(control => {
                 control.value = this.getDefaultValue(control.name);
                 this.emitChange(control.name, control.value);
@@ -231,9 +245,13 @@ export default defineComponent({
             this.emitChange('fisheyeEnabled', false);
             this.fisheyeStrength = 0.5;
             this.emitChange('fisheyeStrength', 0.5);
+            this.simulationMode = 'cpu';
+            this.emitChange('simulationMode', 'cpu');
         },
+        // Get default value for a control
         getDefaultValue(name) {
             const defaults = {
+                // Default values mapped to settings.toml
                 nodeColor: '#1A0B31',
                 edgeColor: '#ff0000',
                 hologramColor: '#FFD700',
@@ -253,28 +271,19 @@ export default defineComponent({
                 environmentBloomRadius: 0.1,
                 environmentBloomThreshold: 0,
                 forceDirectedIterations: 100,
+                forceDirectedRepulsion: 1.0,
+                forceDirectedAttraction: 0.01,
             };
             return defaults[name] || '';
         },
+        // Toggle fullscreen mode
         toggleFullscreen() {
             this.$emit('toggle-fullscreen');
         },
+        // Enable Spacemouse
         enableSpacemouse() {
             this.$emit('enable-spacemouse');
-        },
-        updateSpringForce() {
-            const springForce = this.forceDirectedControls.springForce.value;
-            const repulsion = 1 + springForce;
-            const attraction = 0.1 - (springForce * 0.09);
-            
-            this.emitChange('forceDirectedRepulsion', repulsion);
-            this.emitChange('forceDirectedAttraction', attraction);
-            
-            console.log(`Spring Force updated: ${springForce}, Repulsion: ${repulsion}, Attraction: ${attraction}`);
         }
-    },
-    mounted() {
-        this.visualization = inject('visualization');
     }
 });
 </script>
@@ -348,6 +357,15 @@ input[type="range"] {
   width: 100%;
 }
 
+select {
+  width: 100%;
+  padding: 5px;
+  background-color: #333;
+  color: white;
+  border: none;
+  border-radius: 5px;
+}
+
 .range-value {
   font-size: 0.8em;
   text-align: right;
@@ -393,4 +411,3 @@ input[type="range"] {
   background: #555;
 }
 </style>
-

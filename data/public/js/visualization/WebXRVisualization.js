@@ -4,6 +4,7 @@ import { GraphSimulation } from '../graph/graphSimulation.js';
 import { NodeManager } from '../graph/nodeManager.js';
 import { EdgeManager } from '../graph/edgeManager.js';
 import { Hologram } from '../hologram/hologram.js';
+import { isGPUAvailable, initGPUCompute, createDataTexture, createEdgeTexture, getPositionShader, getVelocityShader } from '../gpuUtils.js';
 
 export class WebXRVisualization {
     constructor(graphDataManager, renderer) {
@@ -13,14 +14,9 @@ export class WebXRVisualization {
 
         // Initialize Three.js essentials
         this.scene = new Scene();
-        this.camera = new PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            2000
-        );
+        this.camera = new PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
         this.camera.position.set(0, 0, 500);
-        this.camera.lookAt(0, 0, 0); // Ensure the camera looks at the origin
+        this.camera.lookAt(0, 0, 0);
 
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
@@ -38,12 +34,13 @@ export class WebXRVisualization {
             edgeOpacity: 0.3
         });
 
-        // Initialize Simulation
-        this.simulation = new GraphSimulation(this.renderer, this.graphDataManager.getNodes(), this.graphDataManager.getEdges());
+        // Check for GPU availability
+        this.gpuAvailable = isGPUAvailable(this.renderer);
+        console.log(`GPU acceleration ${this.gpuAvailable ? 'is' : 'is not'} available`);
 
-        // Connect Managers with Simulation
-        this.edgeManager.setGraphSimulation(this.simulation);
-        this.nodeManager.setGraphSimulation(this.simulation);
+        // Initialize Simulation
+        this.simulationMode = this.gpuAvailable ? 'gpu' : 'cpu';
+        this.initSimulation();
 
         // Group for hologram structures
         this.hologramGroup = new Group();
@@ -55,28 +52,52 @@ export class WebXRVisualization {
         this.selectedNode = null;
 
         // Force-directed layout parameters
-        this.minNodeSize = 1;
-        this.maxNodeSize = 20;
-        this.nodeSizeScalingFactor = 0.4;
-        this.recentChangeColor = new Color(0x00ff00); // Green for recent changes
-        this.oldChangeColor = new Color(0xff0000); // Red for old changes
-        this.maxChangeDays = 30; // Consider changes older than 30 days as "old"
+        this.forceDirectedIterations = 100;
+        this.forceDirectedRepulsion = 1.0;
+        this.forceDirectedAttraction = 0.01;
+        this.damping = 0.85;
 
-        // Initialize settings and Three.js
-        this.initializeSettings();
-        this.initThreeJS();
-        console.log('WebXRVisualization constructor completed');
-    }
-
-    initializeSettings() {
-        console.log('Initializing settings');
+        // Color and size parameters
+        this.recentChangeColor = new Color(0x00ff00);
+        this.oldChangeColor = new Color(0xff0000);
         this.nodeColor = 0x1A0B31;
         this.edgeColor = 0xff0000;
         this.hologramColor = 0xFFD700;
         this.hologramScale = 1;
-        this.hologramOpacity = 0.1;
-        this.edgeOpacity = 0.3;
-        this.labelFontSize = 20;
+        this.minNodeSize = 1;
+        this.maxNodeSize = 20;
+        this.nodeSizeScalingFactor = 0.4;
+        this.maxChangeDays = 30;
+
+        // Initialize settings and Three.js
+        this.initializeSettings();
+        this.initThreeJS();
+        this.createHologramStructure();
+
+        console.log('WebXRVisualization constructor completed');
+    }
+
+    initSimulation() {
+        const nodes = this.graphDataManager.getNodes();
+        const edges = this.graphDataManager.getEdges();
+
+        try {
+            this.simulation = new GraphSimulation(this.renderer, nodes, edges, this.simulationMode);
+            console.log(`Simulation initialized in ${this.simulationMode} mode`);
+        } catch (error) {
+            console.error('Error initializing simulation:', error);
+            this.simulationMode = 'cpu';
+            this.simulation = new GraphSimulation(this.renderer, nodes, edges, 'cpu');
+            console.log('Fallback to CPU simulation mode');
+        }
+
+        // Connect Managers with Simulation
+        this.edgeManager.setGraphSimulation(this.simulation);
+        this.nodeManager.setGraphSimulation(this.simulation);
+    }
+
+    initializeSettings() {
+        console.log('Initializing settings');
         this.fogDensity = 0.002;
         console.log('Settings initialized');
     }
@@ -97,21 +118,17 @@ export class WebXRVisualization {
         // Add lighting to the scene
         this.addLights();
 
-        // Create hologram structures
-        this.createHologramStructure();
-
         // Add event listener for window resize
         window.addEventListener('resize', this.onWindowResize.bind(this), false);
 
         // Start the animation loop
-        this.animate = this.animate.bind(this);
         this.animate();
         console.log('Three.js initialization completed');
     }
 
     addLights() {
         console.log('Adding lights to the scene');
-        const ambientLight = new AmbientLight(0x404040, 1.5); // Soft white light
+        const ambientLight = new AmbientLight(0x404040, 1.5);
         this.scene.add(ambientLight);
 
         const directionalLight = new DirectionalLight(0xffffff, 1);
@@ -166,10 +183,6 @@ export class WebXRVisualization {
 
     updateVisualization() {
         console.log('Updating visualization');
-        if (!this.graphDataManager) {
-            console.warn('GraphDataManager is not available');
-            return;
-        }
         const graphData = this.graphDataManager.getGraphData();
         if (!graphData) {
             console.warn('No graph data available for visualization update');
@@ -177,19 +190,23 @@ export class WebXRVisualization {
         }
         console.log('Graph data received:', graphData);
 
-        if (this.useLocalForceCalculation) {
-            this.simulation.compute(0.016); // Assuming ~60fps, deltaTime ~16ms
-        } else {
-            // Use the positions directly from the server
-            this.simulation.updatePositionsFromServer(graphData.nodes);
+        try {
+            if (this.simulationMode === 'remote') {
+                this.simulation.updatePositionsFromServer(graphData.nodes);
+            } else {
+                this.simulation.compute(0.016); // Assuming ~60fps, deltaTime ~16ms
+            }
+
+            this.nodeManager.updateNodes(this.graphDataManager.getNodes());
+            this.edgeManager.updateEdges(this.graphDataManager.getEdges());
+            console.log('Visualization update completed');
+        } catch (error) {
+            console.error('Error updating visualization:', error);
         }
-        this.nodeManager.updateNodes(this.graphDataManager.getNodes());
-        this.edgeManager.updateEdges(this.graphDataManager.getEdges());
-        console.log('Visualization update completed');
     }
 
     animate() {
-        this.animationFrameId = requestAnimationFrame(this.animate);
+        this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
         this.controls.update();
 
         // Rotate hologram children for animation
@@ -210,6 +227,123 @@ export class WebXRVisualization {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    updateVisualFeatures(changes) {
+        console.log('Updating visual features:', changes);
+        let needsUpdate = false;
+        let layoutChanged = false;
+
+        for (const [name, value] of Object.entries(changes)) {
+            if (this.hasOwnProperty(name)) {
+                console.log(`Setting property ${name} to`, value);
+                this[name] = value;
+                needsUpdate = true;
+
+                if (name.includes('forceDirected')) {
+                    layoutChanged = true;
+                }
+
+                // Handle specific visual feature changes
+                switch (name) {
+                    case 'nodeColor':
+                        this.nodeManager.setNodeColor(value);
+                        break;
+                    case 'edgeColor':
+                        this.edgeManager.setEdgeColor(value);
+                        break;
+                    case 'hologramColor':
+                        this.hologram.updateColor(value);
+                        break;
+                    case 'hologramScale':
+                        this.hologramGroup.scale.set(value, value, value);
+                        break;
+                    case 'hologramOpacity':
+                        this.hologram.updateOpacity(value);
+                        break;
+                    case 'edgeOpacity':
+                        this.edgeManager.setEdgeOpacity(value);
+                        break;
+                    case 'nodeSizeScalingFactor':
+                        this.nodeManager.updateNodes(this.graphDataManager.getNodes());
+                        break;
+                    case 'labelFontSize':
+                        this.nodeManager.updateLabelFontSize(value);
+                        break;
+                    case 'fogDensity':
+                        if (this.scene.fog instanceof FogExp2) {
+                            this.scene.fog.density = value;
+                        }
+                        break;
+                }
+            } else {
+                console.warn(`Property ${name} does not exist on WebXRVisualization`);
+            }
+        }
+
+        if (needsUpdate) {
+            if (layoutChanged) {
+                this.updateForceDirectedParams();
+            }
+            this.updateVisualization();
+        }
+
+        console.log('Visual features update completed');
+    }
+
+    updateForceDirectedParams() {
+        if (this.simulation) {
+            this.simulation.setSimulationParameters({
+                iterations: this.forceDirectedIterations,
+                repulsion: this.forceDirectedRepulsion,
+                attraction: this.forceDirectedAttraction,
+                damping: this.damping
+            });
+        }
+    }
+
+    handleSpacemouseInput(x, y, z, rx, ry, rz) {
+        if (!this.camera || !this.controls) {
+            console.warn('Camera or controls not initialized for Spacemouse input');
+            return;
+        }
+
+        // Translate the camera
+        this.camera.position.x += x * WebXRVisualization.TRANSLATION_SPEED;
+        this.camera.position.y += y * WebXRVisualization.TRANSLATION_SPEED;
+        this.camera.position.z += z * WebXRVisualization.TRANSLATION_SPEED;
+
+        // Rotate the camera
+        this.camera.rotation.x += rx * WebXRVisualization.ROTATION_SPEED;
+        this.camera.rotation.y += ry * WebXRVisualization.ROTATION_SPEED;
+        this.camera.rotation.z += rz * WebXRVisualization.ROTATION_SPEED;
+
+        this.controls.update();
+    }
+
+    updateNodeLabels() {
+        console.log('Updating node labels');
+        const worldPosition = new Vector3();
+        this.camera.getWorldPosition(worldPosition);
+        this.nodeManager.updateLabels(worldPosition);
+        console.log('Node labels update completed');
+    }
+
+    switchSimulationMode(mode) {
+        console.log(`Switching simulation mode to: ${mode}`);
+        if (mode === 'gpu' && !this.gpuAvailable) {
+            console.warn('GPU acceleration is not available. Falling back to CPU mode.');
+            mode = 'cpu';
+        }
+
+        if (this.simulationMode !== mode) {
+            this.simulationMode = mode;
+            this.initSimulation();
+            this.updateForceDirectedParams();
+            this.updateVisualization();
+        }
+
+        console.log(`Simulation mode switched to ${this.simulationMode}`);
     }
 
     dispose() {
@@ -253,109 +387,6 @@ export class WebXRVisualization {
         // Remove event listener
         window.removeEventListener('resize', this.onWindowResize.bind(this), false);
         console.log('WebXRVisualization disposed');
-    }
-
-    updateVisualFeatures(changes) {
-        console.log('Updating visual features:', changes);
-        let needsUpdate = false;
-        let layoutChanged = false;
-
-        for (const [name, value] of Object.entries(changes)) {
-            if (this.hasOwnProperty(name)) {
-                console.log(`Setting property ${name} to`, value);
-                this[name] = value;
-                needsUpdate = true;
-
-                if (name.includes('forceDirected')) {
-                    layoutChanged = true;
-                }
-
-                // If node size scaling factor changed, update all nodes
-                if (name === 'nodeSizeScalingFactor') {
-                    this.nodeManager.updateNodes(this.graphDataManager.getNodes());
-                }
-
-                // Handle other visual feature changes
-                if (name === 'nodeColor') {
-                    this.nodeManager.setNodeColor(value);
-                }
-                if (name === 'edgeColor') {
-                    this.edgeManager.setEdgeColor(value);
-                }
-                if (name === 'hologramColor') {
-                    this.hologram.updateColor(value);
-                }
-                if (name === 'hologramScale') {
-                    this.hologramGroup.scale.set(value, value, value);
-                }
-                if (name === 'hologramOpacity') {
-                    this.hologram.updateOpacity(value);
-                }
-                if (name === 'edgeOpacity') {
-                    this.edgeManager.setEdgeOpacity(value);
-                }
-            } else {
-                console.warn(`Property ${name} does not exist on WebXRVisualization`);
-            }
-        }
-
-        if (needsUpdate) {
-            if (layoutChanged) {
-                this.updateVisualization();
-                // Potentially re-initialize simulation parameters
-                if (this.simulation) {
-                    this.simulation.setSimulationParameters({
-                        iterations: this.forceDirectedIterations,
-                        repulsion: this.forceDirectedRepulsion,
-                        attraction: this.forceDirectedAttraction,
-                        damping: this.damping
-                    });
-                }
-            } else {
-                this.updateNodes(this.graphDataManager.getNodes());
-                this.updateEdges(this.graphDataManager.getEdges());
-            }
-
-            console.log('Visual features update completed');
-        }
-    }
-
-    handleSpacemouseInput(x, y, z, rx, ry, rz) {
-        if (!this.camera || !this.controls) {
-            console.warn('Camera or controls not initialized for Spacemouse input');
-            return;
-        }
-
-        // Translate the camera
-        this.camera.position.x += x * WebXRVisualization.TRANSLATION_SPEED;
-        this.camera.position.y += y * WebXRVisualization.TRANSLATION_SPEED;
-        this.camera.position.z += z * WebXRVisualization.TRANSLATION_SPEED;
-
-        // Rotate the camera
-        this.camera.rotation.x += rx * WebXRVisualization.ROTATION_SPEED;
-        this.camera.rotation.y += ry * WebXRVisualization.ROTATION_SPEED;
-        this.camera.rotation.z += rz * WebXRVisualization.ROTATION_SPEED;
-
-        this.controls.update();
-    }
-
-    updateNodeLabels() {
-        console.log('Updating node labels');
-        const worldPosition = new Vector3();
-        this.camera.getWorldPosition(worldPosition);
-        this.nodeManager.updateLabels(worldPosition);
-        console.log('Node labels update completed');
-    }
-
-    switchSimulationMode(mode) {
-        if (this.simulation) {
-            this.simulation.dispose();
-        }
-        this.useLocalForceCalculation = mode === 'local';
-        this.simulation = new GraphSimulation(this.renderer, this.graphDataManager.getNodes(), this.graphDataManager.getEdges(), this.useLocalForceCalculation ? 'cpu' : 'remote');
-        this.edgeManager.setGraphSimulation(this.simulation);
-        this.nodeManager.setGraphSimulation(this.simulation);
-        console.log(`Switched simulation mode to ${mode}`);
     }
 }
 
