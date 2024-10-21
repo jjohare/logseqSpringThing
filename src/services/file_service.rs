@@ -44,8 +44,21 @@ pub trait GitHubService: Send + Sync {
 /// Service responsible for interacting with GitHub and processing files.
 pub struct FileService;
 
+/// Implementation of GitHubService for FileService
+pub struct GitHubServiceImpl {
+    // Add any necessary fields here, e.g., API token, base URL, etc.
+}
+
+impl GitHubServiceImpl {
+    pub fn new(/* Add any necessary parameters */) -> Self {
+        GitHubServiceImpl {
+            // Initialize fields
+        }
+    }
+}
+
 #[async_trait]
-impl GitHubService for FileService {
+impl GitHubService for GitHubServiceImpl {
     async fn fetch_file_metadata(&self) -> Result<Vec<GithubFileMetadata>, Box<dyn StdError + Send + Sync>> {
         // TODO: Implement actual GitHub API call to fetch file metadata
         // For now, return a mock implementation
@@ -65,6 +78,11 @@ impl GitHubService for FileService {
 }
 
 impl FileService {
+    /// Creates a new instance of FileService
+    pub fn new() -> Self {
+        FileService
+    }
+
     /// Fetches and processes files from GitHub, updating the local metadata map.
     pub async fn fetch_and_process_files(
         github_service: &dyn GitHubService,

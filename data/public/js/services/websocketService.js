@@ -41,11 +41,14 @@ export class WebsocketService {
             try {
                 let data;
                 if (event.data instanceof ArrayBuffer) {
+                    console.log('Received binary message, length:', event.data.byteLength);
                     const decompressed = pako.inflate(new Uint8Array(event.data), { to: 'string' });
                     data = JSON.parse(decompressed);
                 } else {
+                    console.log('Received text message, length:', event.data.length);
                     data = JSON.parse(event.data);
                 }
+                console.log('Received message from server:', data);
                 this.handleServerMessage(data);
             } catch (error) {
                 console.error('Error parsing WebSocket message:', error);
@@ -92,14 +95,18 @@ export class WebsocketService {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             try {
                 const jsonString = JSON.stringify(data);
+                console.log('Sending raw message:', jsonString);
+                console.log('Raw message length:', jsonString.length);
                 const compressed = pako.deflate(jsonString);
-                const uint8Array = new Uint8Array(compressed);
-                this.socket.send(uint8Array);
+                console.log('Compressed message length:', compressed.length);
+                this.socket.send(compressed.buffer);
+                console.log('Message sent');
             } catch (error) {
                 console.error('Error compressing/sending message:', error);
                 this.emit('error', { type: 'send_error', message: error.message });
             }
         } else {
+            console.error('WebSocket is not open. Current state:', this.socket ? this.socket.readyState : 'null');
             this.emit('error', { type: 'send_error', message: 'WebSocket is not open' });
         }
     }
@@ -136,6 +143,7 @@ export class WebsocketService {
      * @param {Object} data - The message data.
      */
     handleServerMessage(data) {
+        console.log('Received message from server:', data);
         switch (data.type) {
             case 'audio':
                 this.handleAudioData(data.audio);
@@ -144,6 +152,7 @@ export class WebsocketService {
                 this.emit('ragflowAnswer', data.answer);
                 break;
             case 'error':
+                console.error('Server error:', data.message);
                 this.emit('error', { type: 'server_error', message: data.message });
                 break;
             case 'graphUpdate':

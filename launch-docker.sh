@@ -2,6 +2,20 @@
 
 set -e
 
+# Function to check if a port is in use
+port_in_use() {
+    lsof -i :$1 > /dev/null 2>&1
+}
+
+# Function to find next available port
+find_next_port() {
+    local port=$1
+    while port_in_use $port; do
+        port=$((port+1))
+    done
+    echo $port
+}
+
 # Stop and remove existing container, including associated volumes
 docker stop logseqXR || true
 docker rm -v logseqXR || true
@@ -19,12 +33,20 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
+# Check if port 8443 is in use, if so, find next available port
+PORT=8443
+if port_in_use $PORT; then
+    NEW_PORT=$(find_next_port $PORT)
+    echo "Port $PORT is in use. Using port $NEW_PORT instead."
+    PORT=$NEW_PORT
+fi
+
 # Run the Docker container with GPU 0 enabled, correct environment variables, and volume mounts
 echo "Running Docker container..."
 if ! docker run -d --name logseqXR \
   --gpus "device=0" \
   -v "$(pwd)/data/markdown:/app/data/markdown" \
-  -p 8443:8443 \
+  -p $PORT:8443 \
   --env-file .env \
   logseq-xr-image; then
     echo "Failed to start Docker container. Please check the error messages above."
@@ -32,8 +54,8 @@ if ! docker run -d --name logseqXR \
 fi
 
 echo "Docker container is now running."
-echo "Access the application at https://192.168.0.51:8443"
-echo "WebSocket should be available at https://192.168.0.51:8443/ws"
+echo "Access the application at https://192.168.0.51:$PORT"
+echo "WebSocket should be available at https://192.168.0.51:$PORT/ws"
 echo "Note: You may see a security warning in your browser due to the self-signed certificate. This is expected for local development."
 
 # Display container logs

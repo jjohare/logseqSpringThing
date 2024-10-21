@@ -28,13 +28,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Creates a new instance of AppState.
     pub fn new(
         graph_data: Arc<RwLock<GraphData>>,
         file_cache: Arc<RwLock<HashMap<String, String>>>,
         settings: Arc<RwLock<Settings>>,
         github_service: Arc<dyn GitHubService + Send + Sync>,
-        perplexity_service: PerplexityServiceImpl,
+        perplexity_service: Arc<PerplexityServiceImpl>,
         ragflow_service: Arc<RAGFlowService>,
         speech_service: Arc<SpeechService>,
         websocket_manager: Arc<WebSocketManager>,
@@ -42,12 +41,12 @@ impl AppState {
         ragflow_conversation_id: String,
         graph_service: Option<Arc<GraphService>>,
     ) -> Self {
-        Self {
+        AppState {
             graph_data,
             file_cache,
             settings,
             github_service,
-            perplexity_service: Arc::new(perplexity_service),
+            perplexity_service,
             ragflow_service,
             speech_service,
             websocket_manager,
@@ -55,11 +54,5 @@ impl AppState {
             ragflow_conversation_id,
             graph_service: Arc::new(RwLock::new(graph_service)),
         }
-    }
-
-    /// Sets the GraphService after initialization.
-    pub async fn set_graph_service(&self, graph_service: Arc<GraphService>) {
-        let mut gs = self.graph_service.write().await;
-        *gs = Some(graph_service);
     }
 }
