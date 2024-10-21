@@ -1,6 +1,6 @@
 // public/js/services/graphDataManager.js
 
-import EventEmitter from 'events';
+import { EventEmitter } from '../utils/eventEmitter.js';
 
 export class GraphDataManager extends EventEmitter {
     /**

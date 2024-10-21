@@ -21,15 +21,20 @@ export default defineConfig({
           'three': 'THREE'
         }
       }
-    }
+    },
+    target: 'esnext',
+    minify: 'terser',
+    sourcemap: true,
   },
   publicDir: path.resolve(__dirname, 'data/public/assets'),
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'data/public/js'),
-      'vue': 'vue/dist/vue.esm-bundler.js'
+      'vue': 'vue/dist/vue.esm-bundler.js',
+      'three': 'three',
+      'three/examples/jsm/misc/GPUComputationRenderer': 'three/examples/jsm/misc/GPUComputationRenderer.js'
     },
-    extensions: ['.js', '.json', '.vue'] // Add explicit extensions to resolve
+    extensions: ['.js', '.json', '.vue']
   },
   server: {
     open: true,
@@ -37,5 +42,11 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['three', 'vue'],
+    esbuildOptions: {
+      target: 'esnext'
+    }
+  },
+  esbuild: {
+    target: 'esnext'
   }
 });
