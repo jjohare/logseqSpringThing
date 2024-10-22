@@ -16,8 +16,6 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::connect_async;
 use url::Url;
-use futures::{SinkExt, StreamExt};
-use tokio_tungstenite::tungstenite::handshake::client::Request as WsRequest;
 
 use base64::Engine as Base64Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -104,7 +102,8 @@ impl WebSocketManager {
     }
 
     /// Broadcasts audio data to all connected WebSocket sessions.
-    pub async fn broadcast_audio(&self, audio_bytes: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn broadcast_audio(&self, audio_bytes: Vec<u8>) -> Result<(), Box<dyn std::
+error::Error>> {
         let json_data = json!({
             "type": "audio",
             "audioData": STANDARD.encode(&audio_bytes)
@@ -148,7 +147,7 @@ pub struct WebSocketSession {
 }
 
 impl WebSocketSession {
-    pub fn new(state: web::Data<AppState>, _conversation_id: Option<Arc<Mutex<Option<String>>>>) -> Self {
+    pub fn new(state: web::Data<AppState>, conversation_id: Option<Arc<Mutex<Option<String>>>>) -> Self {
         WebSocketSession {
             state,
             tts_method: "sonata".to_string(),
@@ -222,9 +221,8 @@ impl WebSocketSession {
         if let Ok(json_string) = serde_json::to_string(&response) {
             debug!("Sending JSON response: {}", json_string);
             if let Ok(compressed) = compress_message(&json_string) {
-                let compressed_clone = compressed.clone();
                 ctx.binary(compressed);
-                debug!("Sent compressed message, size: {} bytes", compressed_clone.len());
+                debug!("Sent compressed message, size: {} bytes", compressed.len());
             } else {
                 error!("Failed to compress JSON response");
             }
@@ -324,11 +322,11 @@ impl Handler<OpenAIQueryResult> for WebSocketSession {
 struct OpenAIWebSocket {
     client_addr: Addr<WebSocketSession>,
     ws_stream: Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>,
-    settings: Arc<tokio::sync::RwLock<Settings>>,
+    settings: Arc<RwLock<Settings>>,
 }
 
 impl OpenAIWebSocket {
-    fn new(client_addr: Addr<WebSocketSession>, settings: Arc<tokio::sync::RwLock<Settings>>) -> Self {
+    fn new(client_addr: Addr<WebSocketSession>, settings: Arc<RwLock<Settings>>) -> Self {
         OpenAIWebSocket {
             client_addr,
             ws_stream: None,
@@ -341,7 +339,7 @@ impl OpenAIWebSocket {
         let url = Url::parse(&settings.openai.openai_base_url)?;
         let api_key = settings.openai.openai_api_key.clone();
         
-        let request = WsRequest::builder()
+        let request = http::Request::builder()
             .uri(url.as_str())
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
@@ -358,16 +356,16 @@ impl Actor for OpenAIWebSocket {
 
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("OpenAI WebSocket started");
-        let addr = ctx.address();
-        ctx.wait(
-            async move {
-                if let Err(e) = self.connect_to_openai().await {
+        let fut = self.connect_to_openai();
+        ctx.spawn(fut.into_actor(self).map(|res, act, ctx| {
+            match res {
+                Ok(_) => info!("Connected to OpenAI WebSocket"),
+                Err(e) => {
                     error!("Failed to connect to OpenAI WebSocket: {}", e);
-                    addr.do_send(actix::SystemExit);
+                    ctx.stop();
                 }
             }
-            .into_actor(self)
-        );
+        }));
     }
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {

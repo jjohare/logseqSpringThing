@@ -51,22 +51,25 @@ export default defineComponent({
             this.websocketService.toggleTTS(this.useOpenAI);
             console.log(`TTS method set to: ${this.useOpenAI ? 'OpenAI' : 'Sonata'}`);
         },
-        receiveMessage(message) {
-            this.chatMessages.push({ sender: 'AI', message });
+        receiveMessage(data) {
+            this.chatMessages.push({ sender: 'AI', message: data.text });
+            if (data.audio && !this.useOpenAI) {
+                this.websocketService.playAudio(data.audio);
+            } else if (this.useOpenAI) {
+                this.websocketService.generateAndPlayOpenAIAudio(data.text);
+            }
         }
     },
     mounted() {
-        // Ensure that websocketService is available
         if (this.websocketService) {
-            this.websocketService.on('message', this.receiveMessage);
+            this.websocketService.on('ragflowResponse', this.receiveMessage);
         } else {
             console.error('WebSocketService is undefined');
         }
     },
     beforeUnmount() {
-        // Remove the event listener when the component is unmounted
         if (this.websocketService) {
-            this.websocketService.off('message', this.receiveMessage);
+            this.websocketService.off('ragflowResponse', this.receiveMessage);
         }
     }
 });

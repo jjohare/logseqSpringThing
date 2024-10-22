@@ -2,32 +2,23 @@
 
 import pako from 'pako';
 
-/**
- * WebsocketService handles the WebSocket connection and communication with the server.
- */
 export class WebsocketService {
     constructor() {
         this.socket = null;
         this.listeners = {};
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
-        this.reconnectInterval = 5000; // 5 seconds
-        this.audioContext = null; // Initialize as null
-        this.audioQueue = [];
-        this.isPlaying = false;
-        this.ttsMethod = 'sonata'; // Default TTS method
+        this.reconnectInterval = 5000;
+        this.audioContext = null;
+        this.ttsMethod = 'sonata';
+        this.openAIApiKey = null;
         this.connect();
     }
 
-    /**
-     * Establishes a WebSocket connection to the server.
-     */
     connect() {
         const url = 'wss://192.168.0.51:8443/ws';
         this.socket = new WebSocket(url);
-
-        console.log(`Attempting to connect to WebSocket at: ${url}`);
-        this.socket.binaryType = 'arraybuffer'; // Ensure binaryType is set to arraybuffer for binary messages
+        this.socket.binaryType = 'arraybuffer';
 
         this.socket.onopen = () => {
             this.reconnectAttempts = 0;
@@ -37,25 +28,7 @@ export class WebsocketService {
             console.log('WebSocket connection established');
         };
 
-        this.socket.onmessage = (event) => {
-            try {
-                let data;
-                if (event.data instanceof ArrayBuffer) {
-                    console.log('Received binary message, length:', event.data.byteLength);
-                    const decompressed = pako.inflate(new Uint8Array(event.data), { to: 'string' });
-                    data = JSON.parse(decompressed);
-                } else {
-                    console.log('Received text message, length:', event.data.length);
-                    data = JSON.parse(event.data);
-                }
-                console.log('Received message from server:', data);
-                this.handleServerMessage(data);
-            } catch (error) {
-                console.error('Error parsing WebSocket message:', error);
-                console.error('Raw message:', event.data);
-                this.emit('error', { type: 'parse_error', message: error.message, rawData: event.data });
-            }
-        };
+        this.socket.onmessage = this.handleMessage.bind(this);
 
         this.socket.onerror = (error) => {
             console.error('WebSocket error:', error);
@@ -69,38 +42,40 @@ export class WebsocketService {
         };
     }
 
-    /**
-     * Attempts to reconnect the WebSocket connection with exponential backoff.
-     */
+    handleMessage(event) {
+        try {
+            let data;
+            if (event.data instanceof ArrayBuffer) {
+                const decompressed = pako.inflate(new Uint8Array(event.data), { to: 'string' });
+                data = JSON.parse(decompressed);
+            } else {
+                data = JSON.parse(event.data);
+            }
+            this.handleServerMessage(data);
+        } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
+            this.emit('error', { type: 'parse_error', message: error.message, rawData: event.data });
+        }
+    }
+
     reconnect() {
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts += 1;
             const timeout = this.reconnectInterval * this.reconnectAttempts;
             console.log(`Reconnecting in ${timeout / 1000} seconds...`);
-            setTimeout(() => {
-                console.log('Reconnecting to WebSocket...');
-                this.connect();
-            }, timeout);
+            setTimeout(() => this.connect(), timeout);
         } else {
             console.error('Max reconnect attempts reached. Giving up.');
             this.emit('error', { type: 'reconnect_failed', message: 'Max reconnect attempts reached.' });
         }
     }
 
-    /**
-     * Sends data to the server after compressing it using gzip.
-     * @param {Object} data - The data object to send.
-     */
     send(data) {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             try {
                 const jsonString = JSON.stringify(data);
-                console.log('Sending raw message:', jsonString);
-                console.log('Raw message length:', jsonString.length);
                 const compressed = pako.deflate(jsonString);
-                console.log('Compressed message length:', compressed.length);
                 this.socket.send(compressed.buffer);
-                console.log('Message sent');
             } catch (error) {
                 console.error('Error compressing/sending message:', error);
                 this.emit('error', { type: 'send_error', message: error.message });
@@ -111,45 +86,24 @@ export class WebsocketService {
         }
     }
 
-    /**
-     * Sends a Ragflow query to the server.
-     * @param {String} message - The message content.
-     * @param {Boolean} quote - Whether to quote the message.
-     * @param {Array|null} docIds - Optional document IDs.
-     */
-    sendRagflowQuery(message, quote = false, docIds = null) {
-        this.send({ type: 'ragflowQuery', message, quote, docIds });
+    sendChatMessage(options) {
+        const { message, useOpenAI } = options;
+        this.send({ 
+            type: 'chatMessage', 
+            message, 
+            useOpenAI
+        });
     }
 
-    /**
-     * Sends an OpenAI query to the server.
-     * @param {String} message - The message content.
-     */
-    sendOpenAIQuery(message) {
-        this.send({ type: 'openaiQuery', message });
-    }
-
-    /**
-     * Toggles the Text-to-Speech (TTS) method between OpenAI and Sonata.
-     * @param {Boolean} useOpenAI - Whether to use OpenAI for TTS.
-     */
     toggleTTS(useOpenAI) {
         this.ttsMethod = useOpenAI ? 'openai' : 'sonata';
         this.send({ type: 'setTTSMethod', method: this.ttsMethod });
     }
 
-    /**
-     * Handles messages received from the server.
-     * @param {Object} data - The message data.
-     */
     handleServerMessage(data) {
-        console.log('Received message from server:', data);
         switch (data.type) {
-            case 'audio':
-                this.handleAudioData(data.audio);
-                break;
-            case 'answer':
-                this.emit('ragflowAnswer', data.answer);
+            case 'ragflowResponse':
+                this.emit('ragflowResponse', data);
                 break;
             case 'error':
                 console.error('Server error:', data.message);
@@ -161,14 +115,11 @@ export class WebsocketService {
             case 'ttsMethodSet':
                 this.emit('ttsMethodSet', data.method);
                 break;
-            case 'ragflowResponse':
-                this.handleRagflowResponse(data);
-                break;
-            case 'openaiResponse':
-                this.emit('openaiResponse', data.response);
-                break;
             case 'initialData':
                 this.emit('initialData', data.data);
+                break;
+            case 'openAIApiKey':
+                this.openAIApiKey = data.key;
                 break;
             default:
                 console.warn('Unhandled message type:', data.type);
@@ -176,43 +127,59 @@ export class WebsocketService {
         }
     }
 
-    /**
-     * Converts a base64 string to a Blob.
-     * @param {String} base64 - The base64 string.
-     * @param {String} contentType - The MIME type of the data.
-     * @returns {Blob} - The resulting Blob.
-     */
-    base64ToBlob(base64, contentType = '') {
-        const byteCharacters = atob(base64);
-        const byteArrays = [];
-
-        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-            const slice = byteCharacters.slice(offset, offset + 512);
-            const byteNumbers = new Array(slice.length);
-            for (let i = 0; i < slice.length; i++) {
-                byteNumbers[i] = slice.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            byteArrays.push(byteArray);
-        }
-
-        return new Blob(byteArrays, { type: contentType });
-    }
-
-    /**
-     * Handles audio data received from the server.
-     * @param {String} audioBase64 - The base64-encoded audio data.
-     */
-    handleAudioData(audioBase64) {
+    playAudio(audioBase64) {
         if (!this.audioContext) {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
 
-        const audioBlob = this.base64ToBlob(audioBase64, 'audio/wav');
-        const reader = new FileReader();
+        const audioData = atob(audioBase64);
+        const arrayBuffer = new ArrayBuffer(audioData.length);
+        const view = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < audioData.length; i++) {
+            view[i] = audioData.charCodeAt(i);
+        }
 
-        reader.onload = (event) => {
-            this.audioContext.decodeAudioData(event.target.result, (buffer) => {
+        this.audioContext.decodeAudioData(arrayBuffer, (buffer) => {
+            const source = this.audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(this.audioContext.destination);
+            source.start(0);
+        }, (error) => {
+            console.error('Error decoding audio data:', error);
+        });
+    }
+
+    async generateAndPlayOpenAIAudio(text) {
+        const apiKey = await this.getOpenAIApiKey();
+        if (!apiKey) {
+            console.error('OpenAI API key not available');
+            return;
+        }
+
+        try {
+            const response = await fetch('https://api.openai.com/v1/audio/speech', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'tts-1',
+                    input: text,
+                    voice: 'alloy'
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+            if (!this.audioContext) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            this.audioContext.decodeAudioData(arrayBuffer, (buffer) => {
                 const source = this.audioContext.createBufferSource();
                 source.buffer = buffer;
                 source.connect(this.audioContext.destination);
@@ -220,34 +187,15 @@ export class WebsocketService {
             }, (error) => {
                 console.error('Error decoding audio data:', error);
             });
-        };
-
-        reader.readAsArrayBuffer(audioBlob);
-    }
-
-    /**
-     * Handles Ragflow-specific responses from the server.
-     * @param {Object} data - The Ragflow response data.
-     */
-    handleRagflowResponse(data) {
-        this.emit('ragflowAnswer', data.answer);
-        if (data.audio) {
-            this.handleAudioData(data.audio);
+        } catch (error) {
+            console.error('Error generating OpenAI audio:', error);
         }
     }
 
-    /**
-     * Retrieves initial data from the server after connection.
-     */
     getInitialData() {
         this.send({ type: 'getInitialData' });
     }
 
-    /**
-     * Registers an event listener for a specific event type.
-     * @param {String} event - The event type.
-     * @param {Function} callback - The callback function.
-     */
     on(event, callback) {
         if (!this.listeners[event]) {
             this.listeners[event] = [];
@@ -255,14 +203,28 @@ export class WebsocketService {
         this.listeners[event].push(callback);
     }
 
-    /**
-     * Emits an event to all registered listeners for that event type.
-     * @param {String} event - The event type.
-     * @param {Any} data - The data to pass to the listeners.
-     */
+    off(event, callback) {
+        if (this.listeners[event]) {
+            this.listeners[event] = this.listeners[event].filter(cb => cb !== callback);
+        }
+    }
+
     emit(event, data) {
         if (this.listeners[event]) {
             this.listeners[event].forEach(callback => callback(data));
         }
+    }
+
+    async getOpenAIApiKey() {
+        if (!this.openAIApiKey) {
+            try {
+                const response = await fetch('/api/openai-key');
+                const data = await response.json();
+                this.openAIApiKey = data.openai_api_key;
+            } catch (error) {
+                console.error('Error fetching OpenAI API key:', error);
+            }
+        }
+        return this.openAIApiKey;
     }
 }

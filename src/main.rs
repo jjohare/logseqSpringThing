@@ -1,5 +1,5 @@
 use actix_files::Files;
-use actix_web::{web, App, HttpServer, middleware, HttpRequest};
+use actix_web::{web, App, HttpServer, middleware, HttpRequest, HttpResponse};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::collections::HashMap;
@@ -15,6 +15,7 @@ use crate::services::sonata_service::SonataService;
 use crate::services::graph_service::GraphService;
 use crate::utils::websocket_manager::WebSocketManager;
 use crate::utils::gpu_compute::GPUCompute;
+use serde_json::json;
 
 mod app_state;
 mod config;
@@ -109,10 +110,11 @@ async fn main() -> std::io::Result<()> {
             .route("/data", web::get().to(graph_handler::get_graph_data))
             .route("/simulate", web::post().to(graph_handler::trigger_remote_simulation))
             .service(
-                web::scope("/api/chat")
-                    .route("/init", web::post().to(ragflow_handler::init_chat))
-                    .route("/message", web::post().to(ragflow_handler::send_message))
-                    .route("/history", web::get().to(ragflow_handler::get_chat_history)),
+                web::scope("/api")
+                    .route("/chat/init", web::post().to(ragflow_handler::init_chat))
+                    .route("/chat/message", web::post().to(ragflow_handler::send_message))
+                    .route("/chat/history", web::get().to(ragflow_handler::get_chat_history))
+                    .route("/openai-key", web::get().to(get_openai_key))
             )
             .route(
                 "/ws",
@@ -120,9 +122,7 @@ async fn main() -> std::io::Result<()> {
                     let manager = websocket_manager.clone();
                     let state = app_state.clone();
                     move |req: HttpRequest, stream: web::Payload| {
-                        let manager = manager.clone();
-                        let state = state.clone();
-                        async move { manager.handle_websocket(req, stream, state).await }
+                        WebSocketManager::handle_websocket(req, stream, state.clone())
                     }
                 }),
             )
@@ -135,4 +135,12 @@ async fn main() -> std::io::Result<()> {
     .bind(&bind_address)?
     .run()
     .await
+}
+
+// Handler to get OpenAI API key
+async fn get_openai_key(app_state: web::Data<AppState>) -> HttpResponse {
+    let settings = app_state.settings.read().await;
+    HttpResponse::Ok().json(json!({
+        "openai_api_key": settings.openai.openai_api_key.clone()
+    }))
 }
