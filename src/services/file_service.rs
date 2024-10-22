@@ -4,41 +4,58 @@ use crate::models::metadata::Metadata;
 use crate::config::Settings;
 use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
-use log::{info, debug, error};
+use log::{info, debug, error, warn};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use chrono::Utc;
+use chrono::{Utc, Duration};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::error::Error as StdError;
+use reqwest::{Client, StatusCode, header};
+use base64;
+use thiserror::Error;
 
 const METADATA_PATH: &str = "/app/data/markdown/metadata.json";
+const CACHE_DURATION: i64 = 3600; // Cache duration in seconds (1 hour)
+
+#[derive(Error, Debug)]
+pub enum FileServiceError {
+    #[error("GitHub API error: {0}")]
+    GitHubApiError(String),
+    #[error("Rate limit exceeded")]
+    RateLimitExceeded,
+    #[error("Network error: {0}")]
+    NetworkError(#[from] reqwest::Error),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("JSON parsing error: {0}")]
+    JsonError(#[from] serde_json::Error),
+    #[error("Base64 decoding error: {0}")]
+    Base64Error(#[from] base64::DecodeError),
+}
 
 /// Structure representing a file's metadata from GitHub.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GithubFileMetadata {
-    pub name: String, // File path relative to the repository root or base path
-    pub sha: String,  // SHA1 checksum of the file
+    pub name: String,
+    pub sha: String,
 }
 
 /// Structure representing a processed file.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ProcessedFile {
-    pub file_name: String,    // Name/path of the file
-    pub content: String,      // Content of the file
-    pub is_public: bool,      // Indicates if the file is public
-    pub metadata: Metadata,   // Additional metadata
+    pub file_name: String,
+    pub content: String,
+    pub is_public: bool,
+    pub metadata: Metadata,
 }
 
 /// Trait defining the necessary GitHub service methods.
 #[async_trait]
 pub trait GitHubService: Send + Sync {
-    /// Fetches metadata for all relevant files from GitHub.
-    async fn fetch_file_metadata(&self) -> Result<Vec<GithubFileMetadata>, Box<dyn StdError + Send + Sync>>;
-    
-    /// Fetches the content of a file using its SHA1 checksum via the Git Blobs API.
-    async fn fetch_file_content_by_sha(&self, sha: &str) -> Result<String, Box<dyn StdError + Send + Sync>>;
+    async fn fetch_file_metadata(&self) -> Result<Vec<GithubFileMetadata>, FileServiceError>;
+    async fn fetch_file_content_by_sha(&self, sha: &str) -> Result<String, FileServiceError>;
 }
 
 /// Service responsible for interacting with GitHub and processing files.
@@ -46,50 +63,129 @@ pub struct FileService;
 
 /// Implementation of GitHubService for FileService
 pub struct GitHubServiceImpl {
-    // Add any necessary fields here, e.g., API token, base URL, etc.
+    client: Client,
+    settings: Arc<RwLock<Settings>>,
+    cache: Arc<RwLock<HashMap<String, (String, chrono::DateTime<Utc>)>>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct GithubContent {
+    name: String,
+    path: String,
+    sha: String,
+    #[serde(rename = "type")]
+    content_type: String,
+    content: Option<String>,
+    size: usize,
 }
 
 impl GitHubServiceImpl {
-    pub fn new(/* Add any necessary parameters */) -> Self {
+    pub fn new(settings: Arc<RwLock<Settings>>) -> Self {
         GitHubServiceImpl {
-            // Initialize fields
+            client: Client::new(),
+            settings,
+            cache: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    async fn handle_rate_limit(&self, headers: &header::HeaderMap) -> Result<(), FileServiceError> {
+        if let Some(remaining) = headers.get("X-RateLimit-Remaining") {
+            if remaining.to_str().unwrap_or("0") == "0" {
+                if let Some(reset) = headers.get("X-RateLimit-Reset") {
+                    let reset = reset.to_str().unwrap_or("0").parse::<i64>().unwrap_or(0);
+                    let now = Utc::now().timestamp();
+                    if reset > now {
+                        let wait_time = reset - now;
+                        warn!("Rate limit exceeded. Waiting for {} seconds", wait_time);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(wait_time as u64)).await;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
 #[async_trait]
 impl GitHubService for GitHubServiceImpl {
-    async fn fetch_file_metadata(&self) -> Result<Vec<GithubFileMetadata>, Box<dyn StdError + Send + Sync>> {
-        // TODO: Implement actual GitHub API call to fetch file metadata
-        // For now, return a mock implementation
-        Ok(vec![
-            GithubFileMetadata {
-                name: "example.md".to_string(),
-                sha: "abc123".to_string(),
+    async fn fetch_file_metadata(&self) -> Result<Vec<GithubFileMetadata>, FileServiceError> {
+        let settings = self.settings.read().await;
+        let mut all_metadata = Vec::new();
+        let mut page = 1;
+
+        loop {
+            let url = format!(
+                "https://api.github.com/repos/{}/{}/contents/{}?page={}&per_page=100",
+                settings.github.github_owner,
+                settings.github.github_repo,
+                settings.github.github_directory,
+                page
+            );
+
+            let response = self.client.get(&url).send().await?;
+            self.handle_rate_limit(response.headers()).await?;
+
+            if response.status() == StatusCode::OK {
+                let content: Vec<GithubContent> = response.json().await?;
+                let page_metadata: Vec<GithubFileMetadata> = content.into_iter()
+                    .filter(|item| item.content_type == "file")
+                    .map(|item| GithubFileMetadata {
+                        name: item.path,
+                        sha: item.sha,
+                    })
+                    .collect();
+
+                if page_metadata.is_empty() {
+                    break;
+                }
+
+                all_metadata.extend(page_metadata);
+                page += 1;
+            } else {
+                return Err(FileServiceError::GitHubApiError(format!("Error fetching file metadata: {}", response.status())));
             }
-        ])
+        }
+
+        Ok(all_metadata)
     }
 
-    async fn fetch_file_content_by_sha(&self, _sha: &str) -> Result<String, Box<dyn StdError + Send + Sync>> {
-        // TODO: Implement actual GitHub API call to fetch file content
-        // For now, return a mock implementation
-        Ok("public:: true\n# Example Content".to_string())
+    async fn fetch_file_content_by_sha(&self, sha: &str) -> Result<String, FileServiceError> {
+        let mut cache = self.cache.write().await;
+        if let Some((content, timestamp)) = cache.get(sha) {
+            if Utc::now() - *timestamp < Duration::seconds(CACHE_DURATION) {
+                return Ok(content.clone());
+            }
+        }
+
+        let settings = self.settings.read().await;
+        let url = format!("https://api.github.com/repos/{}/{}/git/blobs/{}", settings.github.github_owner, settings.github.github_repo, sha);
+        let response = self.client.get(&url).send().await?;
+        self.handle_rate_limit(response.headers()).await?;
+
+        if response.status() == StatusCode::OK {
+            let content: GithubContent = response.json().await?;
+            let decoded_content = base64::decode(&content.content.unwrap_or_default())?;
+            let content_string = String::from_utf8(decoded_content)
+                .map_err(|e| FileServiceError::GitHubApiError(format!("Error decoding content: {}", e)))?;
+            
+            cache.insert(sha.to_string(), (content_string.clone(), Utc::now()));
+            Ok(content_string)
+        } else {
+            Err(FileServiceError::GitHubApiError(format!("Error fetching file content: {}", response.status())))
+        }
     }
 }
 
 impl FileService {
-    /// Creates a new instance of FileService
     pub fn new() -> Self {
         FileService
     }
 
-    /// Fetches and processes files from GitHub, updating the local metadata map.
     pub async fn fetch_and_process_files(
         github_service: &dyn GitHubService,
         _settings: Arc<RwLock<Settings>>,
         metadata_map: &mut HashMap<String, Metadata>,
-    ) -> Result<Vec<ProcessedFile>, Box<dyn StdError + Send + Sync>> {
-        // Fetch all relevant file metadata from GitHub in a single API call.
+    ) -> Result<Vec<ProcessedFile>, FileServiceError> {
         let github_files_metadata = github_service.fetch_file_metadata().await?;
         debug!("Fetched {} file metadata from GitHub", github_files_metadata.len());
 
@@ -97,7 +193,6 @@ impl FileService {
         let local_metadata = metadata_map.clone();
         let github_file_names: HashSet<String> = github_files_metadata.iter().map(|f| f.name.clone()).collect();
         
-        // Identify and remove local files that no longer exist on GitHub.
         let removed_files: Vec<String> = local_metadata.keys()
             .filter(|name| !github_file_names.contains(*name))
             .cloned()
@@ -108,11 +203,9 @@ impl FileService {
             metadata_map.remove(&removed_file);
         }
 
-        // Iterate through each file metadata fetched from GitHub.
         for file_meta in github_files_metadata {
             let local_meta = metadata_map.get(&file_meta.name);
             if let Some(local_meta) = local_meta {
-                // If the SHA1 checksum matches, the file is up-to-date; skip processing.
                 if local_meta.sha1 == file_meta.sha {
                     debug!("File '{}' is up-to-date. Skipping.", file_meta.name);
                     continue;
@@ -120,34 +213,16 @@ impl FileService {
                     info!("File '{}' has been updated. Fetching new content.", file_meta.name);
                 }
             } else {
-                // New file detected; proceed to fetch its content.
                 info!("New file detected: '{}'. Fetching content.", file_meta.name);
             }
 
-            // Fetch the file content using the Blobs API with the SHA1 checksum.
-            let content = match github_service.fetch_file_content_by_sha(&file_meta.sha).await {
-                Ok(content) => content,
-                Err(e) => {
-                    error!("Failed to fetch content for '{}': {}", file_meta.name, e);
-                    continue; // Skip this file and proceed with others.
-                }
-            };
+            let content = github_service.fetch_file_content_by_sha(&file_meta.sha).await?;
 
-            // Determine if the file is public by checking the first line.
-            let is_public = if content.starts_with("public:: true") {
-                true
-            } else {
-                false
-            };
+            let is_public = content.starts_with("public:: true");
 
             if is_public {
-                // Save the file content to the local filesystem.
-                if let Err(e) = fs::write(format!("/app/data/markdown/{}", file_meta.name), &content) {
-                    error!("Failed to write file '{}': {}", file_meta.name, e);
-                    continue; // Skip updating metadata if writing fails.
-                }
+                fs::write(format!("/app/data/markdown/{}", file_meta.name), &content)?;
 
-                // Create a new metadata entry for the processed file.
                 let new_metadata = Metadata {
                     file_name: file_meta.name.clone(),
                     file_size: content.len(),
@@ -159,10 +234,8 @@ impl FileService {
                     topic_counts: HashMap::new(),
                 };
 
-                // Update the local metadata map with the new metadata.
                 metadata_map.insert(file_meta.name.clone(), new_metadata.clone());
 
-                // Add the processed file to the list for further processing.
                 processed_files.push(ProcessedFile {
                     file_name: file_meta.name.clone(),
                     content,
@@ -180,8 +253,7 @@ impl FileService {
         Ok(processed_files)
     }
 
-    /// Loads existing metadata from the local store or creates a new metadata file if it doesn't exist.
-    pub async fn load_or_create_metadata() -> Result<HashMap<String, Metadata>, Box<dyn StdError + Send + Sync>> {
+    pub async fn load_or_create_metadata() -> Result<HashMap<String, Metadata>, FileServiceError> {
         if std::path::Path::new(METADATA_PATH).exists() {
             let metadata_content = fs::read_to_string(METADATA_PATH)?;
             let metadata: HashMap<String, Metadata> = serde_json::from_str(&metadata_content)?;
@@ -194,8 +266,7 @@ impl FileService {
         }
     }
 
-    /// Saves the updated metadata map to the local metadata file.
-    pub async fn save_metadata(metadata_map: &HashMap<String, Metadata>) -> Result<(), Box<dyn StdError + Send + Sync>> {
+    pub async fn save_metadata(metadata_map: &HashMap<String, Metadata>) -> Result<(), FileServiceError> {
         let metadata_path = METADATA_PATH;
         
         if let Some(parent_dir) = std::path::Path::new(metadata_path).parent() {
@@ -209,8 +280,7 @@ impl FileService {
         Ok(())
     }
 
-    /// Updates the metadata file with new entries from the provided metadata map.
-    pub async fn update_metadata(metadata_map: &HashMap<String, Metadata>) -> Result<(), Box<dyn StdError + Send + Sync>> {
+    pub async fn update_metadata(metadata_map: &HashMap<String, Metadata>) -> Result<(), FileServiceError> {
         let existing_metadata = Self::load_or_create_metadata().await?;
         let mut updated_metadata = existing_metadata;
 
@@ -224,7 +294,6 @@ impl FileService {
         Ok(())
     }
 
-    /// Counts the number of hyperlinks in the provided content using a regex pattern.
     fn count_hyperlinks(content: &str) -> usize {
         let re = Regex::new(r"\[.*?\]\(.*?\)").unwrap();
         re.find_iter(content).count()

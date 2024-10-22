@@ -8,7 +8,8 @@ use crate::models::metadata::Metadata;
 use crate::models::simulation_params::SimulationParams;
 use crate::utils::gpu_compute::GPUCompute;
 use log::{info, warn, debug};
-use std::collections::HashMap;
+use std::collections::{HashMap, BinaryHeap, HashSet};
+use std::cmp::Ordering;
 use tokio::fs;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -137,27 +138,29 @@ impl GraphService {
     /// Calculates the force-directed layout using CPU.
     fn calculate_layout_cpu(graph: &mut GraphData, simulation_params: &SimulationParams) {
         const DAMPING: f32 = 0.9;
+        const EPSILON: f32 = 0.01;
 
         for _ in 0..simulation_params.iterations {
+            let mut max_movement = 0.0;
+
             // Calculate repulsive forces
             for i in 0..graph.nodes.len() {
-                for j in (i + 1)..graph.nodes.len() {
-                    let dx = graph.nodes[j].x - graph.nodes[i].x;
-                    let dy = graph.nodes[j].y - graph.nodes[i].y;
-                    let dz = graph.nodes[j].z - graph.nodes[i].z;
-                    let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(0.1);
-                    let force = simulation_params.repulsion_strength / (distance * distance);
-                    let fx = force * dx / distance;
-                    let fy = force * dy / distance;
-                    let fz = force * dz / distance;
-
-                    graph.nodes[i].vx -= fx;
-                    graph.nodes[i].vy -= fy;
-                    graph.nodes[i].vz -= fz;
-                    graph.nodes[j].vx += fx;
-                    graph.nodes[j].vy += fy;
-                    graph.nodes[j].vz += fz;
+                let mut force = (0.0, 0.0, 0.0);
+                for j in 0..graph.nodes.len() {
+                    if i != j {
+                        let dx = graph.nodes[j].x - graph.nodes[i].x;
+                        let dy = graph.nodes[j].y - graph.nodes[i].y;
+                        let dz = graph.nodes[j].z - graph.nodes[i].z;
+                        let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(EPSILON);
+                        let repulsion = simulation_params.repulsion_strength / (distance * distance);
+                        force.0 -= repulsion * dx / distance;
+                        force.1 -= repulsion * dy / distance;
+                        force.2 -= repulsion * dz / distance;
+                    }
                 }
+                graph.nodes[i].vx = (graph.nodes[i].vx + force.0) * DAMPING;
+                graph.nodes[i].vy = (graph.nodes[i].vy + force.1) * DAMPING;
+                graph.nodes[i].vz = (graph.nodes[i].vz + force.2) * DAMPING;
             }
 
             // Calculate attractive forces
@@ -167,11 +170,11 @@ impl GraphService {
                 let dx = graph.nodes[target].x - graph.nodes[source].x;
                 let dy = graph.nodes[target].y - graph.nodes[source].y;
                 let dz = graph.nodes[target].z - graph.nodes[source].z;
-                let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(0.1);
-                let force = simulation_params.attraction_strength * distance * edge.weight;
-                let fx = force * dx / distance;
-                let fy = force * dy / distance;
-                let fz = force * dz / distance;
+                let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(EPSILON);
+                let attraction = simulation_params.attraction_strength * distance * edge.weight;
+                let fx = attraction * dx / distance;
+                let fy = attraction * dy / distance;
+                let fz = attraction * dz / distance;
 
                 graph.nodes[source].vx += fx;
                 graph.nodes[source].vy += fy;
@@ -183,79 +186,85 @@ impl GraphService {
 
             // Update positions
             for node in &mut graph.nodes {
+                let movement = (node.vx * node.vx + node.vy * node.vy + node.vz * node.vz).sqrt();
+                max_movement = max_movement.max(movement);
+
                 node.x += node.vx;
                 node.y += node.vy;
                 node.z += node.vz;
-                node.vx *= DAMPING;
-                node.vy *= DAMPING;
-                node.vz *= DAMPING;
+            }
+
+            // Check for convergence
+            if max_movement < EPSILON {
+                break;
             }
         }
     }
 
-    /// Finds the shortest path between two nodes in the graph.
+    /// Finds the shortest path between two nodes in the graph using A* algorithm.
     pub fn find_shortest_path(graph: &GraphData, start: &str, end: &str) -> Result<Vec<String>, String> {
-        let mut distances: HashMap<String, f32> = HashMap::new();
-        let mut previous: HashMap<String, Option<String>> = HashMap::new();
-        let mut unvisited: Vec<String> = Vec::new();
-    
-        for node in &graph.nodes {
-            distances.insert(node.id.clone(), f32::INFINITY);
-            previous.insert(node.id.clone(), None);
-            unvisited.push(node.id.clone());
+        #[derive(Clone, Eq, PartialEq)]
+        struct State {
+            cost: f32,
+            node: String,
         }
-        distances.insert(start.to_string(), 0.0);
-    
-        while !unvisited.is_empty() {
-            unvisited.sort_by(|a, b| distances[a].partial_cmp(&distances[b]).unwrap());
-            let current = unvisited.remove(0);
-    
-            if current == end {
-                break;
+
+        impl Ord for State {
+            fn cmp(&self, other: &Self) -> Ordering {
+                other.cost.partial_cmp(&self.cost).unwrap_or(Ordering::Equal)
             }
-    
-            for edge in &graph.edges {
-                if edge.source == current || edge.target_node == current {
-                    let neighbor = if edge.source == current { &edge.target_node } else { &edge.source };
-                    if unvisited.contains(neighbor) {
-                        let alt = distances[&current] + edge.weight;
-                        if alt < distances[neighbor] {
-                            distances.insert(neighbor.to_string(), alt);
-                            previous.insert(neighbor.to_string(), Some(current.to_string()));
-                        }
-                    }
+        }
+
+        impl PartialOrd for State {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        let mut heap = BinaryHeap::new();
+        let mut costs = HashMap::new();
+        let mut came_from = HashMap::new();
+        let mut visited = HashSet::new();
+
+        heap.push(State { cost: 0.0, node: start.to_string() });
+        costs.insert(start.to_string(), 0.0);
+
+        while let Some(State { cost, node }) = heap.pop() {
+            if node == end {
+                let mut path = vec![end.to_string()];
+                let mut current = end;
+                while let Some(prev) = came_from.get(current) {
+                    path.push(prev.to_string());
+                    current = prev;
                 }
-            }
-        }
-    
-        // Reconstruct path
-        let mut path = Vec::new();
-        let mut current = end.to_string();
-        while let Some(prev) = previous[&current].clone() {
-            path.push(current.clone());
-            current = prev;
-            if current == start {
-                path.push(start.to_string());
                 path.reverse();
                 return Ok(path);
             }
+
+            if visited.contains(&node) {
+                continue;
+            }
+            visited.insert(node.clone());
+
+            for edge in &graph.edges {
+                let next = if edge.source == node {
+                    &edge.target_node
+                } else if edge.target_node == node {
+                    &edge.source
+                } else {
+                    continue;
+                };
+
+                let new_cost = cost + edge.weight;
+                if !costs.contains_key(next) || new_cost < *costs.get(next).unwrap() {
+                    costs.insert(next.to_string(), new_cost);
+                    let priority = new_cost + 1.0; // Simple heuristic
+                    heap.push(State { cost: priority, node: next.to_string() });
+                    came_from.insert(next.to_string(), node.clone());
+                }
+            }
         }
-    
+
         Err("No path found".to_string())
-    }
-
-    /// Performs a remote simulation on the graph.
-    pub async fn perform_remote_simulation(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("Starting remote simulation");
-        
-        // TODO: Implement the actual remote simulation logic here
-        // This could involve making API calls to a remote service,
-        // processing the results, and updating the graph accordingly
-
-        // Placeholder for simulation logic
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-        info!("Remote simulation completed successfully");
-        Ok(())
     }
 }

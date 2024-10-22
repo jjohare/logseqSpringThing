@@ -83,6 +83,13 @@ async fn main() -> std::io::Result<()> {
         ));
     }
 
+    // Initialize GraphService
+    let graph_service = Arc::new(GraphService::new(
+        gpu_compute.clone(),
+        websocket_manager.clone(),
+        settings.clone(),
+    ));
+
     // Initialize AppState
     let app_state = web::Data::new(AppState::new(
         Arc::new(RwLock::new(GraphData::default())),
@@ -95,7 +102,7 @@ async fn main() -> std::io::Result<()> {
         websocket_manager.clone(),
         Some(gpu_compute),
         "default_conversation_id".to_string(),
-        None, // Initialize graph_service as None
+        Some(graph_service), // Include the initialized GraphService
     ));
 
     // Define bind address
@@ -108,7 +115,6 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Logger::default())
             // Define your routes here
             .route("/data", web::get().to(graph_handler::get_graph_data))
-            .route("/simulate", web::post().to(graph_handler::trigger_remote_simulation))
             .service(
                 web::scope("/api")
                     .route("/chat/init", web::post().to(ragflow_handler::init_chat))

@@ -44,7 +44,7 @@
             :id="control.name"
             type="color"
             v-model="control.value"
-            @change="emitChange(control.name, control.value)"
+            @change="emitChange(control.name, colorToInt(control.value))"
           >
         </div>
       </div>
@@ -157,6 +157,10 @@ export default defineComponent({
         gpuAvailable: {
             type: Boolean,
             required: true
+        },
+        config: {
+            type: Object,
+            required: true
         }
     },
     data() {
@@ -164,132 +168,112 @@ export default defineComponent({
             isHidden: false,
             fisheyeEnabled: false,
             fisheyeStrength: 0.5,
-            simulationMode: 'cpu',
-            // Color controls mapped to settings.toml
+            simulationMode: 'cpu', // Default to CPU mode
             colorControls: [
-                { name: 'nodeColor', label: 'Node Color', type: 'color', value: '#1A0B31' },
-                { name: 'edgeColor', label: 'Edge Color', type: 'color', value: '#ff0000' },
-                { name: 'hologramColor', label: 'Hologram Color', type: 'color', value: '#FFD700' },
+                { name: 'nodeColor', label: 'Node Color', type: 'color', value: this.intToColor(this.config.visualization.node_color) },
+                { name: 'edgeColor', label: 'Edge Color', type: 'color', value: this.intToColor(this.config.visualization.edge_color) },
+                { name: 'hologramColor', label: 'Hologram Color', type: 'color', value: this.intToColor(this.config.visualization.hologram_color) },
             ],
-            // Size and opacity controls mapped to settings.toml
             sizeOpacityControls: [
-                { name: 'nodeSizeScalingFactor', label: 'Node Size Scaling', type: 'range', value: 5, min: 1, max: 10, step: 0.1 },
-                { name: 'hologramScale', label: 'Hologram Scale', type: 'range', value: 5, min: 1, max: 10, step: 0.1 },
-                { name: 'hologramOpacity', label: 'Hologram Opacity', type: 'range', value: 0.1, min: 0, max: 1, step: 0.01 },
-                { name: 'edgeOpacity', label: 'Edge Opacity', type: 'range', value: 0.3, min: 0, max: 1, step: 0.01 },
+                { name: 'nodeSizeScalingFactor', label: 'Node Size Scaling', type: 'range', value: this.config.visualization.node_size_scaling_factor, min: 1, max: 10, step: 0.1 },
+                { name: 'hologramScale', label: 'Hologram Scale', type: 'range', value: this.config.visualization.hologram_scale, min: 1, max: 10, step: 0.1 },
+                { name: 'hologramOpacity', label: 'Hologram Opacity', type: 'range', value: this.config.visualization.hologram_opacity, min: 0, max: 1, step: 0.01 },
+                { name: 'edgeOpacity', label: 'Edge Opacity', type: 'range', value: this.config.visualization.edge_opacity, min: 0, max: 1, step: 0.01 },
             ],
-            // Bloom effect controls mapped to settings.toml
             bloomControls: [
-                { name: 'nodeBloomStrength', label: 'Node Bloom Strength', type: 'range', value: 0.1, min: 0, max: 1, step: 0.01 },
-                { name: 'nodeBloomRadius', label: 'Node Bloom Radius', type: 'range', value: 0.1, min: 0, max: 1, step: 0.01 },
-                { name: 'nodeBloomThreshold', label: 'Node Bloom Threshold', type: 'range', value: 0, min: 0, max: 1, step: 0.01 },
-                { name: 'edgeBloomStrength', label: 'Edge Bloom Strength', type: 'range', value: 0.2, min: 0, max: 1, step: 0.01 },
-                { name: 'edgeBloomRadius', label: 'Edge Bloom Radius', type: 'range', value: 0.3, min: 0, max: 1, step: 0.01 },
-                { name: 'edgeBloomThreshold', label: 'Edge Bloom Threshold', type: 'range', value: 0, min: 0, max: 1, step: 0.01 },
-                { name: 'environmentBloomStrength', label: 'Environment Bloom Strength', type: 'range', value: 0.5, min: 0, max: 2, step: 0.01 },
-                { name: 'environmentBloomRadius', label: 'Environment Bloom Radius', type: 'range', value: 0.1, min: 0, max: 2, step: 0.01 },
-                { name: 'environmentBloomThreshold', label: 'Environment Bloom Threshold', type: 'range', value: 0, min: 0, max: 1, step: 0.01 },
+                { name: 'nodeBloomStrength', label: 'Node Bloom Strength', type: 'range', value: this.config.bloom.node_bloom_strength, min: 0, max: 1, step: 0.01 },
+                { name: 'nodeBloomRadius', label: 'Node Bloom Radius', type: 'range', value: this.config.bloom.node_bloom_radius, min: 0, max: 1, step: 0.01 },
+                { name: 'nodeBloomThreshold', label: 'Node Bloom Threshold', type: 'range', value: this.config.bloom.node_bloom_threshold, min: 0, max: 1, step: 0.01 },
+                { name: 'edgeBloomStrength', label: 'Edge Bloom Strength', type: 'range', value: this.config.bloom.edge_bloom_strength, min: 0, max: 1, step: 0.01 },
+                { name: 'edgeBloomRadius', label: 'Edge Bloom Radius', type: 'range', value: this.config.bloom.edge_bloom_radius, min: 0, max: 1, step: 0.01 },
+                { name: 'edgeBloomThreshold', label: 'Edge Bloom Threshold', type: 'range', value: this.config.bloom.edge_bloom_threshold, min: 0, max: 1, step: 0.01 },
+                { name: 'environmentBloomStrength', label: 'Environment Bloom Strength', type: 'range', value: this.config.bloom.environment_bloom_strength, min: 0, max: 2, step: 0.01 },
+                { name: 'environmentBloomRadius', label: 'Environment Bloom Radius', type: 'range', value: this.config.bloom.environment_bloom_radius, min: 0, max: 2, step: 0.01 },
+                { name: 'environmentBloomThreshold', label: 'Environment Bloom Threshold', type: 'range', value: this.config.bloom.environment_bloom_threshold, min: 0, max: 1, step: 0.01 },
             ],
-            // Force-directed graph controls mapped to settings.toml
             forceDirectedControls: [
-                { name: 'forceDirectedIterations', label: 'Iterations', type: 'range', value: 100, min: 10, max: 500, step: 10 },
-                { name: 'forceDirectedRepulsion', label: 'Repulsion', type: 'range', value: 1.0, min: 0.1, max: 10.0, step: 0.1 },
-                { name: 'forceDirectedAttraction', label: 'Attraction', type: 'range', value: 0.01, min: 0.001, max: 0.1, step: 0.001 },
+                { name: 'forceDirectedIterations', label: 'Iterations', type: 'range', value: this.config.visualization.force_directed_iterations, min: 10, max: 500, step: 10 },
+                { name: 'forceDirectedRepulsion', label: 'Repulsion', type: 'range', value: this.config.visualization.force_directed_repulsion, min: 0.1, max: 10.0, step: 0.1 },
+                { name: 'forceDirectedAttraction', label: 'Attraction', type: 'range', value: this.config.visualization.force_directed_attraction, min: 0.001, max: 0.1, step: 0.001 },
             ],
-            // Additional controls mapped to settings.toml
             additionalControls: [
-                { name: 'labelFontSize', label: 'Label Font Size', type: 'range', value: 36, min: 12, max: 72, step: 1 },
-                { name: 'fogDensity', label: 'Fog Density', type: 'range', value: 0.002, min: 0, max: 0.01, step: 0.0001 },
+                { name: 'labelFontSize', label: 'Label Font Size', type: 'range', value: this.config.visualization.label_font_size, min: 12, max: 72, step: 1 },
+                { name: 'fogDensity', label: 'Fog Density', type: 'range', value: this.config.visualization.fog_density, min: 0, max: 0.01, step: 0.0001 },
             ],
         };
     },
     methods: {
-        // Toggle the visibility of the control panel
         togglePanel() {
             this.isHidden = !this.isHidden;
         },
-        // Emit changes to parent component
         emitChange(name, value) {
-            if (this.isColorControl(name)) {
-                value = parseInt(value.replace('#', '0x'), 16);
-            }
             this.$emit('control-change', { name, value });
         },
-        // Check if a control is a color control
-        isColorControl(name) {
-            return this.colorControls.some(control => control.name === name);
-        },
-        // Reset all controls to their default values
         resetControls() {
             this.colorControls.forEach(control => {
-                control.value = this.getDefaultValue(control.name);
-                this.emitChange(control.name, control.value);
+                control.value = this.intToColor(this.config.visualization[this.snakeCaseName(control.name)]);
+                this.emitChange(control.name, this.colorToInt(control.value));
             });
             this.sizeOpacityControls.forEach(control => {
-                control.value = this.getDefaultValue(control.name);
+                control.value = this.config.visualization[this.snakeCaseName(control.name)];
                 this.emitChange(control.name, control.value);
             });
             this.bloomControls.forEach(control => {
-                control.value = this.getDefaultValue(control.name);
+                control.value = this.config.bloom[this.snakeCaseName(control.name)];
                 this.emitChange(control.name, control.value);
             });
             this.forceDirectedControls.forEach(control => {
-                control.value = this.getDefaultValue(control.name);
+                control.value = this.config.visualization[this.snakeCaseName(control.name)];
                 this.emitChange(control.name, control.value);
             });
             this.additionalControls.forEach(control => {
-                control.value = this.getDefaultValue(control.name);
+                control.value = this.config.visualization[this.snakeCaseName(control.name)];
                 this.emitChange(control.name, control.value);
             });
             this.fisheyeEnabled = false;
             this.emitChange('fisheyeEnabled', false);
             this.fisheyeStrength = 0.5;
             this.emitChange('fisheyeStrength', 0.5);
-            this.simulationMode = 'cpu';
-            this.emitChange('simulationMode', 'cpu');
+            
+            // Update: Reset simulation mode based on availability
+            if (this.gpuAvailable) {
+                this.simulationMode = 'gpu';
+            } else if (this.websocketService.isConnected()) {
+                this.simulationMode = 'remote';
+            } else {
+                this.simulationMode = 'cpu';
+            }
+            this.emitChange('simulationMode', this.simulationMode);
         },
-        // Get default value for a control
-        getDefaultValue(name) {
-            const defaults = {
-                // Default values mapped to settings.toml
-                nodeColor: '#1A0B31',
-                edgeColor: '#ff0000',
-                hologramColor: '#FFD700',
-                nodeSizeScalingFactor: 5,
-                hologramScale: 5,
-                hologramOpacity: 0.1,
-                edgeOpacity: 0.3,
-                labelFontSize: 36,
-                fogDensity: 0.002,
-                nodeBloomStrength: 0.1,
-                nodeBloomRadius: 0.1,
-                nodeBloomThreshold: 0,
-                edgeBloomStrength: 0.2,
-                edgeBloomRadius: 0.3,
-                edgeBloomThreshold: 0,
-                environmentBloomStrength: 0.5,
-                environmentBloomRadius: 0.1,
-                environmentBloomThreshold: 0,
-                forceDirectedIterations: 100,
-                forceDirectedRepulsion: 1.0,
-                forceDirectedAttraction: 0.01,
-            };
-            return defaults[name] || '';
-        },
-        // Toggle fullscreen mode
         toggleFullscreen() {
             this.$emit('toggle-fullscreen');
         },
-        // Enable Spacemouse
         enableSpacemouse() {
             this.$emit('enable-spacemouse');
+        },
+        colorToInt(color) {
+            return parseInt(color.replace('#', '0x'), 16);
+        },
+        intToColor(int) {
+            return '#' + int.toString(16).padStart(6, '0');
+        },
+        snakeCaseName(name) {
+            return name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
         }
+    },
+    mounted() {
+        // Set initial simulation mode based on availability
+        if (this.gpuAvailable) {
+            this.simulationMode = 'gpu';
+        } else if (this.websocketService.isConnected()) {
+            this.simulationMode = 'remote';
+        }
+        this.emitChange('simulationMode', this.simulationMode);
     }
 });
 </script>
 
 <style scoped>
-/* Styles remain unchanged */
 #control-panel {
   position: fixed;
   top: 20px;

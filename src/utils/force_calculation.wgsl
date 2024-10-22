@@ -7,37 +7,26 @@ struct Node {
 // Structure representing an edge between two nodes.
 struct Edge {
     source: u32,
-    target_node: u32,
+    target: u32,
     weight: f32,
-}
-
-// Buffer containing all nodes.
-struct NodesBuffer {
-    nodes: array<Node>,
-}
-
-// Buffer containing all edges.
-struct EdgesBuffer {
-    edges: array<Edge>,
 }
 
 // Parameters for the simulation.
 struct SimulationParams {
     iterations: u32,
-    repulsion_strength: f32,
-    attraction_strength: f32,
+    repulsionStrength: f32,
+    attractionStrength: f32,
     damping: f32,
-    padding: u32,
 }
 
 // Uniform buffer containing simulation parameters.
-@group(0) @binding(2) var<uniform> simulation_params: SimulationParams;
+@group(0) @binding(2) var<uniform> params: SimulationParams;
 
 // Nodes buffer for reading and writing node data.
-@group(0) @binding(0) var<storage, read_write> nodes_buffer: NodesBuffer;
+@group(0) @binding(0) var<storage, read_write> nodes: array<Node>;
 
 // Edges buffer for reading edge data.
-@group(0) @binding(1) var<storage, read> edges_buffer: EdgesBuffer;
+@group(0) @binding(1) var<storage, read> edges: array<Edge>;
 
 fn is_nan(x: f32) -> bool {
     return x != x;
@@ -54,63 +43,54 @@ fn is_valid_float3(v: vec3<f32>) -> bool {
 // Main compute shader function.
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let node_id = global_id.x;
-    let n_nodes = arrayLength(&nodes_buffer.nodes);
-
-    if (node_id < n_nodes) {
-        var node = nodes_buffer.nodes[node_id];
-        var force = vec3<f32>(0.0, 0.0, 0.0);
-
-        if (!is_valid_float3(node.position)) {
-            node.position = vec3<f32>(0.0, 0.0, 0.0);
-        }
-
-        // Repulsive force between nodes.
-        for (var i = 0u; i < n_nodes; i = i + 1u) {
-            if (i != node_id) {
-                let other_node = nodes_buffer.nodes[i];
-                let direction = node.position - other_node.position;
-                let distance_sq = dot(direction, direction);
-                
-                // Check for zero distance to avoid division by zero
-                if (distance_sq > 0.0001) {
-                    let repulsive_force = simulation_params.repulsion_strength / distance_sq;
-                    force = force + normalize(direction) * repulsive_force;
-                }
-            }
-        }
-
-        // Attractive force along edges.
-        let n_edges = arrayLength(&edges_buffer.edges);
-        for (var j = 0u; j < n_edges; j = j + 1u) {
-            let edge = edges_buffer.edges[j];
-            if (edge.source == node_id || edge.target_node == node_id) {
-                let other_id = select(edge.source, edge.target_node, edge.source == node_id);
-                let other_node = nodes_buffer.nodes[other_id];
-                let direction = other_node.position - node.position;
-                let distance = length(direction);
-                if (distance > 0.0001) {
-                    let attractive_force = simulation_params.attraction_strength * edge.weight * distance;
-                    force = force + normalize(direction) * attractive_force;
-                }
-            }
-        }
-
-        // Apply damping to velocity.
-        node.velocity = (node.velocity + force) * simulation_params.damping;
-
-        // Update node's position.
-        node.position = node.position + node.velocity;
-
-        // Ensure final position and velocity are valid
-        if (!is_valid_float3(node.position)) {
-            node.position = vec3<f32>(0.0, 0.0, 0.0);
-        }
-        if (!is_valid_float3(node.velocity)) {
-            node.velocity = vec3<f32>(0.0, 0.0, 0.0);
-        }
-
-        // Write back to the buffer.
-        nodes_buffer.nodes[node_id] = node;
+    let i = global_id.x;
+    if (i >= arrayLength(&nodes)) {
+        return;
     }
+
+    var node = nodes[i];
+    var force = vec3<f32>(0.0);
+
+    // Repulsion
+    for (var j = 0; j < arrayLength(&nodes); j++) {
+        if (i != j) {
+            let other = nodes[j];
+            let diff = node.position - other.position;
+            let distSq = dot(diff, diff);
+            if (distSq > 0.0) {
+                force += normalize(diff) * params.repulsionStrength / distSq;
+            }
+        }
+    }
+
+    // Attraction
+    for (var j = 0; j < arrayLength(&edges); j++) {
+        let edge = edges[j];
+        if (edge.source == i || edge.target == i) {
+            let otherIndex = edge.source == i ? edge.target : edge.source;
+            let other = nodes[otherIndex];
+            let diff = other.position - node.position;
+            let dist = length(diff);
+            if (dist > 0.0) {
+                force += normalize(diff) * params.attractionStrength * edge.weight * dist;
+            }
+        }
+    }
+
+    // Apply damping to velocity.
+    node.velocity = (node.velocity + force) * params.damping;
+
+    // Update node's position.
+    node.position = node.position + node.velocity;
+
+    // Ensure final position and velocity are valid
+    if (!is_valid_float3(node.position)) {
+        node.position = vec3<f32>(0.0, 0.0, 0.0);
+    }
+    if (!is_valid_float3(node.velocity)) {
+        node.velocity = vec3<f32>(0.0, 0.0, 0.0);
+    }
+
+    // Write back to the buffer.
+    nodes[i] = node;
 }

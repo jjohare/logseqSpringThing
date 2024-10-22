@@ -15,6 +15,9 @@
         Use OpenAI TTS
       </label>
     </div>
+    <div v-if="error" class="error-message">
+      {{ error }}
+    </div>
   </div>
 </template>
 
@@ -33,43 +36,69 @@ export default defineComponent({
         return {
             chatInput: '',
             chatMessages: [],
-            useOpenAI: false, // State for TTS toggle
+            useOpenAI: false,
+            error: null
         };
     },
     methods: {
-        sendMessage() {
+        async sendMessage() {
             if (this.chatInput.trim()) {
-                this.websocketService.sendChatMessage({
-                    message: this.chatInput,
-                    useOpenAI: this.useOpenAI
-                });
-                this.chatMessages.push({ sender: 'You', message: this.chatInput });
-                this.chatInput = '';
+                try {
+                    await this.websocketService.sendChatMessage({
+                        message: this.chatInput,
+                        useOpenAI: this.useOpenAI
+                    });
+                    this.chatMessages.push({ sender: 'You', message: this.chatInput });
+                    this.chatInput = '';
+                    this.error = null;
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    this.error = 'Failed to send message. Please try again.';
+                }
             }
         },
-        toggleTTS() {
-            this.websocketService.toggleTTS(this.useOpenAI);
-            console.log(`TTS method set to: ${this.useOpenAI ? 'OpenAI' : 'Sonata'}`);
-        },
-        receiveMessage(data) {
-            this.chatMessages.push({ sender: 'AI', message: data.text });
-            if (data.audio && !this.useOpenAI) {
-                this.websocketService.playAudio(data.audio);
-            } else if (this.useOpenAI) {
-                this.websocketService.generateAndPlayOpenAIAudio(data.text);
+        async toggleTTS() {
+            try {
+                await this.websocketService.toggleTTS(this.useOpenAI);
+                console.log(`TTS method set to: ${this.useOpenAI ? 'OpenAI' : 'Sonata'}`);
+                this.error = null;
+            } catch (error) {
+                console.error('Error toggling TTS:', error);
+                this.error = 'Failed to toggle TTS. Please try again.';
             }
+        },
+        async receiveMessage(data) {
+            try {
+                this.chatMessages.push({ sender: 'AI', message: data.text });
+                if (data.audio && !this.useOpenAI) {
+                    await this.websocketService.playAudio(data.audio);
+                } else if (this.useOpenAI) {
+                    await this.websocketService.generateAndPlayOpenAIAudio(data.text);
+                }
+                this.error = null;
+            } catch (error) {
+                console.error('Error processing received message:', error);
+                this.error = 'Failed to process received message. Please try again.';
+            }
+        },
+        handleWebSocketError(error) {
+            console.error('WebSocket error:', error);
+            this.error = 'Connection error. Please check your internet connection and try again.';
         }
     },
     mounted() {
         if (this.websocketService) {
             this.websocketService.on('ragflowResponse', this.receiveMessage);
+            this.websocketService.on('error', this.handleWebSocketError);
         } else {
             console.error('WebSocketService is undefined');
+            this.error = 'Chat service is unavailable. Please try again later.';
         }
     },
     beforeUnmount() {
         if (this.websocketService) {
             this.websocketService.off('ragflowResponse', this.receiveMessage);
+            this.websocketService.off('error', this.handleWebSocketError);
         }
     }
 });
@@ -116,5 +145,11 @@ export default defineComponent({
 
 .tts-toggle {
   margin-top: 10px;
+}
+
+.error-message {
+  color: #ff4444;
+  margin-top: 10px;
+  font-weight: bold;
 }
 </style>

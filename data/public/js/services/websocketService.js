@@ -32,7 +32,7 @@ export class WebsocketService {
 
         this.socket.onerror = (error) => {
             console.error('WebSocket error:', error);
-            this.emit('error', { type: 'connection_error', message: error.message });
+            this.emit('error', { type: 'connection_error', message: 'WebSocket connection error' });
         };
 
         this.socket.onclose = (event) => {
@@ -54,35 +54,35 @@ export class WebsocketService {
             this.handleServerMessage(data);
         } catch (error) {
             console.error('Error parsing WebSocket message:', error);
-            this.emit('error', { type: 'parse_error', message: error.message, rawData: event.data });
+            this.emit('error', { type: 'parse_error', message: 'Failed to parse server message', details: error.message });
         }
     }
 
     reconnect() {
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts += 1;
-            const timeout = this.reconnectInterval * this.reconnectAttempts;
-            console.log(`Reconnecting in ${timeout / 1000} seconds...`);
+            const timeout = this.reconnectInterval * Math.pow(2, this.reconnectAttempts - 1);
+            console.log(`Reconnecting in ${timeout / 1000} seconds... (Attempt ${this.reconnectAttempts})`);
             setTimeout(() => this.connect(), timeout);
         } else {
             console.error('Max reconnect attempts reached. Giving up.');
-            this.emit('error', { type: 'reconnect_failed', message: 'Max reconnect attempts reached.' });
+            this.emit('error', { type: 'reconnect_failed', message: 'Failed to reconnect after multiple attempts' });
         }
     }
 
     send(data) {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        if (this.isConnected()) {
             try {
                 const jsonString = JSON.stringify(data);
                 const compressed = pako.deflate(jsonString);
                 this.socket.send(compressed.buffer);
             } catch (error) {
                 console.error('Error compressing/sending message:', error);
-                this.emit('error', { type: 'send_error', message: error.message });
+                this.emit('error', { type: 'send_error', message: 'Failed to send message', details: error.message });
             }
         } else {
-            console.error('WebSocket is not open. Current state:', this.socket ? this.socket.readyState : 'null');
-            this.emit('error', { type: 'send_error', message: 'WebSocket is not open' });
+            console.error('WebSocket is not open. Current state:', this.getConnectionState());
+            this.emit('error', { type: 'send_error', message: 'WebSocket is not open', details: this.getConnectionState() });
         }
     }
 
@@ -101,6 +101,7 @@ export class WebsocketService {
     }
 
     handleServerMessage(data) {
+        console.log('Received message:', data.type);
         switch (data.type) {
             case 'ragflowResponse':
                 this.emit('ragflowResponse', data);
@@ -121,9 +122,28 @@ export class WebsocketService {
             case 'openAIApiKey':
                 this.openAIApiKey = data.key;
                 break;
+            case 'simulationUpdate':
+                this.emit('simulationUpdate', data.simulationData);
+                break;
+            case 'layoutUpdate':
+                this.emit('layoutUpdate', data.layoutData);
+                break;
+            case 'audioData':
+                this.handleAudioData(data.audioBase64);
+                break;
             default:
                 console.warn('Unhandled message type:', data.type);
+                this.emit('unhandledMessage', data);
                 break;
+        }
+    }
+
+    handleAudioData(audioBase64) {
+        try {
+            this.playAudio(audioBase64);
+        } catch (error) {
+            console.error('Error playing audio:', error);
+            this.emit('error', { type: 'audio_error', message: 'Failed to play audio', details: error.message });
         }
     }
 
@@ -146,6 +166,7 @@ export class WebsocketService {
             source.start(0);
         }, (error) => {
             console.error('Error decoding audio data:', error);
+            this.emit('error', { type: 'audio_decode_error', message: 'Failed to decode audio data', details: error.message });
         });
     }
 
@@ -153,6 +174,7 @@ export class WebsocketService {
         const apiKey = await this.getOpenAIApiKey();
         if (!apiKey) {
             console.error('OpenAI API key not available');
+            this.emit('error', { type: 'openai_key_error', message: 'OpenAI API key not available' });
             return;
         }
 
@@ -186,9 +208,11 @@ export class WebsocketService {
                 source.start(0);
             }, (error) => {
                 console.error('Error decoding audio data:', error);
+                this.emit('error', { type: 'openai_audio_decode_error', message: 'Failed to decode OpenAI audio data', details: error.message });
             });
         } catch (error) {
             console.error('Error generating OpenAI audio:', error);
+            this.emit('error', { type: 'openai_audio_error', message: 'Failed to generate OpenAI audio', details: error.message });
         }
     }
 
@@ -219,12 +243,26 @@ export class WebsocketService {
         if (!this.openAIApiKey) {
             try {
                 const response = await fetch('/api/openai-key');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 const data = await response.json();
                 this.openAIApiKey = data.openai_api_key;
             } catch (error) {
                 console.error('Error fetching OpenAI API key:', error);
+                this.emit('error', { type: 'openai_key_fetch_error', message: 'Failed to fetch OpenAI API key', details: error.message });
             }
         }
         return this.openAIApiKey;
+    }
+
+    isConnected() {
+        return this.socket && this.socket.readyState === WebSocket.OPEN;
+    }
+
+    getConnectionState() {
+        if (!this.socket) return 'CLOSED';
+        const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+        return states[this.socket.readyState];
     }
 }

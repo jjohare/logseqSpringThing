@@ -81,9 +81,16 @@ pub struct SonataSettings {
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        let mut config = Config::builder()
-            .add_source(File::with_name("settings.toml").required(true))
-            .add_source(Environment::with_prefix("APP").separator("__"));
+        let mut config = Config::builder();
+
+        // Load from .env first
+        if let Ok(path) = env::var("SETTINGS_ENV_FILE") {
+            config = config.add_source(File::from_str(&path).required(false))?;
+        } else {
+            config = config.add_source(Environment::with_prefix("APP").separator("__"))?;
+        }
+
+        config = config.add_source(File::with_name("settings.toml").required(true))?;
 
         // Explicitly load GitHub settings from environment variables
         if let Ok(token) = env::var("GITHUB_ACCESS_TOKEN") {

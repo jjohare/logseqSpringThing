@@ -7,8 +7,20 @@ import { GraphDataManager } from './services/graphDataManager.js';
 import { enableSpacemouse } from './services/spacemouse.js';
 import { WebGLRenderer } from 'three';
 import { isGPUAvailable, initGPUCompute } from './gpuUtils.js';
+import toml from 'toml';
 
 console.log('App.js: Starting initialization');
+
+async function loadConfig() {
+    try {
+        const response = await fetch('/settings.toml');
+        const tomlText = await response.text();
+        return toml.parse(tomlText);
+    } catch (error) {
+        console.error('Error loading configuration:', error);
+        return null;
+    }
+}
 
 class App {
     constructor() {
@@ -23,11 +35,16 @@ class App {
         this.renderer = new WebGLRenderer({ antialias: true }); // Initialize renderer
         console.log('App: THREE.WebGLRenderer created');
         this.setupWebsocketListeners = this.setupWebsocketListeners.bind(this);
+        this.config = null;
         this.initializeApp();
     }
 
-    initializeApp() {
+    async initializeApp() {
         console.log('App: Initializing app');
+        this.config = await loadConfig();
+        if (!this.config) {
+            console.error('Failed to load configuration. Using default values.');
+        }
         this.initGPU();
         this.initVueApp();
         this.setupEventListeners();
@@ -39,8 +56,12 @@ class App {
         if (this.gpuAvailable) {
             this.gpuCompute = initGPUCompute(1024, 1024, this.renderer); // Adjust dimensions as needed
             console.log('GPU computation initialized');
+            this.simulationMode = 'gpu'; // Set default to GPU if available
+        } else if (this.websocketService.isConnected()) {
+            this.simulationMode = 'remote'; // Set to remote if WebSocket is connected and GPU is not available
+            console.log('Remote simulation mode set');
         } else {
-            console.warn('GPU acceleration not available, using CPU fallback');
+            console.warn('GPU acceleration not available and not connected to server, using CPU fallback');
         }
     }
 
@@ -53,6 +74,7 @@ class App {
                 provide('graphDataManager', this.graphDataManager);
                 provide('renderer', this.renderer);
                 provide('simulationMode', this.simulationMode);
+                provide('config', this.config);
                 
                 onMounted(() => {
                     console.log('App: Vue app mounted');
@@ -61,7 +83,8 @@ class App {
 
                 return {
                     websocketService: this.websocketService,
-                    graphDataManager: this.graphDataManager
+                    graphDataManager: this.graphDataManager,
+                    config: this.config
                 };
             },
             components: {
@@ -74,6 +97,7 @@ class App {
                     <control-panel 
                         :websocketService="websocketService"
                         :gpuAvailable="gpuAvailable"
+                        :config="config"
                         @control-change="handleControlChange"
                         @toggle-fullscreen="toggleFullscreen"
                         @enable-spacemouse="enableSpacemouse"
@@ -87,7 +111,13 @@ class App {
                         console.log('Updating visualization:', data);
                         
                         if (data.name === 'simulationMode') {
+                            this.simulationMode = data.value;
                             this.visualization.switchSimulationMode(data.value);
+                            if (data.value === 'remote') {
+                                this.graphDataManager.setSimulationMode('remote');
+                            } else {
+                                this.graphDataManager.setSimulationMode('local');
+                            }
                         } else if (data.name === 'forceDirectedIterations' || 
                             data.name === 'forceDirectedRepulsion' || 
                             data.name === 'forceDirectedAttraction') {
@@ -195,7 +225,7 @@ class App {
         this.websocketService.on('graphUpdate', (graphData) => {
             console.log('App: graphUpdate event received');
             this.graphDataManager.updateGraphData(graphData);
-            if (this.visualization && this.simulationMode === 'remote') {
+            if (this.visualization) {
                 this.visualization.updateVisualization();
             }
         });
@@ -214,10 +244,11 @@ class App {
     initVisualization() {
         console.log('App: Initializing visualization');
         try {
-            this.visualization = new WebXRVisualization(this.graphDataManager, this.renderer, this.gpuCompute);
+            this.visualization = new WebXRVisualization(this.graphDataManager, this.renderer, this.gpuCompute, this.config);
             console.log('App: WebXRVisualization created');
             this.visualization.initThreeJS();
             console.log('App: Three.js initialized');
+            this.visualization.switchSimulationMode(this.simulationMode);
             this.visualization.updateVisualization();
             console.log('App: Visualization updated');
         } catch (error) {

@@ -16,7 +16,7 @@ export class GraphDataManager extends EventEmitter {
             repulsion: 1.0,
             attraction: 0.01
         };
-        this.useRemoteSimulation = false;
+        this.simulationMode = 'local'; // Default to local simulation
 
         // Set up WebSocket message listener
         this.websocketService.on('message', this.handleWebSocketMessage.bind(this));
@@ -28,7 +28,6 @@ export class GraphDataManager extends EventEmitter {
      * @returns {boolean} True if valid, false otherwise.
      */
     isGraphDataValid(data = this.graphData) {
-        // Implement validation logic
         return data && Array.isArray(data.nodes) && Array.isArray(data.edges);
     }
 
@@ -71,27 +70,20 @@ export class GraphDataManager extends EventEmitter {
     }
 
     /**
-     * Enables remote simulation by notifying the server.
+     * Sets the simulation mode (local or remote).
+     * @param {string} mode - The simulation mode ('local' or 'remote').
      */
-    enableRemoteSimulation() {
-        this.useRemoteSimulation = true;
+    setSimulationMode(mode) {
+        if (mode !== 'local' && mode !== 'remote') {
+            throw new Error('Invalid simulation mode. Must be "local" or "remote".');
+        }
+        this.simulationMode = mode;
         this.websocketService.send({
             type: 'setSimulationMode',
-            mode: 'remote'
+            mode: this.simulationMode
         });
-        console.log('Remote simulation enabled');
-    }
-
-    /**
-     * Disables remote simulation by notifying the server.
-     */
-    disableRemoteSimulation() {
-        this.useRemoteSimulation = false;
-        this.websocketService.send({
-            type: 'setSimulationMode',
-            mode: 'local'
-        });
-        console.log('Remote simulation disabled');
+        console.log(`Simulation mode set to: ${this.simulationMode}`);
+        this.emit('simulationModeChanged', this.simulationMode);
     }
 
     /**
@@ -102,13 +94,12 @@ export class GraphDataManager extends EventEmitter {
         const data = JSON.parse(message);
         switch (data.type) {
             case 'graphUpdate':
-                this.updateGraphData(data.graphData);
-                break;
             case 'remoteSimulationUpdate':
-                this.updateGraphData(data.graphData);
-                break;
             case 'initialData':
                 this.updateGraphData(data.graphData);
+                break;
+            case 'simulationModeConfirmation':
+                console.log(`Server confirmed simulation mode: ${data.mode}`);
                 break;
             default:
                 console.warn(`Unhandled message type: ${data.type}`);
@@ -120,17 +111,27 @@ export class GraphDataManager extends EventEmitter {
      */
     recalculateLayout() {
         if (this.isGraphDataValid()) {
-            this.websocketService.send({
-                type: 'recalculateLayout',
-                params: this.forceDirectedParams
-            });
+            if (this.simulationMode === 'remote') {
+                this.websocketService.send({
+                    type: 'recalculateLayout',
+                    params: this.forceDirectedParams
+                });
+            }
             
-            window.dispatchEvent(new CustomEvent('layoutRecalculationRequested', {
-                detail: this.forceDirectedParams
-            }));
+            this.emit('layoutRecalculationRequested', this.forceDirectedParams);
         } else {
             console.error('Cannot recalculate layout: Invalid graph data');
-            window.dispatchEvent(new CustomEvent('graphDataError', { detail: new Error('Invalid graph data for layout recalculation') }));
+            this.emit('graphDataError', new Error('Invalid graph data for layout recalculation'));
         }
+    }
+
+    /**
+     * Updates the force-directed parameters.
+     * @param {Object} newParams - The new force-directed parameters.
+     */
+    updateForceDirectedParams(newParams) {
+        this.forceDirectedParams = { ...this.forceDirectedParams, ...newParams };
+        console.log('Updated force-directed parameters:', this.forceDirectedParams);
+        this.emit('forceDirectedParamsUpdated', this.forceDirectedParams);
     }
 }
