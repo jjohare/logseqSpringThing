@@ -6,8 +6,8 @@ use log::{info, error, debug};
 use std::sync::{Mutex, Arc};
 use serde_json::{json, Value};
 use serde::{Deserialize, Serialize};
-use flate2::read::GzDecoder;
-use flate2::write::GzEncoder;
+use flate2::read::DeflateDecoder;
+use flate2::write::DeflateEncoder;
 use flate2::Compression;
 use std::io::prelude::*;
 use futures::stream::{Stream, StreamExt};
@@ -27,19 +27,19 @@ use crate::models::simulation_params::SimulationMode;
 use crate::services::ragflow_service::RAGFlowError;
 use crate::config::Settings;
 
-/// Compresses a string message using gzip.
+/// Compresses a string message using deflate (compatible with pako).
 fn compress_message(message: &str) -> Result<Vec<u8>, Box<dyn StdError + Send + Sync>> {
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(message.as_bytes())?;
     let compressed = encoder.finish()?;
     debug!("Compressed message size: {} bytes", compressed.len());
     Ok(compressed)
 }
 
-/// Decompresses binary data into a string message using gzip.
+/// Decompresses binary data into a string message using deflate (compatible with pako).
 fn decompress_message(data: &[u8]) -> Result<String, Box<dyn StdError + Send + Sync>> {
     debug!("Attempting to decompress message of size: {} bytes", data.len());
-    let mut decoder = GzDecoder::new(data);
+    let mut decoder = DeflateDecoder::new(data);
     let mut decompressed = String::new();
     decoder.read_to_string(&mut decompressed)?;
     debug!("Decompressed message size: {} bytes", decompressed.len());
@@ -94,7 +94,7 @@ impl WebSocketManager {
         ws::start(session, &req, stream)
     }
 
-    /// Broadcasts a gzipped message to all connected WebSocket sessions.
+    /// Broadcasts a compressed message to all connected WebSocket sessions.
     pub async fn broadcast_message_compressed(&self, message: &str) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let compressed = compress_message(message)?;
         let sessions = self.sessions.lock().unwrap().clone();
@@ -504,16 +504,20 @@ impl Handler<OpenAIConnectionFailed> for OpenAIWebSocket {
 struct OpenAIMessage(String);
 
 impl Handler<OpenAIMessage> for OpenAIWebSocket {
-    type Result = ResponseActFuture<Self, Result<(), Box<dyn StdError + Send + Sync>>>;
+    type Result = ResponseActFuture<Self, ()>;
 
     fn handle(&mut self, msg: OpenAIMessage, _ctx: &mut Self::Context) -> Self::Result {
         let text_message = msg.0;
         let this = self.clone();
 
         Box::pin(async move {
-            this.send_text_message(&text_message).await?;
-            this.handle_openai_responses().await?;
-            Ok(())
+            if let Err(e) = this.send_text_message(&text_message).await {
+                error!("Error sending message to OpenAI: {}", e);
+            }
+            if let Err(e) = this.handle_openai_responses().await {
+                error!("Error handling OpenAI responses: {}", e);
+            }
+            ()
         }.into_actor(self))
     }
 }

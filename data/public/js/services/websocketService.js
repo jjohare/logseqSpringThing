@@ -16,7 +16,7 @@ export class WebsocketService {
     }
 
     connect() {
-        const url = 'wss://192.168.0.51:8443/ws';
+        const url = 'wss://192.168.0.51:8443/ws-external';  // Updated to use ws-external endpoint
         this.socket = new WebSocket(url);
         this.socket.binaryType = 'arraybuffer';
 

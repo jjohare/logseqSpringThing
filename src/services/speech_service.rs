@@ -15,7 +15,6 @@ use tokio::net::TcpStream;
 use url::Url;
 use base64::engine::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use futures::stream::{SplitSink, SplitStream};
 
 pub struct SpeechService {
     sender: Arc<Mutex<mpsc::Sender<SpeechCommand>>>,
@@ -69,8 +68,16 @@ impl SpeechService {
                     },
                     SpeechCommand::SendMessage(msg) => {
                         if *use_openai_tts.read().await {
-                            if let Err(e) = Self::process_openai_tts(&mut ws_stream, &msg, &websocket_manager).await {
-                                error!("Error processing OpenAI TTS: {}", e);
+                            if let Some(stream) = ws_stream.take() {
+                                match Self::process_openai_tts(stream, &msg, &websocket_manager).await {
+                                    Ok(returned_stream) => ws_stream = Some(returned_stream),
+                                    Err(e) => {
+                                        error!("Error processing OpenAI TTS: {}", e);
+                                        ws_stream = None;
+                                    }
+                                }
+                            } else {
+                                error!("WebSocket connection not initialized");
                             }
                         } else {
                             if let Err(e) = Self::process_local_tts(&piper_service, &msg, &websocket_manager).await {
@@ -79,7 +86,7 @@ impl SpeechService {
                         }
                     },
                     SpeechCommand::Close => {
-                        if let Some(stream) = &mut ws_stream {
+                        if let Some(mut stream) = ws_stream.take() {
                             if let Err(e) = stream.close(None).await {
                                 error!("Failed to close WebSocket connection: {}", e);
                             }
@@ -123,25 +130,10 @@ impl SpeechService {
     }
 
     async fn process_openai_tts(
-        ws_stream: &mut Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+        mut stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
         msg: &str,
         websocket_manager: &Arc<WebSocketManager>,
-    ) -> Result<(), Box<dyn StdError + Send + Sync>> {
-        if let Some(stream) = ws_stream {
-            let (mut write, mut read) = stream.split();
-
-            Self::send_openai_message(&mut write, msg).await?;
-            Self::process_openai_responses(&mut read, websocket_manager).await?;
-        } else {
-            error!("WebSocket connection to OpenAI is not initialized.");
-        }
-        Ok(())
-    }
-
-    async fn send_openai_message(
-        write: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
-        msg: &str,
-    ) -> Result<(), Box<dyn StdError + Send + Sync>> {
+    ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, Box<dyn StdError + Send + Sync>> {
         let event = json!({
             "type": "conversation.item.create",
             "item": {
@@ -153,14 +145,9 @@ impl SpeechService {
             }
         });
 
-        write.send(Message::Text(event.to_string())).await.map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)
-    }
+        stream.send(Message::Text(event.to_string())).await?;
 
-    async fn process_openai_responses(
-        read: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-        websocket_manager: &Arc<WebSocketManager>,
-    ) -> Result<(), Box<dyn StdError + Send + Sync>> {
-        while let Some(message) = read.next().await {
+        while let Some(message) = stream.next().await {
             match message {
                 Ok(Message::Text(text)) => {
                     let json_msg: serde_json::Value = serde_json::from_str(&text)?;
@@ -182,12 +169,13 @@ impl SpeechService {
                 },
                 Err(e) => {
                     error!("OpenAI WebSocket error: {}", e);
-                    return Err(Box::new(e) as Box<dyn StdError + Send + Sync>);
+                    return Err(Box::new(e));
                 },
                 _ => {},
             }
         }
-        Ok(())
+
+        Ok(stream)
     }
 
     async fn process_local_tts(
@@ -204,26 +192,26 @@ impl SpeechService {
 
     pub async fn initialize(&self) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let command = SpeechCommand::Initialize;
-        self.sender.lock().await.send(command).await?;
-        Ok(())
+        self.sender.lock().await.send(command).await
+            .map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)
     }
 
     pub async fn send_message(&self, message: String) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let command = SpeechCommand::SendMessage(message);
-        self.sender.lock().await.send(command).await?;
-        Ok(())
+        self.sender.lock().await.send(command).await
+            .map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)
     }
 
     pub async fn close(&self) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let command = SpeechCommand::Close;
-        self.sender.lock().await.send(command).await?;
-        Ok(())
+        self.sender.lock().await.send(command).await
+            .map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)
     }
 
     pub async fn set_tts_mode(&self, use_openai: bool) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let command = SpeechCommand::SetTTSMode(use_openai);
-        self.sender.lock().await.send(command).await?;
-        Ok(())
+        self.sender.lock().await.send(command).await
+            .map_err(|e| Box::new(e) as Box<dyn StdError + Send + Sync>)
     }
 
     pub async fn synthesize_with_piper(&self, message: &str) -> Result<Vec<f32>, Box<dyn StdError + Send + Sync>> {

@@ -76,10 +76,10 @@ impl GraphService {
         }
     
         // Convert edge_map to edges
-        graph.edges = edge_map.into_iter().map(|((source, target), (weight, hyperlinks))| {
+        graph.edges = edge_map.into_iter().map(|((source, dest), (weight, hyperlinks))| {
             Edge {
                 source,
-                target_node: target,
+                dest,
                 weight,
                 hyperlinks: hyperlinks as f32,
             }
@@ -166,10 +166,10 @@ impl GraphService {
             // Calculate attractive forces
             for edge in &graph.edges {
                 let source = graph.nodes.iter().position(|n| n.id == edge.source).unwrap();
-                let target = graph.nodes.iter().position(|n| n.id == edge.target_node).unwrap();
-                let dx = graph.nodes[target].x - graph.nodes[source].x;
-                let dy = graph.nodes[target].y - graph.nodes[source].y;
-                let dz = graph.nodes[target].z - graph.nodes[source].z;
+                let dest = graph.nodes.iter().position(|n| n.id == edge.dest).unwrap();
+                let dx = graph.nodes[dest].x - graph.nodes[source].x;
+                let dy = graph.nodes[dest].y - graph.nodes[source].y;
+                let dz = graph.nodes[dest].z - graph.nodes[source].z;
                 let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(EPSILON);
                 let attraction = simulation_params.attraction_strength * distance * edge.weight;
                 let fx = attraction * dx / distance;
@@ -179,9 +179,9 @@ impl GraphService {
                 graph.nodes[source].vx += fx;
                 graph.nodes[source].vy += fy;
                 graph.nodes[source].vz += fz;
-                graph.nodes[target].vx -= fx;
-                graph.nodes[target].vy -= fy;
-                graph.nodes[target].vz -= fz;
+                graph.nodes[dest].vx -= fx;
+                graph.nodes[dest].vy -= fy;
+                graph.nodes[dest].vz -= fz;
             }
 
             // Update positions
@@ -250,8 +250,8 @@ impl GraphService {
 
             for edge in &graph.edges {
                 let next = if edge.source == node {
-                    &edge.target_node
-                } else if edge.target_node == node {
+                    &edge.dest
+                } else if edge.dest == node {
                     &edge.source
                 } else {
                     continue;

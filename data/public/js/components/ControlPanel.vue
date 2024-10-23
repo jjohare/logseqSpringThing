@@ -4,6 +4,23 @@
       {{ isHidden ? '>' : '<' }}
     </button>
     <div class="panel-content" v-show="!isHidden">
+      <!-- Chat Interface -->
+      <div class="control-group">
+        <h3>Chat Interface</h3>
+        <div class="chat-messages" ref="chatMessagesRef">
+          <div v-for="(message, index) in chatMessages" :key="index" :class="['chat-message', message.sender === 'You' ? 'user' : 'ai']">
+            <strong>{{ message.sender }}:</strong> {{ message.message }}
+          </div>
+        </div>
+        <div class="chat-input-container">
+          <input type="text" v-model="chatInput" @keyup.enter="sendMessage" placeholder="Type a message..." />
+          <button @click="sendMessage">Send</button>
+        </div>
+        <div v-if="chatError" class="error-message">
+          {{ chatError }}
+        </div>
+      </div>
+
       <!-- Fisheye Distortion Controls -->
       <div class="control-group">
         <h3>Fisheye Distortion</h3>
@@ -115,7 +132,7 @@
         </div>
       </div>
 
-      <!-- Additional Controls -->
+      <!-- Additional Settings -->
       <div class="control-group">
         <h3>Additional Settings</h3>
         <div v-for="control in additionalControls" :key="control.name" class="control-item">
@@ -131,13 +148,13 @@
           >
           <span class="range-value">{{ control.value }}</span>
         </div>
-        <!-- New TTS Mode Control -->
+        <!-- TTS Mode Control -->
         <div class="control-item">
           <label for="tts_mode">TTS Mode</label>
           <select
             id="tts_mode"
             v-model="ttsMode"
-            @change="emitChange('ttsMode', ttsMode)"
+            @change="handleTTSModeChange"
           >
             <option value="local">Local Sonata TTS</option>
             <option value="openai">OpenAI WebSocket TTS</option>
@@ -180,8 +197,12 @@ export default defineComponent({
             isHidden: false,
             fisheyeEnabled: false,
             fisheyeStrength: 0.5,
-            simulationMode: 'cpu', // Default to CPU mode
-            ttsMode: 'local', // Default to local Sonata TTS
+            simulationMode: 'cpu',
+            ttsMode: 'local',
+            // Chat interface data
+            chatInput: '',
+            chatMessages: [],
+            chatError: null,
             colorControls: [
                 { name: 'nodeColor', label: 'Node Color', type: 'color', value: this.intToColor(this.config.visualization.node_color) },
                 { name: 'edgeColor', label: 'Edge Color', type: 'color', value: this.intToColor(this.config.visualization.edge_color) },
@@ -222,6 +243,45 @@ export default defineComponent({
         emitChange(name, value) {
             this.$emit('control-change', { name, value });
         },
+        // Chat interface methods
+        async sendMessage() {
+            if (this.chatInput.trim()) {
+                try {
+                    await this.websocketService.sendChatMessage({
+                        message: this.chatInput,
+                        useOpenAI: this.ttsMode === 'openai'
+                    });
+                    this.chatMessages.push({ sender: 'You', message: this.chatInput });
+                    this.chatInput = '';
+                    this.chatError = null;
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    this.chatError = 'Failed to send message. Please try again.';
+                }
+            }
+        },
+        handleTTSModeChange() {
+            this.emitChange('ttsMode', this.ttsMode);
+            this.websocketService.toggleTTS(this.ttsMode === 'openai');
+        },
+        async receiveMessage(data) {
+            try {
+                this.chatMessages.push({ sender: 'AI', message: data.text });
+                if (data.audio && this.ttsMode === 'local') {
+                    await this.websocketService.playAudio(data.audio);
+                } else if (this.ttsMode === 'openai') {
+                    await this.websocketService.generateAndPlayOpenAIAudio(data.text);
+                }
+                this.chatError = null;
+            } catch (error) {
+                console.error('Error processing received message:', error);
+                this.chatError = 'Failed to process received message. Please try again.';
+            }
+        },
+        handleWebSocketError(error) {
+            console.error('WebSocket error:', error);
+            this.chatError = 'Connection error. Please check your internet connection and try again.';
+        },
         resetControls() {
             this.colorControls.forEach(control => {
                 control.value = this.intToColor(this.config.visualization[this.snakeCaseName(control.name)]);
@@ -248,7 +308,7 @@ export default defineComponent({
             this.fisheyeStrength = 0.5;
             this.emitChange('fisheyeStrength', 0.5);
             
-            // Update: Reset simulation mode based on availability
+            // Reset simulation mode based on availability
             if (this.gpuAvailable) {
                 this.simulationMode = 'gpu';
             } else if (this.websocketService.isConnected()) {
@@ -258,9 +318,14 @@ export default defineComponent({
             }
             this.emitChange('simulationMode', this.simulationMode);
 
-            // Reset TTS mode to local
+            // Reset chat interface
+            this.chatMessages = [];
+            this.chatInput = '';
+            this.chatError = null;
+            
+            // Reset TTS mode
             this.ttsMode = 'local';
-            this.emitChange('ttsMode', 'local');
+            this.handleTTSModeChange();
         },
         toggleFullscreen() {
             this.$emit('toggle-fullscreen');
@@ -287,8 +352,18 @@ export default defineComponent({
         }
         this.emitChange('simulationMode', this.simulationMode);
 
-        // Emit initial TTS mode
-        this.emitChange('ttsMode', this.ttsMode);
+        // Set up WebSocket listeners for chat
+        if (this.websocketService) {
+            this.websocketService.on('ragflowResponse', this.receiveMessage);
+            this.websocketService.on('error', this.handleWebSocketError);
+        }
+    },
+    beforeUnmount() {
+        // Clean up WebSocket listeners
+        if (this.websocketService) {
+            this.websocketService.off('ragflowResponse', this.receiveMessage);
+            this.websocketService.off('error', this.handleWebSocketError);
+        }
     }
 });
 </script>
@@ -395,6 +470,65 @@ select {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* Chat interface styles */
+.chat-messages {
+  max-height: 200px;
+  overflow-y: auto;
+  background-color: #333;
+  padding: 10px;
+  border-radius: 5px;
+  margin-bottom: 10px;
+}
+
+.chat-message {
+  margin-bottom: 10px;
+  word-wrap: break-word;
+}
+
+.chat-message.user {
+  text-align: right;
+  color: #4CAF50;
+}
+
+.chat-message.ai {
+  text-align: left;
+  color: #2196F3;
+}
+
+.chat-input-container {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.chat-input-container input[type="text"] {
+  flex-grow: 1;
+  padding: 8px;
+  background-color: #333;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 4px;
+}
+
+.chat-input-container button {
+  padding: 8px 15px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chat-input-container button:hover {
+  background-color: #45a049;
+}
+
+.error-message {
+  color: #ff4444;
+  margin-top: 10px;
+  font-size: 0.9em;
 }
 
 /* Scrollbar styling */

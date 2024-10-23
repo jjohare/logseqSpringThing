@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use std::collections::HashMap;
 use crate::app_state::AppState;
 use crate::config::Settings;
-use crate::handlers::{file_handler, graph_handler, ragflow_handler};
+use crate::handlers::{graph_handler, ragflow_handler};
 use crate::models::graph::GraphData;
 use crate::services::file_service::{GitHubServiceImpl, FileService};
 use crate::services::perplexity_service::PerplexityServiceImpl;
@@ -17,8 +17,6 @@ use crate::utils::websocket_manager::WebSocketManager;
 use crate::utils::gpu_compute::GPUCompute;
 use serde_json::json;
 use serde::Deserialize;
-use rodio::buffer::SamplesBuffer;
-use std::path::Path;
 
 mod app_state;
 mod config;
@@ -30,6 +28,15 @@ mod utils;
 #[derive(Deserialize)]
 struct TTSModeRequest {
     mode: String,
+}
+
+async fn ws_handler(
+    req: HttpRequest,
+    stream: web::Payload,
+    manager: web::Data<Arc<WebSocketManager>>,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, actix_web::Error> {
+    manager.handle_websocket(req, stream, state).await
 }
 
 #[actix_web::main]
@@ -51,8 +58,8 @@ async fn main() -> std::io::Result<()> {
 
     // Initialize services
     let file_service = Arc::new(FileService::new());
-    let github_service = Arc::new(GitHubServiceImpl::new(/* required args */));
-    let perplexity_service = Arc::new(PerplexityServiceImpl::new(/* required args */));
+    let github_service = Arc::new(GitHubServiceImpl::new(settings.clone()));
+    let perplexity_service = Arc::new(PerplexityServiceImpl::new());
     let ragflow_service = Arc::new(
         RAGFlowService::new(settings.clone())
             .await
@@ -130,6 +137,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(app_state.clone())
+            .app_data(web::Data::new(websocket_manager.clone()))
             .wrap(middleware::Logger::default())
             // Define your routes here
             .route("/data", web::get().to(graph_handler::get_graph_data))
@@ -141,16 +149,9 @@ async fn main() -> std::io::Result<()> {
                     .route("/openai-key", web::get().to(get_openai_key))
                     .route("/set-tts-mode", web::post().to(set_tts_mode))
             )
-            .route(
-                "/ws",
-                web::get().to({
-                    let manager = websocket_manager.clone();
-                    let state = app_state.clone();
-                    move |req: HttpRequest, stream: web::Payload| {
-                        WebSocketManager::handle_websocket(req, stream, state.clone())
-                    }
-                }),
-            )
+            // WebSocket routes that match nginx configuration
+            .route("/ws-internal", web::get().to(ws_handler))
+            .route("/ws-external", web::get().to(ws_handler))
             .service(
                 Files::new("/", "/app/data/public/dist")
                     .index_file("index.html")
@@ -194,4 +195,3 @@ async fn set_tts_mode(app_state: web::Data<AppState>, mode: web::Json<TTSModeReq
         "mode": mode.mode
     }))
 }
-
