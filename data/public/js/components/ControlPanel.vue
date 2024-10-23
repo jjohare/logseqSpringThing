@@ -131,6 +131,18 @@
           >
           <span class="range-value">{{ control.value }}</span>
         </div>
+        <!-- New TTS Mode Control -->
+        <div class="control-item">
+          <label for="tts_mode">TTS Mode</label>
+          <select
+            id="tts_mode"
+            v-model="ttsMode"
+            @change="emitChange('ttsMode', ttsMode)"
+          >
+            <option value="local">Local Sonata TTS</option>
+            <option value="openai">OpenAI WebSocket TTS</option>
+          </select>
+        </div>
       </div>
 
       <!-- Additional Buttons -->
@@ -169,6 +181,7 @@ export default defineComponent({
             fisheyeEnabled: false,
             fisheyeStrength: 0.5,
             simulationMode: 'cpu', // Default to CPU mode
+            ttsMode: 'local', // Default to local Sonata TTS
             colorControls: [
                 { name: 'nodeColor', label: 'Node Color', type: 'color', value: this.intToColor(this.config.visualization.node_color) },
                 { name: 'edgeColor', label: 'Edge Color', type: 'color', value: this.intToColor(this.config.visualization.edge_color) },
@@ -244,6 +257,10 @@ export default defineComponent({
                 this.simulationMode = 'cpu';
             }
             this.emitChange('simulationMode', this.simulationMode);
+
+            // Reset TTS mode to local
+            this.ttsMode = 'local';
+            this.emitChange('ttsMode', 'local');
         },
         toggleFullscreen() {
             this.$emit('toggle-fullscreen');
@@ -269,6 +286,9 @@ export default defineComponent({
             this.simulationMode = 'remote';
         }
         this.emitChange('simulationMode', this.simulationMode);
+
+        // Emit initial TTS mode
+        this.emitChange('ttsMode', this.ttsMode);
     }
 });
 </script>

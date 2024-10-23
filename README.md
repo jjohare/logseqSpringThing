@@ -5,8 +5,8 @@
 Inspired by Prof Rob Aspin's work 
 https://github.com/trebornipsa
 
-Integrates Sonata rust wrapper for Piper
-https://github.com/mush42/sonata
+Integrates Piper-rs for text-to-speech functionality
+https://github.com/rhasspy/piper-rs
 
 ![P1080785_1728030359430_0](https://github.com/user-attachments/assets/3ecac4a3-95d7-4c75-a3b2-e93deee565d6)
 
@@ -25,6 +25,7 @@ The **WebXR Graph Visualization** project transforms a LogSeq personal knowledge
 - **Spacemouse Support:** Offers intuitive navigation within immersive environments.
 - **Automatic GitHub PR Submissions:** Streamlines the process of updating processed content back to GitHub.
 - **Comprehensive Metadata Management:** Handles both processed and raw JSON metadata for enhanced data representation.
+- **Text-to-Speech with Piper-rs:** Utilizes Piper-rs for high-quality, efficient text-to-speech conversion.
 
 ## Architecture
 
@@ -52,11 +53,13 @@ classDiagram
         - reconnectAttempts: number
         - maxReconnectAttempts: number
         - reconnectInterval: number
+        - ttsMethod: string
         + connect()
         + on(event: string, callback: function)
         + emit(event: string, data: any)
         + send(data: object)
         - reconnect()
+        + toggleTTS(useOpenAI: boolean)
     }
 
     class GraphDataManager {
@@ -139,6 +142,27 @@ classDiagram
         + count_topics(content: &str, metadata_map: &HashMap<String, Metadata>): HashMap<String, usize>
     }
 
+    class PiperService {
+        - voice_config_path: String
+        - piper: Piper
+        + new(settings: Arc<RwLock<Settings>>): Result<Self>
+        + generate_speech(text: &str): Result<Vec<f32>>
+    }
+
+    class SpeechService {
+        - sender: Arc<Mutex<mpsc::Sender<SpeechCommand>>>
+        - piper_service: Arc<PiperService>
+        - websocket_manager: Arc<WebSocketManager>
+        - settings: Arc<RwLock<Settings>>
+        - use_openai_tts: Arc<RwLock<bool>>
+        + new(piper_service: Arc<PiperService>, websocket_manager: Arc<WebSocketManager>, settings: Arc<RwLock<Settings>>): Self
+        + initialize(): Result<(), Box<dyn Error>>
+        + send_message(message: String): Result<(), Box<dyn Error>>
+        + close(): Result<(), Box<dyn Error>>
+        + set_tts_mode(use_openai: bool): Result<(), Box<dyn Error>>
+        + synthesize_with_piper(message: &str): Result<Vec<f32>, Box<dyn Error>>
+    }
+
     App --> WebsocketService
     App --> GraphDataManager
     App --> WebXRVisualization
@@ -148,12 +172,16 @@ classDiagram
     App --> GraphService
     App --> PerplexityService
     App --> FileService
+    App --> PiperService
+    App --> SpeechService
     WebsocketService --> GraphDataManager
     GraphDataManager --> WebXRVisualization
     ChatManager --> RAGFlowService
     Interface --> ChatManager
     Interface --> WebXRVisualization
     App --> GPUCompute
+    SpeechService --> PiperService
+    SpeechService --> WebSocketManager
 ```
 
 ### Sequence Diagram
@@ -174,6 +202,8 @@ sequenceDiagram
     participant RAGFlowService
     participant PerplexityAPI
     participant WebsocketService
+    participant PiperService
+    participant SpeechService
 
     rect rgba(200, 255, 200, 0.1)
         activate Server
@@ -266,6 +296,17 @@ sequenceDiagram
     Interface->>WebXRVisualization: updateGraphData(newData)
     WebXRVisualization-->>Client: Update Visualization
 
+    note right of Client: Text-to-Speech Request
+
+    Client->>WebsocketService: sendTTSRequest(text)
+    WebsocketService->>Server: emit("ttsRequest", text)
+    Server->>SpeechService: generate_speech(text)
+    SpeechService->>PiperService: generate_speech(text)
+    PiperService-->>SpeechService: audio_data
+    SpeechService->>WebSocketManager: broadcast_audio(audio_data)
+    WebSocketManager-->>Client: audioData
+    Client->>Client: playAudio(audioData)
+
     note right of Client: User requests layout recalculation
 
     Client->>GraphDataManager: requestRecalculateLayout()
@@ -351,7 +392,6 @@ sequenceDiagram
             Server-->>Client: Success Response
         end
     deactivate Server
-
 ```
 
 ## Installation

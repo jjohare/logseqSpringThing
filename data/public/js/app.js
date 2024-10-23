@@ -32,6 +32,7 @@ class App {
         this.visualization = null;
         this.gpuCompute = null;
         this.simulationMode = 'cpu'; // Default simulation mode
+        this.ttsMode = 'local'; // Default TTS mode
         this.renderer = new WebGLRenderer({ antialias: true }); // Initialize renderer
         console.log('App: THREE.WebGLRenderer created');
         this.setupWebsocketListeners = this.setupWebsocketListeners.bind(this);
@@ -118,6 +119,9 @@ class App {
                             } else {
                                 this.graphDataManager.setSimulationMode('local');
                             }
+                        } else if (data.name === 'ttsMode') {
+                            this.ttsMode = data.value;
+                            this.setTTSMode(data.value);
                         } else if (data.name === 'forceDirectedIterations' || 
                             data.name === 'forceDirectedRepulsion' || 
                             data.name === 'forceDirectedAttraction') {
@@ -158,6 +162,25 @@ class App {
                 },
                 enableSpacemouse() {
                     enableSpacemouse();
+                },
+                async setTTSMode(mode) {
+                    try {
+                        const response = await fetch('/api/set-tts-mode', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ mode }),
+                        });
+                        if (!response.ok) {
+                            throw new Error('Failed to set TTS mode');
+                        }
+                        console.log('TTS mode set successfully:', mode);
+                        // Update the websocket service with the new TTS mode
+                        this.websocketService.setTTSMode(mode);
+                    } catch (error) {
+                        console.error('Error setting TTS mode:', error);
+                    }
                 }
             }
         });
@@ -239,6 +262,13 @@ class App {
                 this.visualization.updateVisualization();
             }
         });
+
+        // Add a new listener for audio data from Piper-rs
+        this.websocketService.on('audioData', (audioData) => {
+            console.log('App: audioData event received');
+            // Play the audio data (implementation depends on your audio playback method)
+            this.playAudio(audioData);
+        });
     }
 
     initVisualization() {
@@ -254,6 +284,26 @@ class App {
         } catch (error) {
             console.error('Error initializing visualization:', error);
         }
+    }
+
+    playAudio(audioData) {
+        // Implementation of audio playback
+        // This could be using Web Audio API or another method
+        // For example:
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = new ArrayBuffer(audioData.length);
+        const view = new Uint8Array(arrayBuffer);
+        for (let i = 0; i < audioData.length; i++) {
+            view[i] = audioData[i];
+        }
+        audioContext.decodeAudioData(arrayBuffer, (buffer) => {
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+        }, (error) => {
+            console.error('Error decoding audio data:', error);
+        });
     }
 }
 

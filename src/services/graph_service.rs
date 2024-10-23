@@ -141,7 +141,7 @@ impl GraphService {
         const EPSILON: f32 = 0.01;
 
         for _ in 0..simulation_params.iterations {
-            let mut max_movement = 0.0;
+            let mut max_movement: f32 = 0.0;
 
             // Calculate repulsive forces
             for i in 0..graph.nodes.len() {
@@ -222,8 +222,8 @@ impl GraphService {
         }
 
         let mut heap = BinaryHeap::new();
-        let mut costs = HashMap::new();
-        let mut came_from = HashMap::new();
+        let mut costs: HashMap<String, f32> = HashMap::new();
+        let mut came_from: HashMap<String, String> = HashMap::new();
         let mut visited = HashSet::new();
 
         heap.push(State { cost: 0.0, node: start.to_string() });

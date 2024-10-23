@@ -84,15 +84,15 @@ flate2 = "1.0"
 # OpenSSL
 openssl = "0.10"
 
+# HTTP
+http = "0.2"
+
+# Piper-rs Dependency
+piper-rs = "0.1.1"
+
 # Development Dependencies
 [dev-dependencies]
 mockall = "0.11"
 tempfile = "3.2"
 tokio-test = "0.4"
 wiremock = "0.5"
-
-# Sonata Dependencies
-# Ensure that each path points to a valid Cargo package with its own Cargo.toml
-sonata-core = { path = "src/deps/sonata/sonata/core" }
-sonata-synth = { path = "src/deps/sonata/sonata/synth" }
-sonata-piper = { path = "src/deps/sonata/sonata/models/piper" }

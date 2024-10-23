@@ -8,6 +8,7 @@ use serde_json::json;
 use crate::utils::audio_processor::AudioProcessor;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use bytes::Bytes;
 
 #[derive(Debug)]
 pub enum RAGFlowError {
@@ -92,7 +93,7 @@ impl RAGFlowService {
         quote: bool,
         doc_ids: Option<Vec<String>>,
         stream: bool,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, Vec<u8>), RAGFlowError>> + Send + 'static>>, RAGFlowError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, Vec<u8>), RAGFlowError>> + Send>>, RAGFlowError> {
         info!("Sending message to conversation: {}", conversation_id);
         let url = format!("{}api/completion", self.base_url);
         info!("Full URL for send_message: {}", url);
@@ -120,7 +121,7 @@ impl RAGFlowService {
         info!("Response status: {}", response.status());
        
         if response.status().is_success() {
-            let stream = response.bytes_stream().map(move |chunk_result| {
+            let stream = response.bytes_stream().map(move |chunk_result: Result<Bytes, reqwest::Error>| {
                 match chunk_result {
                     Ok(chunk) => {
                         match AudioProcessor::process_json_response(&chunk) {

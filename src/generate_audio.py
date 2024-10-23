@@ -1,13 +1,18 @@
 import sys
 import io
 import wave
-import numpy as np
+import os
 from piper import PiperVoice
 
 def generate_audio_stream(text):
     try:
         print(f"Generating audio for text: {text}", file=sys.stderr)
-        voice = PiperVoice.load("/app/piper/en_GB-alan-medium.onnx")
+        
+        # Load model and config paths from environment variables
+        model_path = os.environ.get('PIPER_MODEL_PATH', '/app/data/piper/en_GB-northern_english_male-medium.onnx')
+        config_path = os.environ.get('PIPER_CONFIG_PATH', '/app/data/piper/en_GB-northern_english_male-medium.onnx.json')
+        
+        voice = PiperVoice.load(model_path, config_path=config_path)
         audio = voice.synthesize(text)
         
         print(f"Audio generated. Shape: {audio.shape}, dtype: {audio.dtype}", file=sys.stderr)

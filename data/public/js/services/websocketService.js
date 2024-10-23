@@ -10,7 +10,7 @@ export class WebsocketService {
         this.maxReconnectAttempts = 5;
         this.reconnectInterval = 5000;
         this.audioContext = null;
-        this.ttsMethod = 'sonata';
+        this.ttsMethod = 'piper';
         this.openAIApiKey = null;
         this.connect();
     }
@@ -96,7 +96,7 @@ export class WebsocketService {
     }
 
     toggleTTS(useOpenAI) {
-        this.ttsMethod = useOpenAI ? 'openai' : 'sonata';
+        this.ttsMethod = useOpenAI ? 'openai' : 'piper';
         this.send({ type: 'setTTSMethod', method: this.ttsMethod });
     }
 

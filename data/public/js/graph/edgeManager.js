@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { getEdgeColor } from '../utils/colorUtils.js';
 
 export class EdgeManager {
     constructor(scene, simulation, params) {

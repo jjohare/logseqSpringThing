@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { createNodeLabel } from '../utils/labelUtils.js';
 
 export class NodeManager {
     constructor(scene, font, params) {

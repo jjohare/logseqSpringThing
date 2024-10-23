@@ -12,10 +12,8 @@ pub struct Settings {
     pub openai: OpenAISettings,
     pub visualization: VisualizationSettings,
     pub default: DefaultSettings,
-    pub sonata: SonataSettings,
+    pub piper: PiperSettings,
 }
-
-
 
 #[derive(Deserialize, Clone)]
 pub struct PerplexitySettings {
@@ -60,7 +58,6 @@ pub struct VisualizationSettings {
     pub edge_opacity: f32,
     pub label_font_size: u32,
     pub fog_density: f32,
-    // New force-directed graph settings
     pub force_directed_iterations: usize,
     pub force_directed_repulsion: f32,
     pub force_directed_attraction: f32,
@@ -75,45 +72,48 @@ pub struct DefaultSettings {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct SonataSettings {
+pub struct PiperSettings {
     pub voice_config_path: String,
+    pub model_path: String,
 }
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        let mut config = Config::builder();
+        let mut config_builder = Config::builder();
 
         // Load from .env first
         if let Ok(path) = env::var("SETTINGS_ENV_FILE") {
-            config = config.add_source(File::from_str(&path).required(false))?;
+            config_builder = config_builder.add_source(File::with_name(&path).required(false));
         } else {
-            config = config.add_source(Environment::with_prefix("APP").separator("__"))?;
+            config_builder = config_builder.add_source(Environment::with_prefix("APP").separator("__"));
         }
 
-        config = config.add_source(File::with_name("settings.toml").required(true))?;
+        config_builder = config_builder.add_source(File::with_name("settings.toml").required(true));
 
         // Explicitly load GitHub settings from environment variables
         if let Ok(token) = env::var("GITHUB_ACCESS_TOKEN") {
-            config = config.set_override("github.github_access_token", token)?;
+            config_builder = config_builder.set_override("github.github_access_token", token)?;
         }
         if let Ok(owner) = env::var("GITHUB_OWNER") {
-            config = config.set_override("github.github_owner", owner)?;
+            config_builder = config_builder.set_override("github.github_owner", owner)?;
         }
         if let Ok(repo) = env::var("GITHUB_REPO") {
-            config = config.set_override("github.github_repo", repo)?;
+            config_builder = config_builder.set_override("github.github_repo", repo)?;
         }
         if let Ok(directory) = env::var("GITHUB_DIRECTORY") {
-            config = config.set_override("github.github_directory", directory)?;
+            config_builder = config_builder.set_override("github.github_directory", directory)?;
         }
 
         // Explicitly load RAGFlow settings from environment variables
         if let Ok(api_key) = env::var("RAGFLOW_API_KEY") {
-            config = config.set_override("ragflow.ragflow_api_key", api_key)?;
+            config_builder = config_builder.set_override("ragflow.ragflow_api_key", api_key)?;
         }
         if let Ok(base_url) = env::var("RAGFLOW_BASE_URL") {
-            config = config.set_override("ragflow.ragflow_api_base_url", base_url)?;
+            config_builder = config_builder.set_override("ragflow.ragflow_api_base_url", base_url)?;
         }
-        let settings: Settings = config.build()?.try_deserialize()?;
+
+        let config = config_builder.build()?;
+        let settings: Settings = config.try_deserialize()?;
 
         // Debugging: Print loaded settings (exclude sensitive fields)
         debug!("Loaded settings: {:?}", settings);
@@ -138,9 +138,14 @@ impl Settings {
         if self.ragflow.ragflow_api_base_url.is_empty() {
             return Err(ConfigError::Message("RAGFlow base URL is missing".to_string()));
         }
-        // Validate new force-directed graph settings
         if self.visualization.force_directed_iterations == 0 {
             return Err(ConfigError::Message("force_directed_iterations must be greater than 0".to_string()));
+        }
+        if self.piper.voice_config_path.is_empty() {
+            return Err(ConfigError::Message("Piper voice config path is missing".to_string()));
+        }
+        if self.piper.model_path.is_empty() {
+            return Err(ConfigError::Message("Piper model path is missing".to_string()));
         }
         // Add more validations as needed
         Ok(())
@@ -156,7 +161,7 @@ impl fmt::Debug for Settings {
             .field("openai", &self.openai)
             .field("visualization", &self.visualization)
             .field("default", &self.default)
-            .field("sonata", &self.sonata)
+            .field("piper", &self.piper)
             .finish()
     }
 }

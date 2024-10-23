@@ -31,6 +31,9 @@ RUN apt-get update && apt-get install -y \
     vulkan-tools \
     libegl1-mesa-dev \
     libasound2-dev \
+    libclang-dev \
+    cmake \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
@@ -47,9 +50,6 @@ COPY Cargo.toml Cargo.lock ./
 
 # Copy the source code
 COPY src ./src
-
-# Copy the entire Sonata directory
-COPY src/deps/sonata ./src/deps/sonata
 
 # Copy settings.toml
 COPY settings.toml ./
@@ -73,6 +73,7 @@ RUN apt-get update && apt-get install -y \
     libegl1-mesa \
     libasound2 \
     software-properties-common \
+    libclang1 \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update \
     && apt-get install -y python3.10 python3.10-venv python3.10-dev \
@@ -100,8 +101,9 @@ COPY --from=frontend-builder /app/data/dist /app/data/public/dist
 COPY --from=backend-builder /usr/src/app/settings.toml /app/settings.toml
 COPY --from=backend-builder /usr/src/app/settings.toml /app/data/public/dist/settings.toml
 
-# Copy the generate_audio.py script
+# Copy the generate_audio.py and generate_welcome_audio.py scripts
 COPY src/generate_audio.py /app/src/generate_audio.py
+COPY src/generate_welcome_audio.py /app/src/generate_welcome_audio.py
 
 # Set up a persistent volume for Markdown files to ensure data persistence
 VOLUME ["/app/data/markdown"]
@@ -134,9 +136,13 @@ RUN pip install --no-cache-dir --upgrade pip wheel && \
     pip install --no-cache-dir piper-tts==1.2.0 onnxruntime-gpu
 
 # Download Piper voice model and config
-RUN mkdir -p /app/piper && \
-    curl -L https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx -o /app/piper/en_GB-alan-medium.onnx && \
-    curl -L https://huggingface.co/rhasspy/piper-voices/raw/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json -o /app/piper/en_GB-alan-medium.onnx.json
+RUN mkdir -p /app/data/piper && \
+    curl -L https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx -o /app/data/piper/en_GB-northern_english_male-medium.onnx && \
+    curl -L https://huggingface.co/rhasspy/piper-voices/raw/v1.0.0/en/en_GB/northern_english_male/medium/en_GB-northern_english_male-medium.onnx.json -o /app/data/piper/en_GB-northern_english_male-medium.onnx.json
+
+# Set environment variables for Piper
+ENV PIPER_MODEL_PATH=/app/data/piper/en_GB-northern_english_male-medium.onnx
+ENV PIPER_CONFIG_PATH=/app/data/piper/en_GB-northern_english_male-medium.onnx.json
 
 # Expose HTTPS port
 EXPOSE 8443

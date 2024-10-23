@@ -11,11 +11,12 @@ use crate::services::file_service::{GitHubServiceImpl, FileService};
 use crate::services::perplexity_service::PerplexityServiceImpl;
 use crate::services::ragflow_service::RAGFlowService;
 use crate::services::speech_service::SpeechService;
-use crate::services::sonata_service::SonataService;
+use crate::services::piper_service::PiperService;
 use crate::services::graph_service::GraphService;
 use crate::utils::websocket_manager::WebSocketManager;
 use crate::utils::gpu_compute::GPUCompute;
 use serde_json::json;
+use serde::Deserialize;
 
 mod app_state;
 mod config;
@@ -23,6 +24,11 @@ mod handlers;
 mod models;
 mod services;
 mod utils;
+
+#[derive(Deserialize)]
+struct TTSModeRequest {
+    mode: String,
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -51,7 +57,7 @@ async fn main() -> std::io::Result<()> {
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
     );
     
-    let sonata_service = Arc::new(SonataService::new(settings.clone()).await
+    let piper_service = Arc::new(PiperService::new(settings.clone()).await
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?);
     
     let websocket_manager = Arc::new(WebSocketManager::new());
@@ -60,7 +66,7 @@ async fn main() -> std::io::Result<()> {
     let gpu_compute = Arc::new(RwLock::new(GPUCompute::new().await?));
 
     let speech_service = Arc::new(SpeechService::new(
-        sonata_service.clone(),
+        piper_service.clone(),
         websocket_manager.clone(),
         settings.clone(),
     ));
@@ -85,9 +91,19 @@ async fn main() -> std::io::Result<()> {
 
     // Initialize GraphService
     let graph_service = Arc::new(GraphService::new(
-        gpu_compute.clone(),
-        websocket_manager.clone(),
-        settings.clone(),
+        Arc::new(web::Data::new(AppState::new(
+            Arc::new(RwLock::new(GraphData::default())),
+            Arc::new(RwLock::new(HashMap::new())),
+            settings.clone(),
+            github_service.clone(),
+            perplexity_service.clone(),
+            ragflow_service.clone(),
+            speech_service.clone(),
+            websocket_manager.clone(),
+            Some(gpu_compute.clone()),
+            "default_conversation_id".to_string(),
+            None,
+        ))),
     ));
 
     // Initialize AppState
@@ -102,7 +118,7 @@ async fn main() -> std::io::Result<()> {
         websocket_manager.clone(),
         Some(gpu_compute),
         "default_conversation_id".to_string(),
-        Some(graph_service), // Include the initialized GraphService
+        Some(graph_service.clone()),
     ));
 
     // Define bind address
@@ -121,6 +137,7 @@ async fn main() -> std::io::Result<()> {
                     .route("/chat/message", web::post().to(ragflow_handler::send_message))
                     .route("/chat/history", web::get().to(ragflow_handler::get_chat_history))
                     .route("/openai-key", web::get().to(get_openai_key))
+                    .route("/set-tts-mode", web::post().to(set_tts_mode))
             )
             .route(
                 "/ws",
@@ -148,5 +165,30 @@ async fn get_openai_key(app_state: web::Data<AppState>) -> HttpResponse {
     let settings = app_state.settings.read().await;
     HttpResponse::Ok().json(json!({
         "openai_api_key": settings.openai.openai_api_key.clone()
+    }))
+}
+
+// Handler to set TTS mode
+async fn set_tts_mode(app_state: web::Data<AppState>, mode: web::Json<TTSModeRequest>) -> HttpResponse {
+    let use_openai = match mode.mode.as_str() {
+        "openai" => true,
+        "local" => false,
+        _ => {
+            return HttpResponse::BadRequest().json(json!({
+                "error": "Invalid TTS mode. Must be 'openai' or 'local'."
+            }));
+        }
+    };
+
+    if let Err(e) = app_state.speech_service.set_tts_mode(use_openai).await {
+        log::error!("Failed to set TTS mode: {:?}", e);
+        return HttpResponse::InternalServerError().json(json!({
+            "error": "Failed to set TTS mode"
+        }));
+    }
+
+    HttpResponse::Ok().json(json!({
+        "message": "TTS mode set successfully",
+        "mode": mode.mode
     }))
 }

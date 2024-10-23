@@ -84,5 +84,6 @@ environment_bloom_strength = 0.5
 environment_bloom_radius = 0.1
 environment_bloom_threshold = 0.0
 
-[sonata]
-voice_config_path = "/app/data/piper/en_GB-northern_english_male-medium.onnx"
+[piper]
+voice_config_path = "/app/data/piper/en_GB-northern_english_male-medium.onnx.json"
+model_path = "/app/data/piper/en_GB-northern_english_male-medium.onnx"
