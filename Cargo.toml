@@ -25,7 +25,6 @@ reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
 log = "0.4"
 env_logger = "0.10"
 thiserror = "1.0"
-anyhow = "1.0"
 
 # Time and Dates
 chrono = { version = "0.4", features = ["serde"] }
@@ -86,7 +85,11 @@ openssl = "0.10"
 
 # HTTP
 http = "0.2"
+
+# Piper TTS
 piper-rs = "0.1.1"
+espeak-rs = "0.1.1"
+sonic-rs-sys = "0.1.1"
 
 # Development Dependencies
 [dev-dependencies]
@@ -94,3 +97,6 @@ mockall = "0.11"
 tempfile = "3.2"
 tokio-test = "0.4"
 wiremock = "0.5"
+
+[build-dependencies]
+cc = "1.0"

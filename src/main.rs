@@ -17,6 +17,8 @@ use crate::utils::websocket_manager::WebSocketManager;
 use crate::utils::gpu_compute::GPUCompute;
 use serde_json::json;
 use serde::Deserialize;
+use rodio::buffer::SamplesBuffer;
+use std::path::Path;
 
 mod app_state;
 mod config;
@@ -192,3 +194,4 @@ async fn set_tts_mode(app_state: web::Data<AppState>, mode: web::Json<TTSModeReq
         "mode": mode.mode
     }))
 }
+

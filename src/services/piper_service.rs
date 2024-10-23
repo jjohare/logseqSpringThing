@@ -1,39 +1,30 @@
+use piper_rs::synth::SonataSpeechSynthesizer;
+use piper_rs::{from_config_path, SonataResult, Audio};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use crate::config::Settings;
-use anyhow::Result;
-use piper::{PiperConfig, Piper};
 
 pub struct PiperService {
-    voice_config_path: String,
-    piper: Piper,
+    synth: SonataSpeechSynthesizer,
 }
 
 impl PiperService {
-    pub async fn new(settings: Arc<RwLock<Settings>>) -> Result<Self> {
-        let settings = settings.read().await;
-        let voice_config_path = settings.piper.voice_config_path.clone();
-        
-        let config = PiperConfig::from_file(Path::new(&voice_config_path))
-            .map_err(|e| anyhow::anyhow!("Failed to load Piper config: {}", e))?;
-        
-        let piper = Piper::new(&config)
-            .map_err(|e| anyhow::anyhow!("Failed to create Piper instance: {}", e))?;
-
-        Ok(Self {
-            voice_config_path,
-            piper,
-        })
+    pub fn new(config_path: &Path) -> SonataResult<Self> {
+        // Load the model using the provided configuration path
+        let model = from_config_path(config_path)?;
+        let synth = SonataSpeechSynthesizer::new(Arc::new(model))?;
+        Ok(Self { synth })
     }
 
-    pub async fn generate_speech(&self, text: &str) -> Result<Vec<f32>> {
-        println!("Generating speech for: {}", text);
-        println!("Using voice config: {}", self.voice_config_path);
-
-        let audio = self.piper.synthesize(text, None)
-            .map_err(|e| anyhow::anyhow!("Failed to synthesize speech: {}", e))?;
-
-        Ok(audio)
+    pub fn synthesize(&self, text: &str) -> SonataResult<Audio> {
+        let audio_stream = self.synth.synthesize_parallel(text.to_string(), None)?;
+        let mut samples: Vec<f32> = Vec::new();
+        for result in audio_stream {
+            samples.append(&mut result? .into_vec());
+        }
+        Ok(Audio::new(
+            samples.into(),
+            22050, // Specify your sample rate
+            Some(0.0), // Optional inference time
+        ))
     }
 }

@@ -18,6 +18,7 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::connect_async;
 use url::Url;
+use std::error::Error as StdError;
 
 use base64::Engine as Base64Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -27,7 +28,7 @@ use crate::services::ragflow_service::RAGFlowError;
 use crate::config::Settings;
 
 /// Compresses a string message using gzip.
-fn compress_message(message: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn compress_message(message: &str) -> Result<Vec<u8>, Box<dyn StdError>> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(message.as_bytes())?;
     let compressed = encoder.finish()?;
@@ -36,7 +37,7 @@ fn compress_message(message: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>
 }
 
 /// Decompresses binary data into a string message using gzip.
-fn decompress_message(data: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
+fn decompress_message(data: &[u8]) -> Result<String, Box<dyn StdError>> {
     debug!("Attempting to decompress message of size: {} bytes", data.len());
     let mut decoder = GzDecoder::new(data);
     let mut decompressed = String::new();
@@ -78,7 +79,7 @@ impl WebSocketManager {
     }
 
     /// Initializes the WebSocketManager with a conversation ID.
-    pub async fn initialize(&self, ragflow_service: &crate::services::ragflow_service::RAGFlowService) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn initialize(&self, ragflow_service: &crate::services::ragflow_service::RAGFlowService) -> Result<(), Box<dyn StdError>> {
         let conversation_id = ragflow_service.create_conversation("default_user".to_string()).await?;
         let mut conv_id_lock = self.conversation_id.lock().unwrap();
         *conv_id_lock = Some(conversation_id.clone());
@@ -94,7 +95,7 @@ impl WebSocketManager {
     }
 
     /// Broadcasts a gzipped message to all connected WebSocket sessions.
-    pub async fn broadcast_message_compressed(&self, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn broadcast_message_compressed(&self, message: &str) -> Result<(), Box<dyn StdError>> {
         let compressed = compress_message(message)?;
         let sessions = self.sessions.lock().unwrap().clone();
         for session in sessions.iter() {
@@ -104,7 +105,7 @@ impl WebSocketManager {
     }
 
     /// Broadcasts audio data to all connected WebSocket sessions.
-    pub async fn broadcast_audio(&self, audio_bytes: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn broadcast_audio(&self, audio_bytes: Vec<u8>) -> Result<(), Box<dyn StdError>> {
         let json_data = json!({
             "type": "audio",
             "audioData": STANDARD.encode(&audio_bytes)
@@ -324,7 +325,7 @@ impl Handler<OpenAIQueryResult> for WebSocketSession {
 /// OpenAI WebSocket actor
 struct OpenAIWebSocket {
     client_addr: Addr<WebSocketSession>,
-    ws_stream: Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>,
+    ws_stream: Arc<Mutex<Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>>>,
     settings: Arc<RwLock<Settings>>,
 }
 
@@ -332,12 +333,12 @@ impl OpenAIWebSocket {
     fn new(client_addr: Addr<WebSocketSession>, settings: Arc<RwLock<Settings>>) -> Self {
         OpenAIWebSocket {
             client_addr,
-            ws_stream: None,
+            ws_stream: Arc::new(Mutex::new(None)),
             settings,
         }
     }
 
-    async fn connect_to_openai(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn connect_to_openai(&self) -> Result<(), Box<dyn StdError>> {
         let settings = self.settings.read().await;
         let url = Url::parse(&settings.openai.openai_base_url)?;
         let api_key = settings.openai.openai_api_key.clone();
@@ -350,7 +351,67 @@ impl OpenAIWebSocket {
             .body(())?;
 
         let (ws_stream, _) = connect_async(request).await?;
-        self.ws_stream = Some(ws_stream);
+        *self.ws_stream.lock().unwrap() = Some(ws_stream);
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl OpenAIRealtimeHandler for OpenAIWebSocket {
+    async fn send_text_message(&self, text: &str) -> Result<(), Box<dyn StdError>> {
+        let mut ws_stream_guard = self.ws_stream.lock().unwrap();
+        let ws_stream = ws_stream_guard.as_mut().ok_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::Other, "WebSocket not connected")) as Box<dyn StdError>)?;
+
+        let request = json!({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": text
+                    }
+                ]
+            }
+        });
+
+        ws_stream.send(Message::Text(request.to_string())).await?;
+        
+        Ok(())
+    }
+
+    async fn handle_openai_responses(&self) -> Result<(), Box<dyn StdError>> {
+        let mut ws_stream_guard = self.ws_stream.lock().unwrap();
+        let ws_stream = ws_stream_guard.as_mut().ok_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::Other, "WebSocket not connected")) as Box<dyn StdError>)?;
+        let client_addr = self.client_addr.clone();
+
+        while let Some(response) = ws_stream.next().await {
+            match response {
+                Ok(Message::Text(text)) => {
+                    let json_msg: serde_json::Value = serde_json::from_str(&text)?;
+
+                    if let Some(audio_data) = json_msg["delta"]["audio"].as_str() {
+                        let audio_bytes = STANDARD.decode(audio_data)?;
+
+                        let audio_message = json!({
+                            "type": "audio",
+                            "audioData": STANDARD.encode(&audio_bytes)
+                        });
+
+                        client_addr.do_send(SendCompressedMessage(audio_message.to_string().into_bytes()));
+                    } else if json_msg["type"].as_str() == Some("response.text.done") {
+                        break;
+                    }
+                },
+                Err(e) => {
+                    error!("Error receiving message from OpenAI: {}", e);
+                    client_addr.do_send(OpenAIQueryResult(Err(format!("Error receiving message: {}", e))));
+                    break;
+                }
+            }
+        }
+
         Ok(())
     }
 }
@@ -360,18 +421,15 @@ impl Actor for OpenAIWebSocket {
 
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("OpenAI WebSocket started");
-        let fut = self.connect_to_openai();
         let addr = ctx.address();
+        
         ctx.spawn(async move {
-            match fut.await {
-                Ok(_) => {
-                    info!("Connected to OpenAI WebSocket");
-                    addr.do_send(OpenAIConnected);
-                }
-                Err(e) => {
-                    error!("Failed to connect to OpenAI WebSocket: {}", e);
-                    addr.do_send(OpenAIConnectionFailed);
-                }
+            if let Err(e) = self.connect_to_openai().await {
+                error!("Failed to connect to OpenAI WebSocket: {}", e);
+                addr.do_send(OpenAIConnectionFailed);
+            } else {
+                info!("Connected to OpenAI WebSocket");
+                addr.do_send(OpenAIConnected);
             }
         }.into_actor(self));
     }
@@ -413,49 +471,16 @@ impl Handler<OpenAIMessage> for OpenAIWebSocket {
     type Result = ResponseActFuture<Self, ()>;
 
     fn handle(&mut self, msg: OpenAIMessage, _ctx: &mut Self::Context) -> Self::Result {
-        let ws_stream = self.ws_stream.take();
-        let client_addr = self.client_addr.clone();
+        let text_message = msg.0;
 
         Box::pin(async move {
-            if let Some(mut ws_stream) = ws_stream {
-                let message = Message::Text(msg.0);
-                if let Err(e) = ws_stream.send(message).await {
-                    error!("Failed to send message to OpenAI: {}", e);
-                    client_addr.do_send(OpenAIQueryResult(Err(format!("Failed to send message to OpenAI: {}", e))));
-                } else {
-                    if let Some(response) = ws_stream.next().await {
-                        match response {
-                            Ok(Message::Text(text)) => {
-                                client_addr.do_send(OpenAIQueryResult(Ok(text)));
-                            }
-                            Ok(_) => {
-                                error!("Received unexpected message type from OpenAI");
-                                client_addr.do_send(OpenAIQueryResult(Err("Received unexpected message type from OpenAI".to_string())));
-                            }
-                            Err(e) => {
-                                error!("Error receiving message from OpenAI: {}", e);
-                                client_addr.do_send(OpenAIQueryResult(Err(format!("Error receiving message from OpenAI: {}", e))));
-                            }
-                        }
-                    } else {
-                        error!("OpenAI WebSocket stream closed unexpectedly");
-                        client_addr.do_send(OpenAIQueryResult(Err("OpenAI WebSocket stream closed unexpectedly".to_string())));
-                    }
-                }
-            } else {
-                error!("OpenAI WebSocket not connected");
-                client_addr.do_send(OpenAIQueryResult(Err("OpenAI WebSocket not connected".to_string())));
-            }
+            self.send_text_message(&text_message).await?;
+            self.handle_openai_responses().await?;
             Ok(())
-        }
-        .into_actor(self)
-        .map(move |_, act, _| {
-            act.ws_stream = ws_stream;
-        }))
+        }.into_actor(self))
     }
 }
 
-/// Handles sending compressed JSON responses to the WebSocket client.
 impl Handler<SendCompressedMessage> for WebSocketSession {
     type Result = ();
 

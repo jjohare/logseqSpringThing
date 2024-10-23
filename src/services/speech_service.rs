@@ -13,7 +13,7 @@ use crate::utils::websocket_manager::WebSocketManager;
 use crate::services::piper_service::PiperService;
 use tokio::net::TcpStream;
 use url::Url;
-use base64::{Engine as _, engine::general_purpose};
+use base64;
 
 pub struct SpeechService {
     sender: Arc<Mutex<mpsc::Sender<SpeechCommand>>>,
@@ -61,16 +61,15 @@ impl SpeechService {
             while let Some(command) = receiver.recv().await {
                 match command {
                     SpeechCommand::Initialize => {
-                        // Initialize WebSocket connection to OpenAI if using OpenAI TTS
                         if *use_openai_tts.read().await {
                             ws_stream = Self::initialize_openai_websocket(&settings).await;
                         }
                     },
                     SpeechCommand::SendMessage(msg) => {
                         if *use_openai_tts.read().await {
-                            Self::handle_openai_tts(&mut ws_stream, &msg, &websocket_manager).await;
+                            Self::process_openai_tts(&mut ws_stream, &msg, &websocket_manager).await;
                         } else {
-                            Self::handle_local_tts(&piper_service, &msg, &websocket_manager).await;
+                            Self::process_local_tts(&piper_service, &msg, &websocket_manager).await;
                         }
                     },
                     SpeechCommand::Close => {
@@ -93,37 +92,32 @@ impl SpeechService {
     }
 
     async fn initialize_openai_websocket(settings: &Arc<RwLock<Settings>>) -> Option<WebSocketStream<MaybeTlsStream<TcpStream>>> {
-        let url = Url::parse("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01").expect("Failed to parse URL");
+        let url = Url::parse("wss://api.openai.com/v1/audio/speech").expect("Failed to parse URL");
         
         let settings_read = settings.read().await;
         let request = Request::builder()
             .uri(url.as_str())
             .header("Authorization", format!("Bearer {}", settings_read.openai.openai_api_key))
-            .header("OpenAI-Beta", "realtime=v1")
+            .header("Content-Type", "application/json")
             .header("User-Agent", "WebXR Graph")
-            .header("Origin", "https://api.openai.com")
-            .header("Sec-WebSocket-Version", "13")
-            .header("Sec-WebSocket-Key", tungstenite::handshake::client::generate_key())
-            .header("Connection", "Upgrade")
-            .header("Upgrade", "websocket")
-            .header("Host", "api.openai.com")
             .body(())
             .expect("Failed to build request");
         drop(settings_read);
 
         match connect_async(request).await {
             Ok((stream, _)) => {
-                info!("Connected to OpenAI Realtime API");
+                info!("Connected to OpenAI Audio API");
                 Some(stream)
             },
             Err(e) => {
-                error!("Failed to connect to OpenAI Realtime API: {}", e);
+                error!("Failed to connect to OpenAI Audio API: {}", e);
                 None
             },
         }
     }
 
-    async fn handle_openai_tts(
+    /// Separate method to handle OpenAI TTS streaming.
+    async fn process_openai_tts(
         ws_stream: &mut Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
         msg: &str,
         websocket_manager: &Arc<WebSocketManager>,
@@ -131,92 +125,92 @@ impl SpeechService {
         if let Some(stream) = ws_stream {
             let (mut write, mut read) = stream.split();
 
-            // Send message to OpenAI
-            let event = json!({
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": msg
-                        }
-                    ]
-                }
-            });
-
-            if let Err(e) = write.send(Message::Text(event.to_string())).await {
-                error!("Failed to send message to OpenAI: {}", e);
+            if Self::send_openai_message(&mut write, msg).await.is_err() {
+                error!("Failed to send message to OpenAI");
                 return;
             }
 
-            // Trigger a response
-            let response_event = json!({
-                "type": "response.create"
-            });
-            if let Err(e) = write.send(Message::Text(response_event.to_string())).await {
-                error!("Failed to trigger response: {}", e);
-                return;
-            }
-
-            // Handle response from OpenAI
-            while let Some(message) = read.next().await {
-                match message {
-                    Ok(Message::Text(text)) => {
-                        if let Ok(json_msg) = serde_json::from_str::<serde_json::Value>(&text) {
-                            match json_msg["type"].as_str() {
-                                Some("response.text.delta") => {
-                                    if let Some(_content) = json_msg["delta"]["text"].as_str() {
-                                        // Process text delta and audio
-                                        if let Some(audio_data) = json_msg["delta"]["audio"].as_str() {
-                                            let audio_bytes = general_purpose::STANDARD.decode(audio_data).unwrap_or_default();
-                                            if let Err(e) = websocket_manager.broadcast_audio(audio_bytes).await {
-                                                error!("Failed to broadcast audio: {}", e);
-                                            }
-                                        }
-                                    }
-                                },
-                                Some("response.text.done") => {
-                                    debug!("Text response complete");
-                                },
-                                Some("response.done") => {
-                                    debug!("Full response complete");
-                                    break;
-                                },
-                                _ => {}
-                            }
-                        }
-                    },
-                    Ok(Message::Close(_)) => {
-                        info!("OpenAI WebSocket connection closed by server");
-                        break;
-                    },
-                    Err(e) => {
-                        error!("OpenAI WebSocket error: {}", e);
-                        break;
-                    },
-                    _ => {},
-                }
-            }
+            Self::process_openai_responses(&mut read, websocket_manager).await;
         } else {
-            error!("WebSocket connection not initialized");
+            error!("WebSocket connection to OpenAI is not initialized.");
         }
     }
 
-    async fn handle_local_tts(
+    /// Sends message to OpenAI via WebSocket.
+    async fn send_openai_message(
+        write: &mut futures::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+        msg: &str,
+    ) -> Result<(), Box<dyn StdError>> {
+        let event = json!({
+            "type": "conversation.item.create",
+            "item": {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    { "type": "input_text", "text": msg }
+                ]
+            }
+        });
+
+        write.send(Message::Text(event.to_string())).await.map_err(|e| Box::new(e) as Box<dyn StdError>)
+    }
+
+    /// Handles streaming responses from OpenAI WebSocket.
+    async fn process_openai_responses(
+        read: &mut futures::stream::SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+        websocket_manager: &Arc<WebSocketManager>,
+    ) {
+        while let Some(message) = read.next().await {
+            match message {
+                Ok(Message::Text(text)) => {
+                    let json_msg: serde_json::Value = match serde_json::from_str(&text) {
+                        Ok(json_msg) => json_msg,
+                        Err(e) => {
+                            error!("Failed to parse JSON: {}", e);
+                            continue;
+                        }
+                    };
+
+                    match json_msg["type"].as_str() {
+                        Some("response.text.delta") => {
+                            if let Some(audio_data) = json_msg["delta"]["audio"].as_str() {
+                                let audio_bytes = base64::decode(audio_data).unwrap_or_default();
+                                if let Err(e) = websocket_manager.broadcast_audio(audio_bytes).await {
+                                    error!("Failed to broadcast audio: {}", e);
+                                }
+                            }
+                        },
+                        Some("response.text.done") | Some("response.done") => break,
+                        _ => {}
+                    }
+                },
+                Ok(Message::Close(_)) => {
+                    info!("OpenAI WebSocket connection closed by server");
+                    break;
+                },
+                Err(e) => {
+                    error!("OpenAI WebSocket error: {}", e);
+                    break;
+                },
+                _ => {},
+            }
+        }
+    }
+
+    /// Handles local TTS processing (e.g., using Piper).
+    async fn process_local_tts(
         piper_service: &Arc<PiperService>,
         msg: &str,
         websocket_manager: &Arc<WebSocketManager>,
     ) {
         if let Ok(audio_samples) = piper_service.generate_speech(msg).await {
-            info!("Audio synthesis successful, {} samples generated.", audio_samples.len());
+            info!("Audio synthesis successful: {} samples", audio_samples.len());
             let audio_bytes: Vec<u8> = audio_samples.iter().flat_map(|&sample| sample.to_le_bytes().to_vec()).collect();
             if let Err(e) = websocket_manager.broadcast_audio(audio_bytes).await {
                 error!("Failed to broadcast audio: {}", e);
             }
         } else {
-            error!("Failed to synthesize audio");
+            error!("Failed to synthesize audio locally.");
         }
     }
 
@@ -245,6 +239,6 @@ impl SpeechService {
     }
 
     pub async fn synthesize_with_piper(&self, message: &str) -> Result<Vec<f32>, Box<dyn StdError>> {
-        self.piper_service.generate_speech(message).await.map_err(|e| Box::new(e) as Box<dyn StdError>)
+        self.piper_service.generate_speech(message).await
     }
 }
