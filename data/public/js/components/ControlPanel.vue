@@ -1,6 +1,8 @@
+[Previous content remains the same until the template section, where we update the form elements with proper IDs:]
+
 <template>
   <div id="control-panel" :class="{ hidden: isHidden }">
-    <button @click="togglePanel" class="toggle-button">
+    <button @click="togglePanel" class="toggle-button" id="toggle-panel-btn">
       {{ isHidden ? '>' : '<' }}
     </button>
     <div class="panel-content" v-show="!isHidden">
@@ -13,8 +15,8 @@
           </div>
         </div>
         <div class="chat-input-container">
-          <input type="text" v-model="chatInput" @keyup.enter="sendMessage" placeholder="Type a message..." />
-          <button @click="sendMessage">Send</button>
+          <input type="text" id="chat-input" name="chat-input" v-model="chatInput" @keyup.enter="sendMessage" placeholder="Type a message..." />
+          <button @click="sendMessage" id="send-message-btn">Send</button>
         </div>
         <div v-if="chatError" class="error-message">
           {{ chatError }}
@@ -25,22 +27,23 @@
       <div class="control-group">
         <h3>Fisheye Distortion</h3>
         <div class="control-item">
-          <label for="fisheye_enabled">Enable Fisheye</label>
+          <label>Enable Fisheye</label>
           <div>
             <label>
-              <input type="radio" value="true" v-model="fisheyeEnabled" @change="emitChange('fisheyeEnabled', true)">
+              <input type="radio" id="fisheye-enabled" name="fisheye_enabled" value="true" v-model="fisheyeEnabled" @change="emitChange('fisheyeEnabled', true)">
               Enable
             </label>
             <label>
-              <input type="radio" value="false" v-model="fisheyeEnabled" @change="emitChange('fisheyeEnabled', false)">
+              <input type="radio" id="fisheye-disabled" name="fisheye_enabled" value="false" v-model="fisheyeEnabled" @change="emitChange('fisheyeEnabled', false)">
               Disable
             </label>
           </div>
         </div>
         <div class="control-item">
-          <label for="fisheye_strength">Fisheye Strength</label>
+          <label for="fisheye-strength">Fisheye Strength</label>
           <input
-            id="fisheye_strength"
+            id="fisheye-strength"
+            name="fisheye_strength"
             type="range"
             v-model.number="fisheyeStrength"
             :min="0"
@@ -56,9 +59,10 @@
       <div class="control-group">
         <h3>Colors</h3>
         <div v-for="control in colorControls" :key="control.name" class="control-item">
-          <label :for="control.name">{{ control.label }}</label>
+          <label :for="control.name + '-input'">{{ control.label }}</label>
           <input
-            :id="control.name"
+            :id="control.name + '-input'"
+            :name="control.name"
             type="color"
             v-model="control.value"
             @change="emitChange(control.name, colorToInt(control.value))"
@@ -70,9 +74,10 @@
       <div class="control-group">
         <h3>Size and Opacity</h3>
         <div v-for="control in sizeOpacityControls" :key="control.name" class="control-item">
-          <label :for="control.name">{{ control.label }}</label>
+          <label :for="control.name + '-input'">{{ control.label }}</label>
           <input
-            :id="control.name"
+            :id="control.name + '-input'"
+            :name="control.name"
             type="range"
             v-model.number="control.value"
             :min="control.min"
@@ -88,9 +93,10 @@
       <div class="control-group">
         <h3>Bloom Effects</h3>
         <div v-for="control in bloomControls" :key="control.name" class="control-item">
-          <label :for="control.name">{{ control.label }}</label>
+          <label :for="control.name + '-input'">{{ control.label }}</label>
           <input
-            :id="control.name"
+            :id="control.name + '-input'"
+            :name="control.name"
             type="range"
             v-model.number="control.value"
             :min="control.min"
@@ -106,9 +112,10 @@
       <div class="control-group">
         <h3>Force-Directed Graph</h3>
         <div class="control-item">
-          <label for="simulation_mode">Simulation Mode</label>
+          <label for="simulation-mode">Simulation Mode</label>
           <select
-            id="simulation_mode"
+            id="simulation-mode"
+            name="simulation_mode"
             v-model="simulationMode"
             @change="emitChange('simulationMode', simulationMode)"
           >
@@ -118,9 +125,10 @@
           </select>
         </div>
         <div v-for="control in forceDirectedControls" :key="control.name" class="control-item">
-          <label :for="control.name">{{ control.label }}</label>
+          <label :for="control.name + '-input'">{{ control.label }}</label>
           <input
-            :id="control.name"
+            :id="control.name + '-input'"
+            :name="control.name"
             type="range"
             v-model.number="control.value"
             :min="control.min"
@@ -136,9 +144,10 @@
       <div class="control-group">
         <h3>Additional Settings</h3>
         <div v-for="control in additionalControls" :key="control.name" class="control-item">
-          <label :for="control.name">{{ control.label }}</label>
+          <label :for="control.name + '-input'">{{ control.label }}</label>
           <input
-            :id="control.name"
+            :id="control.name + '-input'"
+            :name="control.name"
             type="range"
             v-model.number="control.value"
             :min="control.min"
@@ -150,9 +159,10 @@
         </div>
         <!-- TTS Mode Control -->
         <div class="control-item">
-          <label for="tts_mode">TTS Mode</label>
+          <label for="tts-mode">TTS Mode</label>
           <select
-            id="tts_mode"
+            id="tts-mode"
+            name="tts_mode"
             v-model="ttsMode"
             @change="handleTTSModeChange"
           >
@@ -164,11 +174,11 @@
 
       <!-- Additional Buttons -->
       <div class="button-group">
-        <button @click="toggleFullscreen" class="control-button">Toggle Fullscreen</button>
-        <button @click="enableSpacemouse" class="control-button">Enable Spacemouse</button>
+        <button @click="toggleFullscreen" class="control-button" id="fullscreen-btn">Toggle Fullscreen</button>
+        <button @click="enableSpacemouse" class="control-button" id="spacemouse-btn">Enable Spacemouse</button>
       </div>
 
-      <button @click="resetControls" class="reset-button">Reset to Defaults</button>
+      <button @click="resetControls" class="reset-button" id="reset-btn">Reset to Defaults</button>
     </div>
   </div>
 </template>
@@ -243,13 +253,13 @@ export default defineComponent({
         emitChange(name, value) {
             this.$emit('control-change', { name, value });
         },
-        // Chat interface methods
         async sendMessage() {
             if (this.chatInput.trim()) {
                 try {
                     await this.websocketService.sendChatMessage({
+                        type: 'chatMessage',
                         message: this.chatInput,
-                        useOpenAI: this.ttsMode === 'openai'
+                        use_openai: this.ttsMode === 'openai'  // Changed from useOpenAI to use_openai
                     });
                     this.chatMessages.push({ sender: 'You', message: this.chatInput });
                     this.chatInput = '';
@@ -334,9 +344,11 @@ export default defineComponent({
             this.$emit('enable-spacemouse');
         },
         colorToInt(color) {
-            return parseInt(color.replace('#', '0x'), 16);
+            // Remove the '#' and convert directly to integer
+            return parseInt(color.replace('#', ''), 16);
         },
         intToColor(int) {
+            // Convert integer to 6-digit hex string with '#' prefix
             return '#' + int.toString(16).padStart(6, '0');
         },
         snakeCaseName(name) {

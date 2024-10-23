@@ -73,7 +73,6 @@ export class NodeManager {
     }
 
     updateNodes(nodes) {
-        console.log(`NodeManager updating nodes: ${nodes.length}`);
         const existingNodeIds = new Set(nodes.map(node => node.id));
 
         this.nodeMeshes.forEach((mesh, nodeId) => {

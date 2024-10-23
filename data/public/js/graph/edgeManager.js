@@ -66,7 +66,6 @@ export class EdgeManager {
     }
 
     updateEdges(edges) {
-        console.log(`EdgeManager updating edges: ${edges.length}`);
         const existingEdgeKeys = new Set(edges.map(edge => `${edge.source}-${edge.target}`));
 
         this.edgeMeshes.forEach((line, edgeKey) => {

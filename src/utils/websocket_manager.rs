@@ -27,16 +27,16 @@ use crate::models::simulation_params::SimulationMode;
 use crate::services::ragflow_service::RAGFlowError;
 use crate::config::Settings;
 
-/// Compresses a string message using deflate (compatible with pako).
+/// Compresses a string message using raw deflate (compatible with pako).
 fn compress_message(message: &str) -> Result<Vec<u8>, Box<dyn StdError + Send + Sync>> {
-    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(6));
     encoder.write_all(message.as_bytes())?;
     let compressed = encoder.finish()?;
     debug!("Compressed message size: {} bytes", compressed.len());
     Ok(compressed)
 }
 
-/// Decompresses binary data into a string message using deflate (compatible with pako).
+/// Decompresses binary data into a string message using raw deflate (compatible with pako).
 fn decompress_message(data: &[u8]) -> Result<String, Box<dyn StdError + Send + Sync>> {
     debug!("Attempting to decompress message of size: {} bytes", data.len());
     let mut decoder = DeflateDecoder::new(data);

@@ -1,6 +1,5 @@
 import { createApp, provide, inject, onMounted } from 'vue';
 import ControlPanel from './components/ControlPanel.vue';
-import ChatManager from './components/ChatManager.vue';
 import { WebXRVisualization } from './visualization/WebXRVisualization.js';
 import { WebsocketService } from './services/websocketService.js';
 import { GraphDataManager } from './services/graphDataManager.js';
@@ -8,8 +7,6 @@ import { enableSpacemouse } from './services/spacemouse.js';
 import { WebGLRenderer } from 'three';
 import { isGPUAvailable, initGPUCompute } from './gpuUtils.js';
 import toml from 'toml';
-
-console.log('App.js: Starting initialization');
 
 async function loadConfig() {
     try {
@@ -24,53 +21,70 @@ async function loadConfig() {
 
 class App {
     constructor() {
-        console.log('App: Constructor called');
         this.websocketService = new WebsocketService();
-        console.log('App: WebsocketService created');
         this.graphDataManager = new GraphDataManager(this.websocketService);
-        console.log('App: GraphDataManager created');
         this.visualization = null;
         this.gpuCompute = null;
-        this.simulationMode = 'cpu'; // Default simulation mode
-        this.ttsMode = 'local'; // Default TTS mode
-        this.renderer = new WebGLRenderer({ antialias: true }); // Initialize renderer
-        console.log('App: THREE.WebGLRenderer created');
-        this.setupWebsocketListeners = this.setupWebsocketListeners.bind(this);
+        this.simulationMode = 'cpu'; // Default to CPU mode
+        this.ttsMode = 'local';
         this.config = null;
+        this.setupWebsocketListeners = this.setupWebsocketListeners.bind(this);
         this.initializeApp();
     }
 
     async initializeApp() {
-        console.log('App: Initializing app');
-        this.config = await loadConfig();
-        if (!this.config) {
-            console.error('Failed to load configuration. Using default values.');
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.init());
+        } else {
+            this.init();
         }
-        this.initGPU();
-        this.initVueApp();
-        this.setupEventListeners();
     }
 
-    initGPU() {
-        // Initialize GPU if available
-        this.gpuAvailable = isGPUAvailable(this.renderer);
-        if (this.gpuAvailable) {
-            this.gpuCompute = initGPUCompute(1024, 1024, this.renderer); // Adjust dimensions as needed
-            console.log('GPU computation initialized');
-            this.simulationMode = 'gpu'; // Set default to GPU if available
-        } else if (this.websocketService.isConnected()) {
-            this.simulationMode = 'remote'; // Set to remote if WebSocket is connected and GPU is not available
-            console.log('Remote simulation mode set');
-        } else {
-            console.warn('GPU acceleration not available and not connected to server, using CPU fallback');
+    async init() {
+        try {
+            // Load configuration
+            this.config = await loadConfig();
+            if (!this.config) {
+                console.warn('Failed to load configuration. Using default values.');
+            }
+
+            // Initialize renderer with proper configuration
+            this.renderer = new WebGLRenderer({
+                antialias: true,
+                alpha: true,
+                powerPreference: "high-performance",
+                precision: "highp"
+            });
+            this.renderer.setPixelRatio(window.devicePixelRatio);
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+
+            // Check GPU availability after renderer is properly initialized
+            this.gpuAvailable = isGPUAvailable(this.renderer);
+            if (this.gpuAvailable) {
+                this.gpuCompute = initGPUCompute(1024, 1024, this.renderer);
+                if (this.gpuCompute) {
+                    this.simulationMode = 'gpu';
+                } else {
+                    console.warn('GPU compute initialization failed, falling back to CPU mode');
+                    this.simulationMode = 'cpu';
+                }
+            } else if (this.websocketService.isConnected()) {
+                this.simulationMode = 'remote';
+            } else {
+                console.warn('GPU acceleration not available and not connected to server, using CPU fallback');
+            }
+
+            this.initVueApp();
+            this.setupEventListeners();
+        } catch (error) {
+            console.error('Error in initialization:', error);
         }
     }
 
     initVueApp() {
-        console.log('App: Initializing Vue app');
         const app = createApp({
             setup: () => {
-                console.log('App: Vue app setup function called');
                 provide('websocketService', this.websocketService);
                 provide('graphDataManager', this.graphDataManager);
                 provide('renderer', this.renderer);
@@ -78,7 +92,6 @@ class App {
                 provide('config', this.config);
                 
                 onMounted(() => {
-                    console.log('App: Vue app mounted');
                     this.setupWebsocketListeners();
                 });
 
@@ -89,12 +102,11 @@ class App {
                 };
             },
             components: {
-                ControlPanel,
-                ChatManager
+                ControlPanel
             },
             template: `
                 <div>
-                    <chat-manager :websocketService="websocketService"></chat-manager>
+                    <div id="scene-container"></div>
                     <control-panel 
                         :websocketService="websocketService"
                         :gpuAvailable="gpuAvailable"
@@ -107,10 +119,7 @@ class App {
             `,
             methods: {
                 handleControlChange(data) {
-                    console.log('Control changed:', data.name, data.value);
                     if (this.visualization) {
-                        console.log('Updating visualization:', data);
-                        
                         if (data.name === 'simulationMode') {
                             this.simulationMode = data.value;
                             this.visualization.switchSimulationMode(data.value);
@@ -127,27 +136,17 @@ class App {
                             data.name === 'forceDirectedAttraction') {
                             this.updateForceDirectedParams(data.name, data.value);
                         } else {
-                            // Handle other visual features
                             this.visualization.updateVisualFeatures({ [data.name]: data.value });
                         }
-                    } else {
-                        console.error('Cannot update visualization: not initialized');
                     }
                 },
                 updateForceDirectedParams(name, value) {
                     if (this.graphDataManager) {
-                        // Update the force-directed parameters in the graph data manager
-                        this.graphDataManager.updateForceDirectedParams(name, value);
-                        
-                        // Trigger a recalculation of the graph layout
+                        this.graphDataManager.updateForceDirectedParams({ [name]: value });
                         this.graphDataManager.recalculateLayout();
-                        
-                        // Update the visualization with the new layout
                         if (this.visualization) {
                             this.visualization.updateVisualization();
                         }
-                    } else {
-                        console.error('Cannot update force-directed parameters: GraphDataManager not initialized');
                     }
                 },
                 toggleFullscreen() {
@@ -175,8 +174,6 @@ class App {
                         if (!response.ok) {
                             throw new Error('Failed to set TTS mode');
                         }
-                        console.log('TTS mode set successfully:', mode);
-                        // Update the websocket service with the new TTS mode
                         this.websocketService.setTTSMode(mode);
                     } catch (error) {
                         console.error('Error setting TTS mode:', error);
@@ -194,102 +191,98 @@ class App {
         };
 
         app.mount('#app');
-        console.log('App: Vue app mounted to #app');
     }
 
     setupEventListeners() {
-        console.log('App: Setting up event listeners');
         window.addEventListener('graphDataUpdated', (event) => {
-            console.log('App: graphDataUpdated event received');
             if (this.visualization) {
                 this.visualization.updateVisualization();
-            } else {
-                console.warn('Cannot update visualization: not initialized');
             }
         });
 
         window.addEventListener('layoutRecalculationRequested', (event) => {
-            console.log('App: layoutRecalculationRequested event received');
             if (this.visualization) {
                 this.visualization.updateVisualization();
-            } else {
-                console.warn('Cannot update layout: Visualization not initialized');
             }
         });
 
         window.addEventListener('spacemouse-move', (event) => {
-            console.log('App: spacemouse-move event received');
             const { x, y, z, rx, ry, rz } = event.detail;
             if (this.visualization) {
                 this.visualization.handleSpacemouseInput(x, y, z, rx, ry, rz);
-            } else {
-                console.warn('Cannot handle Spacemouse input: Visualization not initialized');
             }
         });
     }
 
     setupWebsocketListeners() {
-        console.log('App: Setting up WebSocket listeners');
         this.websocketService.on('open', () => {
-            console.log('WebSocket connection opened');
-            // You can add any initialization logic here
+            // Connection opened
         });
 
         this.websocketService.on('error', (error) => {
             console.error('WebSocket error:', error);
-            // Handle WebSocket errors
         });
 
         this.websocketService.on('close', () => {
-            console.log('WebSocket connection closed');
-            // Handle WebSocket closure
+            // Connection closed
         });
 
         this.websocketService.on('graphUpdate', (graphData) => {
-            console.log('App: graphUpdate event received');
-            this.graphDataManager.updateGraphData(graphData);
-            if (this.visualization) {
-                this.visualization.updateVisualization();
+            if (this.isValidGraphData(graphData)) {
+                this.graphDataManager.updateGraphData(graphData);
+                if (this.visualization) {
+                    this.visualization.updateVisualization();
+                }
             }
         });
 
         this.websocketService.on('initialData', (data) => {
-            console.log('App: initialData event received');
-            this.graphDataManager.updateGraphData(data);
-            if (!this.visualization) {
-                this.initVisualization();
-            } else {
-                this.visualization.updateVisualization();
+            if (this.isValidGraphData(data)) {
+                this.graphDataManager.updateGraphData(data);
+                if (!this.visualization) {
+                    this.initVisualization();
+                } else {
+                    this.visualization.updateVisualization();
+                }
             }
         });
 
-        // Add a new listener for audio data from Piper-rs
         this.websocketService.on('audioData', (audioData) => {
-            console.log('App: audioData event received');
-            // Play the audio data (implementation depends on your audio playback method)
             this.playAudio(audioData);
         });
     }
 
+    isValidGraphData(data) {
+        return data && 
+               typeof data === 'object' && 
+               Array.isArray(data.nodes) && 
+               Array.isArray(data.edges) &&
+               data.nodes.every(node => node && typeof node === 'object' && node.name) &&
+               data.edges.every(edge => edge && typeof edge === 'object' && edge.source && edge.target);
+    }
+
     initVisualization() {
-        console.log('App: Initializing visualization');
         try {
-            this.visualization = new WebXRVisualization(this.graphDataManager, this.renderer, this.gpuCompute, this.config);
-            console.log('App: WebXRVisualization created');
-            this.visualization.initThreeJS();
-            console.log('App: Three.js initialized');
+            const container = document.getElementById('scene-container');
+            if (!container) {
+                throw new Error('Scene container not found');
+            }
+
+            this.visualization = new WebXRVisualization(
+                this.graphDataManager,
+                this.renderer,
+                this.gpuCompute,
+                this.config
+            );
+            
             this.visualization.switchSimulationMode(this.simulationMode);
             this.visualization.updateVisualization();
-            console.log('App: Visualization updated');
         } catch (error) {
             console.error('Error initializing visualization:', error);
         }
     }
 
     playAudio(audioData) {
-        // Implementation of audio playback
-        // This could be using Web Audio API or another method
-        // For example:
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const arrayBuffer = new ArrayBuffer(audioData.length);
         const view = new Uint8Array(arrayBuffer);
@@ -308,8 +301,5 @@ class App {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded event fired');
     new App();
 });
-
-console.log('App.js: Finished loading');

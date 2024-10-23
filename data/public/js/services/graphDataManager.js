@@ -10,7 +10,10 @@ export class GraphDataManager extends EventEmitter {
     constructor(websocketService) {
         super();
         this.websocketService = websocketService;
-        this.graphData = null;
+        this.graphData = {
+            nodes: [],
+            edges: []
+        };
         this.forceDirectedParams = {
             iterations: 100,
             repulsion: 1.0,
@@ -27,8 +30,58 @@ export class GraphDataManager extends EventEmitter {
      * @param {Object} data - The graph data to validate.
      * @returns {boolean} True if valid, false otherwise.
      */
-    isGraphDataValid(data = this.graphData) {
-        return data && Array.isArray(data.nodes) && Array.isArray(data.edges);
+    isGraphDataValid(data) {
+        try {
+            if (!data || typeof data !== 'object') {
+                console.error('Graph data is null or not an object');
+                return false;
+            }
+
+            if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+                console.error('Graph data nodes or edges are not arrays');
+                return false;
+            }
+
+            // Validate nodes
+            const validNodes = data.nodes.every(node => {
+                if (!node || typeof node !== 'object') {
+                    console.error('Invalid node object:', node);
+                    return false;
+                }
+                if (!node.name || typeof node.name !== 'string') {
+                    console.error('Node missing required name property:', node);
+                    return false;
+                }
+                return true;
+            });
+
+            if (!validNodes) return false;
+
+            // Validate edges
+            const validEdges = data.edges.every(edge => {
+                if (!edge || typeof edge !== 'object') {
+                    console.error('Invalid edge object:', edge);
+                    return false;
+                }
+                if (!edge.source || !edge.target) {
+                    console.error('Edge missing required source/target properties:', edge);
+                    return false;
+                }
+                // Verify edge endpoints exist in nodes
+                const sourceExists = data.nodes.some(n => n.name === edge.source);
+                const targetExists = data.nodes.some(n => n.name === edge.target);
+                if (!sourceExists || !targetExists) {
+                    console.error('Edge references non-existent node:', edge);
+                    return false;
+                }
+                return true;
+            });
+
+            return validEdges;
+        } catch (error) {
+            console.error('Error validating graph data:', error);
+            return false;
+        }
     }
 
     /**
@@ -37,7 +90,23 @@ export class GraphDataManager extends EventEmitter {
      */
     updateGraphData(newData) {
         if (this.isGraphDataValid(newData)) {
-            this.graphData = newData;
+            // Deep clone the data to prevent external modifications
+            this.graphData = {
+                nodes: JSON.parse(JSON.stringify(newData.nodes)),
+                edges: JSON.parse(JSON.stringify(newData.edges))
+            };
+            
+            // Initialize positions if not present
+            this.graphData.nodes.forEach(node => {
+                if (!node.position) {
+                    node.position = {
+                        x: (Math.random() - 0.5) * 100,
+                        y: (Math.random() - 0.5) * 100,
+                        z: (Math.random() - 0.5) * 100
+                    };
+                }
+            });
+
             this.emit('graphDataUpdated', this.graphData);
         } else {
             console.error('Received invalid graph data');
@@ -58,7 +127,7 @@ export class GraphDataManager extends EventEmitter {
      * @returns {Array} The nodes array.
      */
     getNodes() {
-        return this.graphData ? this.graphData.nodes : [];
+        return this.graphData.nodes;
     }
 
     /**
@@ -66,7 +135,7 @@ export class GraphDataManager extends EventEmitter {
      * @returns {Array} The edges array.
      */
     getEdges() {
-        return this.graphData ? this.graphData.edges : [];
+        return this.graphData.edges;
     }
 
     /**
@@ -82,27 +151,35 @@ export class GraphDataManager extends EventEmitter {
             type: 'setSimulationMode',
             mode: this.simulationMode
         });
-        console.log(`Simulation mode set to: ${this.simulationMode}`);
         this.emit('simulationModeChanged', this.simulationMode);
     }
 
     /**
      * Handles incoming WebSocket messages.
-     * @param {Object} message - The received message.
+     * @param {Object|string} message - The received message.
      */
     handleWebSocketMessage(message) {
-        const data = JSON.parse(message);
-        switch (data.type) {
-            case 'graphUpdate':
-            case 'remoteSimulationUpdate':
-            case 'initialData':
-                this.updateGraphData(data.graphData);
-                break;
-            case 'simulationModeConfirmation':
-                console.log(`Server confirmed simulation mode: ${data.mode}`);
-                break;
-            default:
-                console.warn(`Unhandled message type: ${data.type}`);
+        try {
+            const data = typeof message === 'string' ? JSON.parse(message) : message;
+            
+            switch (data.type) {
+                case 'graphUpdate':
+                case 'remoteSimulationUpdate':
+                case 'initialData':
+                    if (data.graphData) {
+                        this.updateGraphData(data.graphData);
+                    } else {
+                        console.error('Message missing graphData:', data);
+                    }
+                    break;
+                case 'simulationModeConfirmation':
+                    // Mode confirmed by server
+                    break;
+                default:
+                    console.warn(`Unhandled message type: ${data.type}`);
+            }
+        } catch (error) {
+            console.error('Error handling WebSocket message:', error);
         }
     }
 
@@ -110,7 +187,7 @@ export class GraphDataManager extends EventEmitter {
      * Recalculates the graph layout using the current force-directed parameters.
      */
     recalculateLayout() {
-        if (this.isGraphDataValid()) {
+        if (this.isGraphDataValid(this.graphData)) {
             if (this.simulationMode === 'remote') {
                 this.websocketService.send({
                     type: 'recalculateLayout',
@@ -130,8 +207,24 @@ export class GraphDataManager extends EventEmitter {
      * @param {Object} newParams - The new force-directed parameters.
      */
     updateForceDirectedParams(newParams) {
-        this.forceDirectedParams = { ...this.forceDirectedParams, ...newParams };
-        console.log('Updated force-directed parameters:', this.forceDirectedParams);
+        if (typeof newParams !== 'object') {
+            console.error('Invalid parameters object:', newParams);
+            return;
+        }
+
+        // Validate and update each parameter
+        Object.entries(newParams).forEach(([key, value]) => {
+            if (this.forceDirectedParams.hasOwnProperty(key)) {
+                if (typeof value === 'number' && !isNaN(value)) {
+                    this.forceDirectedParams[key] = value;
+                } else {
+                    console.error(`Invalid value for parameter ${key}:`, value);
+                }
+            } else {
+                console.warn(`Unknown parameter: ${key}`);
+            }
+        });
+
         this.emit('forceDirectedParamsUpdated', this.forceDirectedParams);
     }
 }
