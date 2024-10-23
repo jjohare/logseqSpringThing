@@ -28,7 +28,7 @@ use crate::services::ragflow_service::RAGFlowError;
 use crate::config::Settings;
 
 /// Compresses a string message using gzip.
-fn compress_message(message: &str) -> Result<Vec<u8>, Box<dyn StdError>> {
+fn compress_message(message: &str) -> Result<Vec<u8>, Box<dyn StdError + Send + Sync>> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(message.as_bytes())?;
     let compressed = encoder.finish()?;
@@ -37,7 +37,7 @@ fn compress_message(message: &str) -> Result<Vec<u8>, Box<dyn StdError>> {
 }
 
 /// Decompresses binary data into a string message using gzip.
-fn decompress_message(data: &[u8]) -> Result<String, Box<dyn StdError>> {
+fn decompress_message(data: &[u8]) -> Result<String, Box<dyn StdError + Send + Sync>> {
     debug!("Attempting to decompress message of size: {} bytes", data.len());
     let mut decoder = GzDecoder::new(data);
     let mut decompressed = String::new();
@@ -79,7 +79,7 @@ impl WebSocketManager {
     }
 
     /// Initializes the WebSocketManager with a conversation ID.
-    pub async fn initialize(&self, ragflow_service: &crate::services::ragflow_service::RAGFlowService) -> Result<(), Box<dyn StdError>> {
+    pub async fn initialize(&self, ragflow_service: &crate::services::ragflow_service::RAGFlowService) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let conversation_id = ragflow_service.create_conversation("default_user".to_string()).await?;
         let mut conv_id_lock = self.conversation_id.lock().unwrap();
         *conv_id_lock = Some(conversation_id.clone());
@@ -95,7 +95,7 @@ impl WebSocketManager {
     }
 
     /// Broadcasts a gzipped message to all connected WebSocket sessions.
-    pub async fn broadcast_message_compressed(&self, message: &str) -> Result<(), Box<dyn StdError>> {
+    pub async fn broadcast_message_compressed(&self, message: &str) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let compressed = compress_message(message)?;
         let sessions = self.sessions.lock().unwrap().clone();
         for session in sessions.iter() {
@@ -105,7 +105,7 @@ impl WebSocketManager {
     }
 
     /// Broadcasts audio data to all connected WebSocket sessions.
-    pub async fn broadcast_audio(&self, audio_bytes: Vec<u8>) -> Result<(), Box<dyn StdError>> {
+    pub async fn broadcast_audio(&self, audio_bytes: Vec<u8>) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let json_data = json!({
             "type": "audio",
             "audioData": STANDARD.encode(&audio_bytes)
@@ -323,9 +323,10 @@ impl Handler<OpenAIQueryResult> for WebSocketSession {
 }
 
 /// OpenAI WebSocket actor
+#[derive(Clone)]
 struct OpenAIWebSocket {
     client_addr: Addr<WebSocketSession>,
-    ws_stream: Arc<Mutex<Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>>>,
+    ws_stream: Arc<tokio::sync::Mutex<Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>>>,
     settings: Arc<RwLock<Settings>>,
 }
 
@@ -333,12 +334,12 @@ impl OpenAIWebSocket {
     fn new(client_addr: Addr<WebSocketSession>, settings: Arc<RwLock<Settings>>) -> Self {
         OpenAIWebSocket {
             client_addr,
-            ws_stream: Arc::new(Mutex::new(None)),
+            ws_stream: Arc::new(tokio::sync::Mutex::new(None)),
             settings,
         }
     }
 
-    async fn connect_to_openai(&self) -> Result<(), Box<dyn StdError>> {
+    async fn connect_to_openai(&self) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let settings = self.settings.read().await;
         let url = Url::parse(&settings.openai.openai_base_url)?;
         let api_key = settings.openai.openai_api_key.clone();
@@ -351,16 +352,22 @@ impl OpenAIWebSocket {
             .body(())?;
 
         let (ws_stream, _) = connect_async(request).await?;
-        *self.ws_stream.lock().unwrap() = Some(ws_stream);
+        *self.ws_stream.lock().await = Some(ws_stream);
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
+pub trait OpenAIRealtimeHandler: Send + Sync {
+    async fn send_text_message(&self, text: &str) -> Result<(), Box<dyn StdError + Send + Sync>>;
+    async fn handle_openai_responses(&self) -> Result<(), Box<dyn StdError + Send + Sync>>;
+}
+
+#[async_trait::async_trait]
 impl OpenAIRealtimeHandler for OpenAIWebSocket {
-    async fn send_text_message(&self, text: &str) -> Result<(), Box<dyn StdError>> {
-        let mut ws_stream_guard = self.ws_stream.lock().unwrap();
-        let ws_stream = ws_stream_guard.as_mut().ok_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::Other, "WebSocket not connected")) as Box<dyn StdError>)?;
+    async fn send_text_message(&self, text: &str) -> Result<(), Box<dyn StdError + Send + Sync>> {
+        let mut ws_stream_guard = self.ws_stream.lock().await;
+        let ws_stream = ws_stream_guard.as_mut().ok_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::Other, "WebSocket not connected")) as Box<dyn StdError + Send + Sync>)?;
 
         let request = json!({
             "type": "conversation.item.create",
@@ -381,9 +388,9 @@ impl OpenAIRealtimeHandler for OpenAIWebSocket {
         Ok(())
     }
 
-    async fn handle_openai_responses(&self) -> Result<(), Box<dyn StdError>> {
-        let mut ws_stream_guard = self.ws_stream.lock().unwrap();
-        let ws_stream = ws_stream_guard.as_mut().ok_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::Other, "WebSocket not connected")) as Box<dyn StdError>)?;
+    async fn handle_openai_responses(&self) -> Result<(), Box<dyn StdError + Send + Sync>> {
+        let mut ws_stream_guard = self.ws_stream.lock().await;
+        let ws_stream = ws_stream_guard.as_mut().ok_or_else(|| Box::new(std::io::Error::new(std::io::ErrorKind::Other, "WebSocket not connected")) as Box<dyn StdError + Send + Sync>)?;
         let client_addr = self.client_addr.clone();
 
         while let Some(response) = ws_stream.next().await {
@@ -404,10 +411,17 @@ impl OpenAIRealtimeHandler for OpenAIWebSocket {
                         break;
                     }
                 },
+                Ok(Message::Close(_)) => {
+                    info!("OpenAI WebSocket connection closed by server");
+                    break;
+                },
                 Err(e) => {
                     error!("Error receiving message from OpenAI: {}", e);
                     client_addr.do_send(OpenAIQueryResult(Err(format!("Error receiving message: {}", e))));
                     break;
+                },
+                _ => {
+                    // Ignore other message types
                 }
             }
         }
@@ -422,14 +436,36 @@ impl Actor for OpenAIWebSocket {
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("OpenAI WebSocket started");
         let addr = ctx.address();
+        let settings = self.settings.clone();
+        let ws_stream = self.ws_stream.clone();
         
         ctx.spawn(async move {
-            if let Err(e) = self.connect_to_openai().await {
-                error!("Failed to connect to OpenAI WebSocket: {}", e);
-                addr.do_send(OpenAIConnectionFailed);
-            } else {
-                info!("Connected to OpenAI WebSocket");
-                addr.do_send(OpenAIConnected);
+            let result = async {
+                let settings_read = settings.read().await;
+                let url = Url::parse(&settings_read.openai.openai_base_url)?;
+                let api_key = settings_read.openai.openai_api_key.clone();
+                drop(settings_read);
+
+                let request = http::Request::builder()
+                    .uri(url.as_str())
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("Content-Type", "application/json")
+                    .body(())?;
+
+                let (ws_stream_new, _) = connect_async(request).await?;
+                *ws_stream.lock().await = Some(ws_stream_new);
+                Ok::<_, Box<dyn StdError + Send + Sync>>(())
+            }.await;
+
+            match result {
+                Ok(_) => {
+                    info!("Connected to OpenAI WebSocket");
+                    addr.do_send(OpenAIConnected);
+                }
+                Err(e) => {
+                    error!("Failed to connect to OpenAI WebSocket: {}", e);
+                    addr.do_send(OpenAIConnectionFailed);
+                }
             }
         }.into_actor(self));
     }
@@ -468,14 +504,15 @@ impl Handler<OpenAIConnectionFailed> for OpenAIWebSocket {
 struct OpenAIMessage(String);
 
 impl Handler<OpenAIMessage> for OpenAIWebSocket {
-    type Result = ResponseActFuture<Self, ()>;
+    type Result = ResponseActFuture<Self, Result<(), Box<dyn StdError + Send + Sync>>>;
 
     fn handle(&mut self, msg: OpenAIMessage, _ctx: &mut Self::Context) -> Self::Result {
         let text_message = msg.0;
+        let this = self.clone();
 
         Box::pin(async move {
-            self.send_text_message(&text_message).await?;
-            self.handle_openai_responses().await?;
+            this.send_text_message(&text_message).await?;
+            this.handle_openai_responses().await?;
             Ok(())
         }.into_actor(self))
     }
