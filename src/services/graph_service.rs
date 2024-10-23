@@ -203,21 +203,23 @@ impl GraphService {
 
     /// Finds the shortest path between two nodes in the graph using A* algorithm.
     pub fn find_shortest_path(graph: &GraphData, start: &str, end: &str) -> Result<Vec<String>, String> {
-        #[derive(Clone, Eq, PartialEq)]
+        #[derive(Clone, PartialEq)]
         struct State {
             cost: f32,
             node: String,
         }
 
+        impl Eq for State {}
+
         impl Ord for State {
             fn cmp(&self, other: &Self) -> Ordering {
-                other.cost.partial_cmp(&self.cost).unwrap_or(Ordering::Equal)
+                self.partial_cmp(other).unwrap_or(Ordering::Equal)
             }
         }
 
         impl PartialOrd for State {
             fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                Some(self.cmp(other))
+                other.cost.partial_cmp(&self.cost)
             }
         }
 

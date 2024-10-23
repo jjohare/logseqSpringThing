@@ -2,8 +2,8 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::config::Settings;
-use anyhow::{Result, Context};
-use piper_rs::{PiperConfig, Piper};
+use anyhow::Result;
+use piper::{PiperConfig, Piper};
 
 pub struct PiperService {
     voice_config_path: String,
@@ -16,10 +16,10 @@ impl PiperService {
         let voice_config_path = settings.piper.voice_config_path.clone();
         
         let config = PiperConfig::from_file(Path::new(&voice_config_path))
-            .context("Failed to load Piper config")?;
+            .map_err(|e| anyhow::anyhow!("Failed to load Piper config: {}", e))?;
         
         let piper = Piper::new(&config)
-            .context("Failed to create Piper instance")?;
+            .map_err(|e| anyhow::anyhow!("Failed to create Piper instance: {}", e))?;
 
         Ok(Self {
             voice_config_path,
@@ -32,7 +32,7 @@ impl PiperService {
         println!("Using voice config: {}", self.voice_config_path);
 
         let audio = self.piper.synthesize(text, None)
-            .context("Failed to synthesize speech")?;
+            .map_err(|e| anyhow::anyhow!("Failed to synthesize speech: {}", e))?;
 
         Ok(audio)
     }

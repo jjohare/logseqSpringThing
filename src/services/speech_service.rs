@@ -8,11 +8,12 @@ use tokio::task;
 use crate::config::Settings;
 use log::{info, error, debug};
 use futures::{SinkExt, StreamExt};
-use std::error::Error;
+use std::error::Error as StdError;
 use crate::utils::websocket_manager::WebSocketManager;
 use crate::services::piper_service::PiperService;
 use tokio::net::TcpStream;
 use url::Url;
+use base64::{Engine as _, engine::general_purpose};
 
 pub struct SpeechService {
     sender: Arc<Mutex<mpsc::Sender<SpeechCommand>>>,
@@ -166,10 +167,10 @@ impl SpeechService {
                         if let Ok(json_msg) = serde_json::from_str::<serde_json::Value>(&text) {
                             match json_msg["type"].as_str() {
                                 Some("response.text.delta") => {
-                                    if let Some(content) = json_msg["delta"]["text"].as_str() {
+                                    if let Some(_content) = json_msg["delta"]["text"].as_str() {
                                         // Process text delta and audio
                                         if let Some(audio_data) = json_msg["delta"]["audio"].as_str() {
-                                            let audio_bytes = base64::decode(audio_data).unwrap_or_default();
+                                            let audio_bytes = general_purpose::STANDARD.decode(audio_data).unwrap_or_default();
                                             if let Err(e) = websocket_manager.broadcast_audio(audio_bytes).await {
                                                 error!("Failed to broadcast audio: {}", e);
                                             }
@@ -219,31 +220,31 @@ impl SpeechService {
         }
     }
 
-    pub async fn initialize(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn initialize(&self) -> Result<(), Box<dyn StdError>> {
         let command = SpeechCommand::Initialize;
         self.sender.lock().await.send(command).await?;
         Ok(())
     }
 
-    pub async fn send_message(&self, message: String) -> Result<(), Box<dyn Error>> {
+    pub async fn send_message(&self, message: String) -> Result<(), Box<dyn StdError>> {
         let command = SpeechCommand::SendMessage(message);
         self.sender.lock().await.send(command).await?;
         Ok(())
     }
 
-    pub async fn close(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn close(&self) -> Result<(), Box<dyn StdError>> {
         let command = SpeechCommand::Close;
         self.sender.lock().await.send(command).await?;
         Ok(())
     }
 
-    pub async fn set_tts_mode(&self, use_openai: bool) -> Result<(), Box<dyn Error>> {
+    pub async fn set_tts_mode(&self, use_openai: bool) -> Result<(), Box<dyn StdError>> {
         let command = SpeechCommand::SetTTSMode(use_openai);
         self.sender.lock().await.send(command).await?;
         Ok(())
     }
 
-    pub async fn synthesize_with_piper(&self, message: &str) -> Result<Vec<f32>, Box<dyn Error>> {
-        self.piper_service.generate_speech(message).await.map_err(|e| Box::new(e) as Box<dyn Error>)
+    pub async fn synthesize_with_piper(&self, message: &str) -> Result<Vec<f32>, Box<dyn StdError>> {
+        self.piper_service.generate_speech(message).await.map_err(|e| Box::new(e) as Box<dyn StdError>)
     }
 }

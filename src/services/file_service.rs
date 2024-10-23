@@ -4,16 +4,15 @@ use crate::models::metadata::Metadata;
 use crate::config::Settings;
 use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
-use log::{info, debug, error, warn};
+use log::{info, debug, warn};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use chrono::{Utc, Duration};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::error::Error as StdError;
 use reqwest::{Client, StatusCode, header};
-use base64;
+use base64::{Engine as _, engine::general_purpose};
 use thiserror::Error;
 
 const METADATA_PATH: &str = "/app/data/markdown/metadata.json";
@@ -164,7 +163,7 @@ impl GitHubService for GitHubServiceImpl {
 
         if response.status() == StatusCode::OK {
             let content: GithubContent = response.json().await?;
-            let decoded_content = base64::decode(&content.content.unwrap_or_default())?;
+            let decoded_content = general_purpose::STANDARD.decode(&content.content.unwrap_or_default())?;
             let content_string = String::from_utf8(decoded_content)
                 .map_err(|e| FileServiceError::GitHubApiError(format!("Error decoding content: {}", e)))?;
             
