@@ -540,7 +540,8 @@ impl Actor for OpenAIWebSocket {
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("OpenAI WebSocket started");
         let addr = ctx.address();
-        let this = self.clone();
+        let mut this = self.clone();
+        
         ctx.spawn(async move {
             let result = async {
                 loop {

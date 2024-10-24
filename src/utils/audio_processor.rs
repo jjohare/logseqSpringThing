@@ -1,7 +1,6 @@
 use log::{info, error, warn};
 use serde_json::Value;
-use base64::engine::general_purpose;
-use base64::Engine as _;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 pub struct AudioProcessor;
 
@@ -27,9 +26,9 @@ impl AudioProcessor {
 
         // Try to extract the audio data from different possible locations
         let audio_data = if let Some(audio) = json_response["data"]["audio"].as_str() {
-            general_purpose::STANDARD.decode(audio).map_err(|e| format!("Failed to decode base64 audio data: {}", e))?
+            BASE64.decode(audio).map_err(|e| format!("Failed to decode base64 audio data: {}", e))?
         } else if let Some(audio) = json_response["audio"].as_str() {
-            general_purpose::STANDARD.decode(audio).map_err(|e| format!("Failed to decode base64 audio data: {}", e))?
+            BASE64.decode(audio).map_err(|e| format!("Failed to decode base64 audio data: {}", e))?
         } else {
             // If we can't find the audio data, log the keys present in the JSON and return an error
             warn!("Audio data not found in JSON response. Available keys: {:?}", json_response.as_object().map(|obj| obj.keys().collect::<Vec<_>>()));

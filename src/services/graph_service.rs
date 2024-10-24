@@ -24,6 +24,12 @@ impl GraphService {
         GraphService { app_state }
     }
 
+    /// Gets the current graph data
+    pub async fn get_graph_data(&self) -> Result<GraphData, Box<dyn std::error::Error + Send + Sync>> {
+        let graph_data = self.app_state.graph_data.read().await;
+        Ok(graph_data.clone())
+    }
+
     /// Builds the graph data structure from processed Markdown files.
     pub async fn build_graph(&self) -> Result<GraphData, Box<dyn std::error::Error + Send + Sync>> {
         info!("Building graph data from metadata");
