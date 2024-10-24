@@ -44,6 +44,7 @@ export class WebsocketService {
                     message: 'WebSocket connection error',
                     details: error
                 });
+                this.reconnect(); // Attempt to reconnect on error
             };
 
             this.socket.onclose = (event) => {
@@ -51,6 +52,8 @@ export class WebsocketService {
                 this.emit('close', event);
                 if (this.reconnectAttempts < this.maxReconnectAttempts) {
                     this.reconnect();
+                } else {
+                    this.emit('maxReconnectAttemptsReached');
                 }
             };
         } catch (error) {
@@ -60,6 +63,7 @@ export class WebsocketService {
                 message: 'Failed to create WebSocket connection',
                 details: error
             });
+            this.reconnect(); // Attempt to reconnect on error
         }
     }
 
@@ -201,6 +205,9 @@ export class WebsocketService {
 
     handleAudioData(audioBase64) {
         try {
+            if (!audioBase64 || typeof audioBase64 !== 'string') {
+                throw new Error('Invalid audio data received');
+            }
             this.playAudio(audioBase64);
         } catch (error) {
             console.error('Error playing audio:', error);
@@ -348,5 +355,9 @@ export class WebsocketService {
         if (!this.socket) return 'CLOSED';
         const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
         return states[this.socket.readyState];
+    }
+    setSimulationMode(mode) {
+        this.simulationMode = mode;
+        this.send({ type: 'set_simulation_mode', mode });
     }
 }

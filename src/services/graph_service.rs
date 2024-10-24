@@ -1,5 +1,3 @@
-// src/services/graph_service.rs
-
 use crate::AppState;
 use crate::models::graph::GraphData;
 use crate::models::node::Node;
@@ -98,6 +96,15 @@ impl GraphService {
         debug!("Final sample node data after layout calculation: {:?}", graph.nodes.first());
         
         Ok(graph)
+    }
+
+    /// Calculates the force-directed layout using GPUCompute if available, otherwise falls back to CPU.
+    pub async fn recalculate_layout(
+        &self,
+        simulation_params: &SimulationParams
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut graph_data = self.app_state.graph_data.write().await;
+        Self::calculate_layout(&self.app_state.gpu_compute, &mut graph_data, simulation_params).await
     }
 
     /// Calculates the force-directed layout using GPUCompute if available, otherwise falls back to CPU.

@@ -167,6 +167,7 @@
             <option value="local">Local Piper TTS</option>
             <option value="openai">OpenAI WebSocket TTS</option>
           </select>
+          <span v-if="ttsMode" class="tts-mode-indicator">{{ ttsMode }}</span>
         </div>
       </div>
 
@@ -182,37 +183,37 @@
 </template>
 
 <script>
-import { defineComponent } from 'vue';
+import { defineComponent, ref, onUpdated, onBeforeUnmount } from 'vue';
 
 export default defineComponent({
-    name: 'ControlPanel',
-    props: {
-        websocketService: {
-            type: Object,
-            required: true
-        },
-        gpuAvailable: {
-            type: Boolean,
-            required: true
-        },
-        config: {
-            type: Object,
-            required: true
-        }
+  name: 'ControlPanel',
+  props: {
+    websocketService: {
+      type: Object,
+      required: true
     },
-    data() {
-        return {
-            isHidden: false,
-            fisheyeEnabled: false,
-            fisheyeStrength: 0.5,
-            simulationMode: 'cpu',
-            ttsMode: 'local',
-            // Chat interface data
-            chatInput: '',
-            chatMessages: [],
-            chatError: null,
-            colorControls: [
-                { name: 'nodeColor', label: 'Node Color', type: 'color', value: this.intToColor(this.config.visualization.node_color) },
+    gpuAvailable: {
+      type: Boolean,
+      required: true
+    },
+    config: {
+      type: Object,
+      required: true
+    }
+  },
+  data() {
+    return {
+      isHidden: false,
+      fisheyeEnabled: false,
+      fisheyeStrength: 0.5,
+      simulationMode: 'cpu',
+      ttsMode: 'local',
+      // Chat interface data
+      chatInput: '',
+      chatMessages: [],
+      chatError: null,
+      colorControls: [
+        { name: 'nodeColor', label: 'Node Color', type: 'color', value: this.intToColor(this.config.visualization.node_color) },
                 { name: 'edgeColor', label: 'Edge Color', type: 'color', value: this.intToColor(this.config.visualization.edge_color) },
                 { name: 'hologramColor', label: 'Hologram Color', type: 'color', value: this.intToColor(this.config.visualization.hologram_color) },
             ],

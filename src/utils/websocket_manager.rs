@@ -16,9 +16,9 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::connect_async;
 use url::Url;
 use std::error::Error as StdError;
+use std::time::Duration;
 
-use base64::Engine as Base64Engine;
-use base64::engine::general_purpose::STANDARD;
+use base64::{Engine as Base64Engine, engine::general_purpose::STANDARD};
 
 use crate::models::simulation_params::SimulationMode;
 use crate::services::ragflow_service::RAGFlowError;
@@ -152,10 +152,10 @@ impl WebSocketSession {
                 match client_msg {
                     ClientMessage::SetTTSMethod { method } => {
                         info!("Setting TTS method to {}", method);
-                        self.tts_method = method;
+                        self.tts_method = method.clone();
                         let response = json!({
                             "type": "tts_method_set",
-                            "method": method
+                            "method": method.clone()
                         });
                         self.send_json_response(response, ctx);
                     },
@@ -378,6 +378,8 @@ struct OpenAIWebSocket {
     client_addr: Addr<WebSocketSession>,
     ws_stream: Arc<tokio::sync::Mutex<Option<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>>>>,
     settings: Arc<RwLock<Settings>>,
+    reconnect_attempts: u32,
+    max_reconnect_attempts: u32,
 }
 
 impl OpenAIWebSocket {
@@ -386,24 +388,42 @@ impl OpenAIWebSocket {
             client_addr,
             ws_stream: Arc::new(tokio::sync::Mutex::new(None)),
             settings,
+            reconnect_attempts: 0,
+            max_reconnect_attempts: 5,
         }
     }
 
-    async fn connect_to_openai(&self) -> Result<(), Box<dyn StdError + Send + Sync>> {
-        let settings = self.settings.read().await;
-        let url = Url::parse(&settings.openai.openai_base_url)?;
-        let api_key = settings.openai.openai_api_key.clone();
-        drop(settings);  // Release the lock before the await point
-        
-        let request = http::Request::builder()
-            .uri(url.as_str())
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .body(())?;
+    async fn connect_to_openai(&mut self) -> Result<(), Box<dyn StdError + Send + Sync>> {
+        loop {
+            let settings = self.settings.read().await;
+            let url = Url::parse(&settings.openai.openai_base_url)?;
+            let api_key = settings.openai.openai_api_key.clone();
+            drop(settings);  // Release the lock before the await point
+            
+            let request = http::Request::builder()
+                .uri(url.as_str())
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .body(())?;
 
-        let (ws_stream, _) = connect_async(request).await?;
-        *self.ws_stream.lock().await = Some(ws_stream);
-        Ok(())
+            match connect_async(request).await {
+                Ok((ws_stream, _)) => {
+                    info!("Connected to OpenAI WebSocket");
+                    *self.ws_stream.lock().await = Some(ws_stream);
+                    self.reconnect_attempts = 0;
+                    return Ok(());
+                },
+                Err(e) => {
+                    error!("Failed to connect to OpenAI WebSocket: {}", e);
+                    self.reconnect_attempts += 1;
+                    if self.reconnect_attempts >= self.max_reconnect_attempts {
+                        return Err(Box::new(e));
+                    }
+                    let delay = (2 as u64).pow(self.reconnect_attempts) * 1000;
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                }
+            }
+        }
     }
 }
 
@@ -433,9 +453,13 @@ impl OpenAIRealtimeHandler for OpenAIWebSocket {
             }
         });
 
-        ws_stream.send(Message::Text(request.to_string())).await?;
-        
-        Ok(())
+        match ws_stream.send(Message::Text(request.to_string())).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                error!("Error sending message to OpenAI: {}", e);
+                Err(Box::new(e))
+            }
+        }
     }
 
     async fn handle_openai_responses(&self) -> Result<(), Box<dyn StdError + Send + Sync>> {
@@ -446,19 +470,38 @@ impl OpenAIRealtimeHandler for OpenAIWebSocket {
         while let Some(response) = ws_stream.next().await {
             match response {
                 Ok(Message::Text(text)) => {
-                    let json_msg: serde_json::Value = serde_json::from_str(&text)?;
-
-                    if let Some(audio_data) = json_msg["delta"]["audio"].as_str() {
-                        let audio_bytes = STANDARD.decode(audio_data)?;
-
-                        let audio_message = json!({
-                            "type": "audio_data",
-                            "audio_data": STANDARD.encode(&audio_bytes)
-                        });
-
-                        client_addr.do_send(SendCompressedMessage(audio_message.to_string().into_bytes()));
-                    } else if json_msg["type"].as_str() == Some("response.text.done") {
-                        break;
+                    match serde_json::from_str::<serde_json::Value>(&text) {
+                        Ok(json_msg) => {
+                            if let Some(audio_data) = json_msg["delta"]["audio"].as_str() {
+                                match base64::decode(audio_data) {
+                                    Ok(audio_bytes) => {
+                                        let audio_message = json!({
+                                            "type": "audio_data",
+                                            "audio_data": base64::encode(audio_bytes)
+                                        });
+                                        client_addr.do_send(SendCompressedMessage(audio_message.to_string().into_bytes()));
+                                    },
+                                    Err(e) => {
+                                        error!("Error decoding audio data from OpenAI: {}", e);
+                                        let error_message = json!({
+                                            "type": "error",
+                                            "message": format!("Error decoding audio data from OpenAI: {}", e)
+                                        });
+                                        client_addr.do_send(SendCompressedMessage(error_message.to_string().into_bytes()));
+                                    }
+                                }
+                            } else if json_msg["type"].as_str() == Some("response.text.done") {
+                                break;
+                            }
+                        },
+                        Err(e) => {
+                            error!("Error parsing JSON response from OpenAI: {}", e);
+                            let error_message = json!({
+                                "type": "error",
+                                "message": format!("Error parsing JSON response from OpenAI: {}", e)
+                            });
+                            client_addr.do_send(SendCompressedMessage(error_message.to_string().into_bytes()));
+                        }
                     }
                 },
                 Ok(Message::Close(_)) => {
@@ -467,7 +510,11 @@ impl OpenAIRealtimeHandler for OpenAIWebSocket {
                 },
                 Err(e) => {
                     error!("Error receiving message from OpenAI: {}", e);
-                    client_addr.do_send(OpenAIQueryResult(Err(format!("Error receiving message: {}", e))));
+                    let error_message = json!({
+                        "type": "error",
+                        "message": format!("Error receiving message from OpenAI: {}", e)
+                    });
+                    client_addr.do_send(SendCompressedMessage(error_message.to_string().into_bytes()));
                     break;
                 },
                 _ => {
@@ -486,27 +533,23 @@ impl Actor for OpenAIWebSocket {
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("OpenAI WebSocket started");
         let addr = ctx.address();
-        let settings = self.settings.clone();
-        let ws_stream = self.ws_stream.clone();
-        
         ctx.spawn(async move {
             let result = async {
-                let settings_read = settings.read().await;
-                let url = Url::parse(&settings_read.openai.openai_base_url)?;
-                let api_key = settings_read.openai.openai_api_key.clone();
-                drop(settings_read);
-
-                let request = http::Request::builder()
-                    .uri(url.as_str())
-                    .header("Authorization", format!("Bearer {}", api_key))
-                    .header("Content-Type", "application/json")
-                    .body(())?;
-
-                let (ws_stream_new, _) = connect_async(request).await?;
-                *ws_stream.lock().await = Some(ws_stream_new);
-                Ok::<_, Box<dyn StdError + Send + Sync>>(())
+                loop {
+                    match self.connect_to_openai().await {
+                        Ok(_) => return Ok(()),
+                        Err(e) => {
+                            error!("Failed to connect to OpenAI WebSocket: {}", e);
+                            let delay = (2 as u64).pow(self.reconnect_attempts) * 1000;
+                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                            self.reconnect_attempts += 1;
+                            if self.reconnect_attempts >= self.max_reconnect_attempts {
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
             }.await;
-
             match result {
                 Ok(_) => {
                     info!("Connected to OpenAI WebSocket");
@@ -517,7 +560,7 @@ impl Actor for OpenAIWebSocket {
                     addr.do_send(OpenAIConnectionFailed);
                 }
             }
-        }.into_actor(self));
+        });
     }
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
