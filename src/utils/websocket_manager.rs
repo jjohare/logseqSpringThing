@@ -6,7 +6,6 @@ use log::{info, error, debug};
 use std::sync::{Mutex, Arc};
 use serde_json::{json, Value};
 use serde::{Deserialize, Serialize};
-use std::io::prelude::*;
 use futures::stream::{Stream, StreamExt};
 use futures::SinkExt;
 use std::pin::Pin;
@@ -18,7 +17,7 @@ use url::Url;
 use std::error::Error as StdError;
 use std::time::Duration;
 
-use base64::{Engine as Base64Engine, engine::general_purpose::STANDARD};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use crate::models::simulation_params::SimulationMode;
 use crate::services::ragflow_service::RAGFlowError;
@@ -92,7 +91,7 @@ impl WebSocketManager {
     pub async fn broadcast_audio(&self, audio_bytes: Vec<u8>) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let json_data = json!({
             "type": "audio_data",
-            "audio_data": STANDARD.encode(&audio_bytes)
+            "audio_data": BASE64.encode(&audio_bytes)
         });
         let message = json_data.to_string();
         self.broadcast_message_compressed(&message).await
@@ -131,6 +130,31 @@ pub struct WebSocketSession {
     openai_ws: Option<Addr<OpenAIWebSocket>>,
     simulation_mode: SimulationMode,
     conversation_id: Option<Arc<Mutex<Option<String>>>>,
+}
+
+impl Actor for WebSocketSession {
+    type Context = ws::WebsocketContext<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        let addr = ctx.address();
+        self.state.websocket_manager.sessions.lock().unwrap().push(addr.clone());
+        info!(
+            "WebSocket session started. Total sessions: {}",
+            self.state.websocket_manager.sessions.lock().unwrap().len()
+        );
+
+        // Initialize OpenAI WebSocket
+        self.openai_ws = Some(OpenAIWebSocket::new(ctx.address(), self.state.settings.clone()).start());
+    }
+
+    fn stopped(&mut self, ctx: &mut Self::Context) {
+        let addr = ctx.address();
+        self.state.websocket_manager.sessions.lock().unwrap().retain(|session| session != &addr);
+        info!(
+            "WebSocket session stopped. Total sessions: {}",
+            self.state.websocket_manager.sessions.lock().unwrap().len()
+        );
+    }
 }
 
 impl WebSocketSession {
@@ -216,8 +240,9 @@ impl WebSocketSession {
                 debug!("Sending JSON response: {}", json_string);
                 match compress_message(&json_string) {
                     Ok(compressed) => {
+                        let compressed_clone = compressed.clone();
                         ctx.binary(compressed);
-                        debug!("Sent compressed message, size: {} bytes", compressed.len());
+                        debug!("Sent compressed message, size: {} bytes", compressed_clone.len());
                     },
                     Err(e) => {
                         error!("Failed to compress JSON response: {}", e);
@@ -267,47 +292,29 @@ impl WebSocketSession {
     
     fn handle_recalculate_layout(&self, ctx: &mut ws::WebsocketContext<Self>, params: SimulationParams) {
         let state = self.state.clone();
-        ctx.spawn(async move {
-            if let Err(e) = state.graph_service.recalculate_layout(&params).await {
-                error!("Failed to recalculate layout: {}", e);
-                let error_message = json!({
-                    "type": "error",
-                    "message": format!("Failed to recalculate layout: {}", e)
-                });
-                state.websocket_manager.broadcast_message_compressed(&error_message.to_string()).await.unwrap();
-            } else {
-                let response = json!({
-                    "type": "layout_update",
-                    "layout_data": state.graph_service.read().await.get_graph_data().await.unwrap()
-                });
-                state.websocket_manager.broadcast_message_compressed(&response.to_string()).await.unwrap();
+        let fut = async move {
+            let graph_service = state.graph_service.read().await;
+            if let Some(service) = graph_service.as_ref() {
+                if let Err(e) = service.recalculate_layout(&params).await {
+                    error!("Failed to recalculate layout: {}", e);
+                    let error_message = json!({
+                        "type": "error",
+                        "message": format!("Failed to recalculate layout: {}", e)
+                    });
+                    state.websocket_manager.broadcast_message_compressed(&error_message.to_string()).await.unwrap();
+                } else {
+                    if let Ok(graph_data) = service.get_graph_data().await {
+                        let response = json!({
+                            "type": "layout_update",
+                            "layout_data": graph_data
+                        });
+                        state.websocket_manager.broadcast_message_compressed(&response.to_string()).await.unwrap();
+                    }
+                }
             }
-        });
-    }
-}
-
-impl Actor for WebSocketSession {
-    type Context = ws::WebsocketContext<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        let addr = ctx.address();
-        self.state.websocket_manager.sessions.lock().unwrap().push(addr.clone());
-        info!(
-            "WebSocket session started. Total sessions: {}",
-            self.state.websocket_manager.sessions.lock().unwrap().len()
-        );
-
-        // Initialize OpenAI WebSocket
-        self.openai_ws = Some(OpenAIWebSocket::new(ctx.address(), self.state.settings.clone()).start());
-    }
-
-    fn stopped(&mut self, ctx: &mut Self::Context) {
-        let addr = ctx.address();
-        self.state.websocket_manager.sessions.lock().unwrap().retain(|session| session != &addr);
-        info!(
-            "WebSocket session stopped. Total sessions: {}",
-            self.state.websocket_manager.sessions.lock().unwrap().len()
-        );
+        };
+        
+        ctx.spawn(fut.into_actor(self));
     }
 }
 
@@ -473,11 +480,11 @@ impl OpenAIRealtimeHandler for OpenAIWebSocket {
                     match serde_json::from_str::<serde_json::Value>(&text) {
                         Ok(json_msg) => {
                             if let Some(audio_data) = json_msg["delta"]["audio"].as_str() {
-                                match base64::decode(audio_data) {
+                                match BASE64.decode(audio_data) {
                                     Ok(audio_bytes) => {
                                         let audio_message = json!({
                                             "type": "audio_data",
-                                            "audio_data": base64::encode(audio_bytes)
+                                            "audio_data": BASE64.encode(&audio_bytes)
                                         });
                                         client_addr.do_send(SendCompressedMessage(audio_message.to_string().into_bytes()));
                                     },
@@ -533,17 +540,18 @@ impl Actor for OpenAIWebSocket {
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("OpenAI WebSocket started");
         let addr = ctx.address();
+        let this = self.clone();
         ctx.spawn(async move {
             let result = async {
                 loop {
-                    match self.connect_to_openai().await {
+                    match this.connect_to_openai().await {
                         Ok(_) => return Ok(()),
                         Err(e) => {
                             error!("Failed to connect to OpenAI WebSocket: {}", e);
-                            let delay = (2 as u64).pow(self.reconnect_attempts) * 1000;
+                            let delay = (2 as u64).pow(this.reconnect_attempts) * 1000;
                             tokio::time::sleep(Duration::from_millis(delay)).await;
-                            self.reconnect_attempts += 1;
-                            if self.reconnect_attempts >= self.max_reconnect_attempts {
+                            this.reconnect_attempts += 1;
+                            if this.reconnect_attempts >= this.max_reconnect_attempts {
                                 return Err(e);
                             }
                         }
@@ -560,7 +568,7 @@ impl Actor for OpenAIWebSocket {
                     addr.do_send(OpenAIConnectionFailed);
                 }
             }
-        });
+        }.into_actor(self));
     }
 
     fn stopped(&mut self, _ctx: &mut Self::Context) {
