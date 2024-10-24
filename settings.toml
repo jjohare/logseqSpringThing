@@ -44,7 +44,7 @@ perplexity_frequency_penalty = 0.0
 
 [openai]
 openai_api_key = "default_openai_key"
-openai_base_url = "https://api.openai.com/v1"
+openai_base_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
 
 # Default configurations (can be overridden by environment variables)
 [default]

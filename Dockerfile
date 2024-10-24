@@ -78,10 +78,19 @@ RUN apt-get update && apt-get install -y \
     libclang1 \
     libespeak-ng1 \
     libsonic0 \
+    mesa-utils \
+    libegl1-mesa-dev \
+    libgl1-mesa-dev \
+    libgles2-mesa-dev \
+    mesa-vulkan-drivers \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update \
     && apt-get install -y python3.10 python3.10-venv python3.10-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Set up XDG_RUNTIME_DIR
+ENV XDG_RUNTIME_DIR=/tmp/runtime-dir
+RUN mkdir -p $XDG_RUNTIME_DIR && chmod 700 $XDG_RUNTIME_DIR
 
 # Set the working directory
 WORKDIR /app

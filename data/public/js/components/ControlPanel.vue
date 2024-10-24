@@ -186,62 +186,220 @@
 import { defineComponent, ref, onUpdated, onBeforeUnmount } from 'vue';
 
 export default defineComponent({
-  name: 'ControlPanel',
-  props: {
-    websocketService: {
-      type: Object,
-      required: true
+    name: 'ControlPanel',
+    props: {
+        websocketService: {
+            type: Object,
+            required: true
+        },
+        gpuAvailable: {
+            type: Boolean,
+            required: true
+        },
+        config: {
+            type: Object,
+            required: true
+        }
     },
-    gpuAvailable: {
-      type: Boolean,
-      required: true
-    },
-    config: {
-      type: Object,
-      required: true
-    }
-  },
-  data() {
-    return {
-      isHidden: false,
-      fisheyeEnabled: false,
-      fisheyeStrength: 0.5,
-      simulationMode: 'cpu',
-      ttsMode: 'local',
-      // Chat interface data
-      chatInput: '',
-      chatMessages: [],
-      chatError: null,
-      colorControls: [
-        { name: 'nodeColor', label: 'Node Color', type: 'color', value: this.intToColor(this.config.visualization.node_color) },
-                { name: 'edgeColor', label: 'Edge Color', type: 'color', value: this.intToColor(this.config.visualization.edge_color) },
-                { name: 'hologramColor', label: 'Hologram Color', type: 'color', value: this.intToColor(this.config.visualization.hologram_color) },
+    data() {
+        return {
+            isHidden: false,
+            fisheyeEnabled: false,
+            fisheyeStrength: 0.5,
+            simulationMode: 'cpu',
+            ttsMode: 'local',
+            chatInput: '',
+            chatMessages: [],
+            chatError: null,
+            colorControls: [
+                { 
+                    name: 'nodeColor', 
+                    label: 'Node Color', 
+                    type: 'color', 
+                    value: this.intToColor(this.config.visualization.node_color) 
+                },
+                { 
+                    name: 'edgeColor', 
+                    label: 'Edge Color', 
+                    type: 'color', 
+                    value: this.intToColor(this.config.visualization.edge_color) 
+                },
+                { 
+                    name: 'hologramColor', 
+                    label: 'Hologram Color', 
+                    type: 'color', 
+                    value: this.intToColor(this.config.visualization.hologram_color) 
+                },
             ],
             sizeOpacityControls: [
-                { name: 'nodeSizeScalingFactor', label: 'Node Size Scaling', type: 'range', value: this.config.visualization.node_size_scaling_factor, min: 1, max: 10, step: 0.1 },
-                { name: 'hologramScale', label: 'Hologram Scale', type: 'range', value: this.config.visualization.hologram_scale, min: 1, max: 10, step: 0.1 },
-                { name: 'hologramOpacity', label: 'Hologram Opacity', type: 'range', value: this.config.visualization.hologram_opacity, min: 0, max: 1, step: 0.01 },
-                { name: 'edgeOpacity', label: 'Edge Opacity', type: 'range', value: this.config.visualization.edge_opacity, min: 0, max: 1, step: 0.01 },
+                { 
+                    name: 'nodeSizeScalingFactor', 
+                    label: 'Node Size Scaling', 
+                    type: 'range', 
+                    value: this.config.visualization.node_size_scaling_factor, 
+                    min: 1, 
+                    max: 10, 
+                    step: 0.1 
+                },
+                { 
+                    name: 'hologramScale', 
+                    label: 'Hologram Scale', 
+                    type: 'range', 
+                    value: this.config.visualization.hologram_scale, 
+                    min: 1, 
+                    max: 10, 
+                    step: 0.1 
+                },
+                { 
+                    name: 'hologramOpacity', 
+                    label: 'Hologram Opacity', 
+                    type: 'range', 
+                    value: this.config.visualization.hologram_opacity, 
+                    min: 0, 
+                    max: 1, 
+                    step: 0.01 
+                },
+                { 
+                    name: 'edgeOpacity', 
+                    label: 'Edge Opacity', 
+                    type: 'range', 
+                    value: this.config.visualization.edge_opacity, 
+                    min: 0, 
+                    max: 1, 
+                    step: 0.01 
+                },
             ],
             bloomControls: [
-                { name: 'nodeBloomStrength', label: 'Node Bloom Strength', type: 'range', value: this.config.bloom.node_bloom_strength, min: 0, max: 1, step: 0.01 },
-                { name: 'nodeBloomRadius', label: 'Node Bloom Radius', type: 'range', value: this.config.bloom.node_bloom_radius, min: 0, max: 1, step: 0.01 },
-                { name: 'nodeBloomThreshold', label: 'Node Bloom Threshold', type: 'range', value: this.config.bloom.node_bloom_threshold, min: 0, max: 1, step: 0.01 },
-                { name: 'edgeBloomStrength', label: 'Edge Bloom Strength', type: 'range', value: this.config.bloom.edge_bloom_strength, min: 0, max: 1, step: 0.01 },
-                { name: 'edgeBloomRadius', label: 'Edge Bloom Radius', type: 'range', value: this.config.bloom.edge_bloom_radius, min: 0, max: 1, step: 0.01 },
-                { name: 'edgeBloomThreshold', label: 'Edge Bloom Threshold', type: 'range', value: this.config.bloom.edge_bloom_threshold, min: 0, max: 1, step: 0.01 },
-                { name: 'environmentBloomStrength', label: 'Environment Bloom Strength', type: 'range', value: this.config.bloom.environment_bloom_strength, min: 0, max: 2, step: 0.01 },
-                { name: 'environmentBloomRadius', label: 'Environment Bloom Radius', type: 'range', value: this.config.bloom.environment_bloom_radius, min: 0, max: 2, step: 0.01 },
-                { name: 'environmentBloomThreshold', label: 'Environment Bloom Threshold', type: 'range', value: this.config.bloom.environment_bloom_threshold, min: 0, max: 1, step: 0.01 },
+                { 
+                    name: 'nodeBloomStrength', 
+                    label: 'Node Bloom Strength', 
+                    type: 'range', 
+                    value: this.config.bloom.node_bloom_strength, 
+                    min: 0, 
+                    max: 1, 
+                    step: 0.01 
+                },
+                { 
+                    name: 'nodeBloomRadius', 
+                    label: 'Node Bloom Radius', 
+                    type: 'range', 
+                    value: this.config.bloom.node_bloom_radius, 
+                    min: 0, 
+                    max: 1, 
+                    step: 0.01 
+                },
+                { 
+                    name: 'nodeBloomThreshold', 
+                    label: 'Node Bloom Threshold', 
+                    type: 'range', 
+                    value: this.config.bloom.node_bloom_threshold, 
+                    min: 0, 
+                    max: 1, 
+                    step: 0.01 
+                },
+                { 
+                    name: 'edgeBloomStrength', 
+                    label: 'Edge Bloom Strength', 
+                    type: 'range', 
+                    value: this.config.bloom.edge_bloom_strength, 
+                    min: 0, 
+                    max: 1, 
+                    step: 0.01 
+                },
+                { 
+                    name: 'edgeBloomRadius', 
+                    label: 'Edge Bloom Radius', 
+                    type: 'range', 
+                    value: this.config.bloom.edge_bloom_radius, 
+                    min: 0, 
+                    max: 1, 
+                    step: 0.01 
+                },
+                { 
+                    name: 'edgeBloomThreshold', 
+                    label: 'Edge Bloom Threshold', 
+                    type: 'range', 
+                    value: this.config.bloom.edge_bloom_threshold, 
+                    min: 0, 
+                    max: 1, 
+                    step: 0.01 
+                },
+                { 
+                    name: 'environmentBloomStrength', 
+                    label: 'Environment Bloom Strength', 
+                    type: 'range', 
+                    value: this.config.bloom.environment_bloom_strength, 
+                    min: 0, 
+                    max: 2, 
+                    step: 0.01 
+                },
+                { 
+                    name: 'environmentBloomRadius', 
+                    label: 'Environment Bloom Radius', 
+                    type: 'range', 
+                    value: this.config.bloom.environment_bloom_radius, 
+                    min: 0, 
+                    max: 2, 
+                    step: 0.01 
+                },
+                { 
+                    name: 'environmentBloomThreshold', 
+                    label: 'Environment Bloom Threshold', 
+                    type: 'range', 
+                    value: this.config.bloom.environment_bloom_threshold, 
+                    min: 0, 
+                    max: 1, 
+                    step: 0.01 
+                },
             ],
             forceDirectedControls: [
-                { name: 'forceDirectedIterations', label: 'Iterations', type: 'range', value: this.config.visualization.force_directed_iterations, min: 10, max: 500, step: 10 },
-                { name: 'forceDirectedRepulsion', label: 'Repulsion', type: 'range', value: this.config.visualization.force_directed_repulsion, min: 0.1, max: 10.0, step: 0.1 },
-                { name: 'forceDirectedAttraction', label: 'Attraction', type: 'range', value: this.config.visualization.force_directed_attraction, min: 0.001, max: 0.1, step: 0.001 },
+                { 
+                    name: 'forceDirectedIterations', 
+                    label: 'Iterations', 
+                    type: 'range', 
+                    value: this.config.visualization.force_directed_iterations, 
+                    min: 10, 
+                    max: 500, 
+                    step: 10 
+                },
+                { 
+                    name: 'forceDirectedRepulsion', 
+                    label: 'Repulsion', 
+                    type: 'range', 
+                    value: this.config.visualization.force_directed_repulsion, 
+                    min: 0.1, 
+                    max: 10.0, 
+                    step: 0.1 
+                },
+                { 
+                    name: 'forceDirectedAttraction', 
+                    label: 'Attraction', 
+                    type: 'range', 
+                    value: this.config.visualization.force_directed_attraction, 
+                    min: 0.001, 
+                    max: 0.1, 
+                    step: 0.001 
+                },
             ],
             additionalControls: [
-                { name: 'labelFontSize', label: 'Label Font Size', type: 'range', value: this.config.visualization.label_font_size, min: 12, max: 72, step: 1 },
-                { name: 'fogDensity', label: 'Fog Density', type: 'range', value: this.config.visualization.fog_density, min: 0, max: 0.01, step: 0.0001 },
+                { 
+                    name: 'labelFontSize', 
+                    label: 'Label Font Size', 
+                    type: 'range', 
+                    value: this.config.visualization.label_font_size, 
+                    min: 12, 
+                    max: 72, 
+                    step: 1 
+                },
+                { 
+                    name: 'fogDensity', 
+                    label: 'Fog Density', 
+                    type: 'range', 
+                    value: this.config.visualization.fog_density, 
+                    min: 0, 
+                    max: 0.01, 
+                    step: 0.0001 
+                },
             ],
         };
     },
@@ -258,7 +416,7 @@ export default defineComponent({
                     await this.websocketService.sendChatMessage({
                         type: 'chat_message',
                         message: this.chatInput,
-                        use_openai: this.ttsMode === 'openai'  // Changed from useOpenAI to use_openai
+                        use_openai: this.ttsMode === 'openai'
                     });
                     this.chatMessages.push({ sender: 'You', message: this.chatInput });
                     this.chatInput = '';
@@ -317,7 +475,6 @@ export default defineComponent({
             this.fisheyeStrength = 0.5;
             this.emitChange('fisheyeStrength', 0.5);
             
-            // Reset simulation mode based on availability
             if (this.gpuAvailable) {
                 this.simulationMode = 'gpu';
             } else if (this.websocketService.isConnected()) {
@@ -327,12 +484,10 @@ export default defineComponent({
             }
             this.emitChange('simulationMode', this.simulationMode);
 
-            // Reset chat interface
             this.chatMessages = [];
             this.chatInput = '';
             this.chatError = null;
             
-            // Reset TTS mode
             this.ttsMode = 'local';
             this.handleTTSModeChange();
         },
@@ -343,12 +498,18 @@ export default defineComponent({
             this.$emit('enable-spacemouse');
         },
         colorToInt(color) {
-            // Remove the '#' and convert directly to integer
-            return parseInt(color.replace('#', ''), 16);
+            // Handle both '0x' prefixed and regular hex strings
+            const hex = color.replace(/^(0x|#)/, '');
+            // Ensure the hex string is 6 digits
+            const paddedHex = hex.padStart(6, '0');
+            return parseInt(paddedHex, 16);
         },
         intToColor(int) {
-            // Convert integer to 6-digit hex string with '#' prefix
-            return '#' + int.toString(16).padStart(6, '0');
+            // Handle both '0x' prefixed and regular numbers
+            const hex = (typeof int === 'string' ? parseInt(int.replace('0x', ''), 16) : int)
+                .toString(16)
+                .padStart(6, '0');
+            return `#${hex}`;
         },
         snakeCaseName(name) {
             return name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
@@ -359,7 +520,6 @@ export default defineComponent({
         }
     },
     mounted() {
-        // Set initial simulation mode based on availability
         if (this.gpuAvailable) {
             this.simulationMode = 'gpu';
         } else if (this.websocketService.isConnected()) {
@@ -367,14 +527,12 @@ export default defineComponent({
         }
         this.emitChange('simulationMode', this.simulationMode);
 
-        // Set up WebSocket listeners for chat
         if (this.websocketService) {
             this.websocketService.on('ragflowResponse', this.receiveMessage);
             this.websocketService.on('error', this.handleWebSocketError);
         }
     },
     beforeUnmount() {
-        // Clean up WebSocket listeners
         if (this.websocketService) {
             this.websocketService.off('ragflowResponse', this.receiveMessage);
             this.websocketService.off('error', this.handleWebSocketError);

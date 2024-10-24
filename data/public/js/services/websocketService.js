@@ -72,12 +72,25 @@ export class WebsocketService {
             let data;
             if (event.data instanceof ArrayBuffer) {
                 try {
-                    const decompressed = pako.inflate(new Uint8Array(event.data), { to: 'string' });
+                    const buffer = new Uint8Array(event.data);
+                    // Check for COMP magic header (0x434F4D50 = "COMP")
+                    const MAGIC_HEADER = new Uint8Array([67, 79, 77, 80]); // "COMP"
+                    if (buffer.length < MAGIC_HEADER.length || 
+                        !MAGIC_HEADER.every((byte, i) => buffer[i] === byte)) {
+                        throw new Error('Invalid compression header');
+                    }
+                    // Skip magic header for decompression
+                    const compressedData = buffer.slice(MAGIC_HEADER.length);
+                    const decompressed = pako.inflate(compressedData, { to: 'string', raw: true });
                     data = JSON.parse(decompressed);
                     this.validateMessage(data);
                 } catch (decompressionError) {
                     console.error('Failed to decompress message:', decompressionError);
-                    this.emit('error', { type: 'decompression_error', message: 'Failed to decompress message', details: decompressionError });
+                    this.emit('error', { 
+                        type: 'decompression_error', 
+                        message: 'Failed to decompress message', 
+                        details: decompressionError 
+                    });
                     return;
                 }
             } else {
@@ -106,8 +119,13 @@ export class WebsocketService {
             try {
                 this.validateMessage(data);
                 const jsonString = JSON.stringify(data);
-                const compressed = pako.deflate(jsonString, { raw: true });
-                this.socket.send(compressed.buffer);
+                // Add COMP magic header and use level 6 compression to match backend
+                const MAGIC_HEADER = new Uint8Array([67, 79, 77, 80]); // "COMP"
+                const compressed = pako.deflate(jsonString, { level: 6, raw: true });
+                const message = new Uint8Array(MAGIC_HEADER.length + compressed.length);
+                message.set(MAGIC_HEADER);
+                message.set(compressed, MAGIC_HEADER.length);
+                this.socket.send(message.buffer);
             } catch (error) {
                 console.error('Error sending message:', error);
                 this.emit('error', { 
@@ -356,6 +374,7 @@ export class WebsocketService {
         const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
         return states[this.socket.readyState];
     }
+
     setSimulationMode(mode) {
         this.simulationMode = mode;
         this.send({ type: 'set_simulation_mode', mode });
