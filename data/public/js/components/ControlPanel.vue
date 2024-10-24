@@ -1,5 +1,3 @@
-[Previous content remains the same until the template section, where we update the form elements with proper IDs:]
-
 <template>
   <div id="control-panel" :class="{ hidden: isHidden }">
     <button @click="togglePanel" class="toggle-button" id="toggle-panel-btn">
@@ -117,7 +115,7 @@
             id="simulation-mode"
             name="simulation_mode"
             v-model="simulationMode"
-            @change="emitChange('simulationMode', simulationMode)"
+            @change="handleSimulationModeChange"
           >
             <option value="cpu">CPU</option>
             <option value="gpu" :disabled="!gpuAvailable">GPU</option>
@@ -166,7 +164,7 @@
             v-model="ttsMode"
             @change="handleTTSModeChange"
           >
-            <option value="local">Local Sonata TTS</option>
+            <option value="local">Local Piper TTS</option>
             <option value="openai">OpenAI WebSocket TTS</option>
           </select>
         </div>
@@ -257,7 +255,7 @@ export default defineComponent({
             if (this.chatInput.trim()) {
                 try {
                     await this.websocketService.sendChatMessage({
-                        type: 'chatMessage',
+                        type: 'chat_message',
                         message: this.chatInput,
                         use_openai: this.ttsMode === 'openai'  // Changed from useOpenAI to use_openai
                     });
@@ -353,6 +351,10 @@ export default defineComponent({
         },
         snakeCaseName(name) {
             return name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        },
+        handleSimulationModeChange() {
+            this.emitChange('simulationMode', this.simulationMode);
+            this.websocketService.setSimulationMode(this.simulationMode);
         }
     },
     mounted() {

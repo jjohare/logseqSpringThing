@@ -79,6 +79,7 @@ base64 = "0.21"
 
 # Compression
 flate2 = "1.0"
+miniz_oxide = "0.7.4"
 
 # OpenSSL
 openssl = "0.10"

@@ -6,9 +6,6 @@ use log::{info, error, debug};
 use std::sync::{Mutex, Arc};
 use serde_json::{json, Value};
 use serde::{Deserialize, Serialize};
-use flate2::read::DeflateDecoder;
-use flate2::write::DeflateEncoder;
-use flate2::Compression;
 use std::io::prelude::*;
 use futures::stream::{Stream, StreamExt};
 use futures::SinkExt;
@@ -26,25 +23,8 @@ use base64::engine::general_purpose::STANDARD;
 use crate::models::simulation_params::SimulationMode;
 use crate::services::ragflow_service::RAGFlowError;
 use crate::config::Settings;
-
-/// Compresses a string message using raw deflate (compatible with pako).
-fn compress_message(message: &str) -> Result<Vec<u8>, Box<dyn StdError + Send + Sync>> {
-    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(6));
-    encoder.write_all(message.as_bytes())?;
-    let compressed = encoder.finish()?;
-    debug!("Compressed message size: {} bytes", compressed.len());
-    Ok(compressed)
-}
-
-/// Decompresses binary data into a string message using raw deflate (compatible with pako).
-fn decompress_message(data: &[u8]) -> Result<String, Box<dyn StdError + Send + Sync>> {
-    debug!("Attempting to decompress message of size: {} bytes", data.len());
-    let mut decoder = DeflateDecoder::new(data);
-    let mut decompressed = String::new();
-    decoder.read_to_string(&mut decompressed)?;
-    debug!("Decompressed message size: {} bytes", decompressed.len());
-    Ok(decompressed)
-}
+use crate::utils::compression::{compress_message, decompress_message};
+use crate::models::simulation_params::SimulationParams;
 
 /// Represents messages sent to the client as compressed binary data.
 #[derive(Message)]
@@ -55,12 +35,16 @@ struct SendCompressedMessage(Vec<u8>);
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
 enum ClientMessage {
-    #[serde(rename = "setTTSMethod")]
+    #[serde(rename = "set_tts_method")]
     SetTTSMethod { method: String },
-    #[serde(rename = "chatMessage")]
+    #[serde(rename = "chat_message")]
     ChatMessage { message: String, use_openai: bool },
-    #[serde(rename = "getInitialData")]
+    #[serde(rename = "get_initial_data")]
     GetInitialData,
+    #[serde(rename = "set_simulation_mode")]
+    SetSimulationMode { mode: String },
+    #[serde(rename = "recalculate_layout")]
+    RecalculateLayout { params: SimulationParams },
 }
 
 /// Manages WebSocket sessions and communication.
@@ -107,8 +91,8 @@ impl WebSocketManager {
     /// Broadcasts audio data to all connected WebSocket sessions.
     pub async fn broadcast_audio(&self, audio_bytes: Vec<u8>) -> Result<(), Box<dyn StdError + Send + Sync>> {
         let json_data = json!({
-            "type": "audio",
-            "audioData": STANDARD.encode(&audio_bytes)
+            "type": "audio_data",
+            "audio_data": STANDARD.encode(&audio_bytes)
         });
         let message = json_data.to_string();
         self.broadcast_message_compressed(&message).await
@@ -168,9 +152,9 @@ impl WebSocketSession {
                 match client_msg {
                     ClientMessage::SetTTSMethod { method } => {
                         info!("Setting TTS method to {}", method);
-                        self.tts_method = method.clone();
+                        self.tts_method = method;
                         let response = json!({
-                            "type": "ttsMethodSet",
+                            "type": "tts_method_set",
                             "method": method
                         });
                         self.send_json_response(response, ctx);
@@ -189,10 +173,9 @@ impl WebSocketSession {
                                 self.send_json_response(error_message, ctx);
                             }
                         } else {
-                            // Implement RAGFlow chat logic here
                             let response = json!({
-                                "type": "ragflowResponse",
-                                "message": format!("RAGFlow: {}", message)
+                                "type": "ragflow_response",
+                                "answer": format!("RAGFlow: {}", message)
                             });
                             self.send_json_response(response, ctx);
                         }
@@ -200,12 +183,18 @@ impl WebSocketSession {
                     ClientMessage::GetInitialData => {
                         info!("Client requested initial data");
                         let initial_data = json!({
-                            "type": "initialData",
+                            "type": "initial_data",
                             "data": {
                                 "message": "Welcome to the WebSocket server!"
                             }
                         });
                         self.send_json_response(initial_data, ctx);
+                    },
+                    ClientMessage::SetSimulationMode { mode } => {
+                        self.handle_set_simulation_mode(ctx, &mode);
+                    },
+                    ClientMessage::RecalculateLayout { params } => {
+                        self.handle_recalculate_layout(ctx, params);
                     },
                 }
             },
@@ -222,17 +211,78 @@ impl WebSocketSession {
 
     /// Sends a JSON response to the client
     fn send_json_response(&self, response: Value, ctx: &mut ws::WebsocketContext<Self>) {
-        if let Ok(json_string) = serde_json::to_string(&response) {
-            debug!("Sending JSON response: {}", json_string);
-            if let Ok(compressed) = compress_message(&json_string) {
-                ctx.binary(compressed.clone());
-                debug!("Sent compressed message, size: {} bytes", compressed.len());
-            } else {
-                error!("Failed to compress JSON response");
+        match serde_json::to_string(&response) {
+            Ok(json_string) => {
+                debug!("Sending JSON response: {}", json_string);
+                match compress_message(&json_string) {
+                    Ok(compressed) => {
+                        ctx.binary(compressed);
+                        debug!("Sent compressed message, size: {} bytes", compressed.len());
+                    },
+                    Err(e) => {
+                        error!("Failed to compress JSON response: {}", e);
+                        let error_message = json!({
+                            "type": "error",
+                            "message": format!("Failed to compress JSON response: {}", e)
+                        });
+                        self.send_json_response(error_message, ctx);
+                    }
+                }
+            },
+            Err(e) => {
+                error!("Failed to serialize JSON response: {}", e);
+                let error_message = json!({
+                    "type": "error",
+                    "message": format!("Failed to serialize JSON response: {}", e)
+                });
+                self.send_json_response(error_message, ctx);
             }
-        } else {
-            error!("Failed to serialize JSON response");
         }
+    }
+    
+    fn handle_set_simulation_mode(&self, ctx: &mut ws::WebsocketContext<Self>, mode: &str) {
+        match mode {
+            "local" => {
+                info!("Simulation mode set to Local");
+            },
+            "remote" => {
+                info!("Simulation mode set to Remote");
+            },
+            _ => {
+                error!("Invalid simulation mode: {}", mode);
+                let error_message = json!({
+                    "type": "error",
+                    "message": format!("Invalid simulation mode: {}", mode)
+                });
+                self.send_json_response(error_message, ctx);
+                return;
+            }
+        }
+        let response = json!({
+            "type": "simulation_mode_set",
+            "mode": mode
+        });
+        self.send_json_response(response, ctx);
+    }
+    
+    fn handle_recalculate_layout(&self, ctx: &mut ws::WebsocketContext<Self>, params: SimulationParams) {
+        let state = self.state.clone();
+        ctx.spawn(async move {
+            if let Err(e) = state.graph_service.recalculate_layout(&params).await {
+                error!("Failed to recalculate layout: {}", e);
+                let error_message = json!({
+                    "type": "error",
+                    "message": format!("Failed to recalculate layout: {}", e)
+                });
+                state.websocket_manager.broadcast_message_compressed(&error_message.to_string()).await.unwrap();
+            } else {
+                let response = json!({
+                    "type": "layout_update",
+                    "layout_data": state.graph_service.read().await.get_graph_data().await.unwrap()
+                });
+                state.websocket_manager.broadcast_message_compressed(&response.to_string()).await.unwrap();
+            }
+        });
     }
 }
 
@@ -306,7 +356,7 @@ impl Handler<OpenAIQueryResult> for WebSocketSession {
         match msg.0 {
             Ok(response) => {
                 let message = json!({
-                    "type": "openaiResponse",
+                    "type": "openai_response",
                     "response": response
                 });
                 self.send_json_response(message, ctx);
@@ -402,8 +452,8 @@ impl OpenAIRealtimeHandler for OpenAIWebSocket {
                         let audio_bytes = STANDARD.decode(audio_data)?;
 
                         let audio_message = json!({
-                            "type": "audio",
-                            "audioData": STANDARD.encode(&audio_bytes)
+                            "type": "audio_data",
+                            "audio_data": STANDARD.encode(&audio_bytes)
                         });
 
                         client_addr.do_send(SendCompressedMessage(audio_message.to_string().into_bytes()));

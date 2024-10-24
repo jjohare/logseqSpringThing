@@ -10,12 +10,12 @@ export class WebsocketService {
         this.audioContext = null;
         this.ttsMethod = 'piper';
         this.openAIApiKey = null;
+        this.simulationMode = 'local'; // Default simulation mode
         this.connect();
     }
 
     connect() {
         try {
-            // Construct WebSocket URL using current location
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const hostname = window.location.hostname || '192.168.0.51';
             const port = '8443';
@@ -32,6 +32,7 @@ export class WebsocketService {
                 this.emit('open');
                 this.send({ type: 'set_tts_method', method: this.ttsMethod });
                 this.getInitialData();
+                this.setSimulationMode(this.simulationMode);
             };
 
             this.socket.onmessage = this.handleMessage.bind(this);
@@ -66,28 +67,41 @@ export class WebsocketService {
         try {
             let data;
             if (event.data instanceof ArrayBuffer) {
-                const decompressed = pako.inflate(new Uint8Array(event.data), { raw: true });
-                const textDecoder = new TextDecoder('utf-8');
-                data = JSON.parse(textDecoder.decode(decompressed));
+                try {
+                    const decompressed = pako.inflate(new Uint8Array(event.data), { to: 'string' });
+                    data = JSON.parse(decompressed);
+                    this.validateMessage(data);
+                } catch (decompressionError) {
+                    console.error('Failed to decompress message:', decompressionError);
+                    this.emit('error', { type: 'decompression_error', message: 'Failed to decompress message', details: decompressionError });
+                    return;
+                }
             } else {
                 data = JSON.parse(event.data);
+                this.validateMessage(data);
             }
             this.handleServerMessage(data);
         } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
+            console.error('Error parsing or validating WebSocket message:', error);
             this.emit('error', { 
                 type: 'parse_error', 
-                message: 'Failed to parse server message', 
+                message: 'Failed to parse or validate server message', 
                 details: error.message 
             });
+        }
+    }
+
+    validateMessage(data) {
+        if (!data || typeof data !== 'object' || !data.type) {
+            throw new Error('Invalid message format: Missing "type" property');
         }
     }
 
     send(data) {
         if (this.isConnected()) {
             try {
-                const snakeCaseData = this.convertKeysToSnakeCase(data);
-                const jsonString = JSON.stringify(snakeCaseData);
+                this.validateMessage(data);
+                const jsonString = JSON.stringify(data);
                 const compressed = pako.deflate(jsonString, { raw: true });
                 this.socket.send(compressed.buffer);
             } catch (error) {
@@ -108,19 +122,6 @@ export class WebsocketService {
         }
     }
 
-    convertKeysToSnakeCase(obj) {
-        if (Array.isArray(obj)) {
-            return obj.map(item => this.convertKeysToSnakeCase(item));
-        } else if (obj !== null && typeof obj === 'object') {
-            return Object.keys(obj).reduce((acc, key) => {
-                const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-                acc[snakeKey] = this.convertKeysToSnakeCase(obj[key]);
-                return acc;
-            }, {});
-        }
-        return obj;
-    }
-
     reconnect() {
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts += 1;
@@ -137,11 +138,10 @@ export class WebsocketService {
     }
 
     sendChatMessage(options) {
-        const { message, use_openai } = options;
         this.send({ 
             type: 'chat_message',
-            message,
-            use_openai
+            message: options.message,
+            use_openai: options.use_openai
         });
     }
 
@@ -184,7 +184,13 @@ export class WebsocketService {
                 this.emit('layoutUpdate', data.layout_data);
                 break;
             case 'audio_data':
-                this.handleAudioData(data.audio_base64);
+                this.handleAudioData(data.audio_data);
+                break;
+            case 'force_calculation_complete':
+                this.emit('forceCalculationComplete');
+                break;
+            case 'simulation_mode_set':
+                this.emit('simulationModeSet', data.mode);
                 break;
             default:
                 console.warn('Unhandled message type:', data.type);
