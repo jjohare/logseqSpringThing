@@ -1,4 +1,3 @@
-
 // src/services/graph_service.rs
 
 use crate::AppState;
@@ -7,6 +6,7 @@ use crate::models::node::Node;
 use crate::models::edge::Edge;
 use crate::models::metadata::Metadata;
 use crate::utils::gpu_compute::GPUCompute;
+use crate::models::simulation_params::SimulationParams;
 use log::{info, warn, debug};
 use std::collections::{HashMap, HashSet};
 use tokio::fs;
@@ -19,22 +19,6 @@ pub struct GraphService;
 
 impl GraphService {
     /// Builds the graph data structure from processed Markdown files.
-    /// 
-    /// This function performs the following steps:
-    /// 1. Reads the metadata JSON file.
-    /// 2. Creates nodes for each file in the metadata.
-    /// 3. Analyzes content for connections between nodes.
-    /// 4. Constructs edges based on both interconnectedness and hyperlinks.
-    /// 5. Uses GPUCompute to calculate force-directed layout if available, otherwise falls back to CPU.
-    /// 6. Returns the complete `GraphData` structure.
-    ///
-    /// # Arguments
-    ///
-    /// * `app_state` - Shared application state containing settings and file cache.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the `GraphData` on success or an error on failure.
     pub async fn build_graph(app_state: &AppState) -> Result<GraphData, Box<dyn std::error::Error + Send + Sync>> {
         info!("Building graph data from metadata");
         let metadata_path = "/app/data/markdown/metadata.json";
@@ -52,11 +36,10 @@ impl GraphService {
             graph.nodes.push(Node {
                 id: node_id.clone(),
                 label: node_id.clone(),
-                metadata: node_metadata, // Populate node metadata
+                metadata: node_metadata,
                 x: 0.0, y: 0.0, z: 0.0,
                 vx: 0.0, vy: 0.0, vz: 0.0,
             });
-            // Add metadata to graph
             graph.metadata.insert(node_id.clone(), file_metadata.clone());
         }
     
@@ -99,7 +82,15 @@ impl GraphService {
         debug!("Sample edge data: {:?}", graph.edges.first());
 
         // Calculate layout using GPU if available, otherwise fall back to CPU
-        Self::calculate_layout(&app_state.gpu_compute, &mut graph).await?;
+        let settings = app_state.settings.read().await;
+        let params = SimulationParams::new(
+            settings.visualization.force_directed_iterations as u32,
+            settings.visualization.force_directed_repulsion,
+            settings.visualization.force_directed_attraction,
+            0.9, // Default damping value
+        );
+
+        Self::calculate_layout(&app_state.gpu_compute, &mut graph, &params).await?;
         
         debug!("Final sample node data after layout calculation: {:?}", graph.nodes.first());
         
@@ -107,22 +98,17 @@ impl GraphService {
     }
 
     /// Calculates the force-directed layout using GPUCompute if available, otherwise falls back to CPU.
-    ///
-    /// # Arguments
-    ///
-    /// * `gpu_compute` - Optional reference to the GPUCompute instance.
-    /// * `graph` - Mutable reference to the GraphData to be updated.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` indicating success or failure.
-    async fn calculate_layout(gpu_compute: &Option<Arc<RwLock<GPUCompute>>>, graph: &mut GraphData) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn calculate_layout(
+        gpu_compute: &Option<Arc<RwLock<GPUCompute>>>,
+        graph: &mut GraphData,
+        params: &SimulationParams,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match gpu_compute {
             Some(gpu) => {
                 info!("Using GPU for layout calculation");
-                // GPU-based calculation
                 let mut gpu_compute = gpu.write().await; // Acquire write lock
                 gpu_compute.set_graph_data(graph)?;
+                gpu_compute.set_force_directed_params(params)?;
                 gpu_compute.compute_forces()?;
                 let updated_nodes = gpu_compute.get_updated_positions().await?;
 
@@ -139,28 +125,18 @@ impl GraphService {
             },
             None => {
                 warn!("GPU not available. Falling back to CPU-based layout calculation.");
-                Self::calculate_layout_cpu(graph);
+                Self::calculate_layout_cpu(graph, params.iterations, params.repulsion_strength, params.attraction_strength);
                 debug!("CPU layout calculation complete. Sample updated node: {:?}", graph.nodes.first());
             }
         }
-
         Ok(())
     }
 
     /// Calculates the force-directed layout using CPU.
-    ///
-    /// This function implements a simple force-directed layout algorithm on the CPU.
-    /// It's used as a fallback when GPU computation is not available.
-    ///
-    /// # Arguments
-    ///
-    /// * `graph` - Mutable reference to the GraphData to be updated.
-    fn calculate_layout_cpu(graph: &mut GraphData) {
-        const ITERATIONS: usize = 100;
-        const REPULSION: f32 = 1.0;
-        const ATTRACTION: f32 = 0.01;
+    fn calculate_layout_cpu(graph: &mut GraphData, iterations: u32, repulsion: f32, attraction: f32) {
+        const DAMPING: f32 = 0.9;
 
-        for _ in 0..ITERATIONS {
+        for _ in 0..iterations {
             // Calculate repulsive forces
             for i in 0..graph.nodes.len() {
                 for j in (i + 1)..graph.nodes.len() {
@@ -168,7 +144,7 @@ impl GraphService {
                     let dy = graph.nodes[j].y - graph.nodes[i].y;
                     let dz = graph.nodes[j].z - graph.nodes[i].z;
                     let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(0.1);
-                    let force = REPULSION / (distance * distance);
+                    let force = repulsion / (distance * distance);
                     let fx = force * dx / distance;
                     let fy = force * dy / distance;
                     let fz = force * dz / distance;
@@ -190,7 +166,7 @@ impl GraphService {
                 let dy = graph.nodes[target].y - graph.nodes[source].y;
                 let dz = graph.nodes[target].z - graph.nodes[source].z;
                 let distance = (dx * dx + dy * dy + dz * dz).sqrt().max(0.1);
-                let force = ATTRACTION * distance * edge.weight;
+                let force = attraction * distance * edge.weight;
                 let fx = force * dx / distance;
                 let fy = force * dy / distance;
                 let fz = force * dz / distance;
@@ -208,28 +184,14 @@ impl GraphService {
                 node.x += node.vx;
                 node.y += node.vy;
                 node.z += node.vz;
-                node.vx *= 0.9; // Damping
-                node.vy *= 0.9;
-                node.vz *= 0.9;
+                node.vx *= DAMPING;
+                node.vy *= DAMPING;
+                node.vz *= DAMPING;
             }
         }
     }
 
     /// Finds the shortest path between two nodes in the graph.
-    ///
-    /// This function implements Dijkstra's algorithm to find the shortest path
-    /// between a start node and an end node in the graph.
-    ///
-    /// # Arguments
-    ///
-    /// * `graph` - Reference to the GraphData.
-    /// * `start` - ID of the start node.
-    /// * `end` - ID of the end node.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing a vector of node IDs representing the shortest path,
-    /// or an error if no path is found.
     pub fn find_shortest_path(graph: &GraphData, start: &str, end: &str) -> Result<Vec<String>, String> {
         let mut distances: HashMap<String, f32> = HashMap::new();
         let mut previous: HashMap<String, Option<String>> = HashMap::new();
@@ -283,4 +245,4 @@ impl GraphService {
     
         Err("No path found".to_string())
     }
-}    
+}

@@ -9,38 +9,29 @@ You should aim to select one or more of these topics in this form appropriate to
 embedding the topic in Logseq double square brackets once in the returned text.
 """
 
-# List of topics to embed in the summary
-topics = [
-    "Artificial Intelligence",
-    "Machine Learning",
-    "Rust Programming",
-    "Web Development",
-    "WebXR",
-    "Three.js",
-    "GPU Computing",
-    "Graph Visualization",
-    "Markdown Processing"
-]
+[github]
+github_access_token = "default_github_token"
+github_owner = "default_owner"
+github_repo = "default_repo"
+github_directory = "default_directory"
+
+[ragflow]
+ragflow_api_key = "default_ragflow_key"
+ragflow_api_base_url = "http://192.168.0.51/v1/"
 
 [perplexity]
-perplexity_api_key = "your_perplexity_api_key" # Flattened
-perplexity_model = "llama-3.1-sonar-small-128k-online"
-perplexity_api_base_url = "https://api.perplexity.ai/chat/completions"
+perplexity_api_key = "default_perplexity_key"
+perplexity_model = "default_model"
+perplexity_api_base_url = "default_perplexity_url"
 perplexity_max_tokens = 4096
 perplexity_temperature = 0.7
 perplexity_top_p = 1.0
 perplexity_presence_penalty = 0.0
 perplexity_frequency_penalty = 0.0
 
-[github]
-github_access_token = "your_github_token" # Flattened
-github_owner = "your_github_owner"
-github_repo = "your_github_repo"
-github_directory = "your_github_directory"
-
-[ragflow]
-ragflow_api_key = "your_ragflow_api_key" # Flattened
-ragflow_api_base_url = "your_ragflow_base_url"
+[openai]
+openai_api_key = "default_openai_key"
+openai_base_url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
 
 # Default configurations (can be overridden by environment variables)
 [default]
@@ -49,13 +40,36 @@ max_retries = 3
 retry_delay = 5
 api_client_timeout = 30
 
+
 [visualization]
 node_color = "0x1A0B31"
 edge_color = "0xff0000"
 hologram_color = "0xFFD700"
-node_size_scaling_factor = 1000
-hologram_scale = 5
+node_size_scaling_factor = 5
+hologram_scale = 10
 hologram_opacity = 0.1
-edge_opacity = 0.3
-label_font_size = 36
+edge_opacity = 0.7
+label_font_size = 10
 fog_density = 0.002
+
+# Force-directed graph settings
+force_directed_iterations = 100
+force_directed_repulsion = 10.0
+force_directed_attraction = 0.01
+
+# Separate bloom configurations
+[bloom]
+# Bloom settings for nodes
+node_bloom_strength = 0.1
+node_bloom_radius = 0.1
+node_bloom_threshold = 0.0
+
+# Bloom settings for edges
+edge_bloom_strength = 0.2
+edge_bloom_radius = 0.3
+edge_bloom_threshold = 0.0
+
+# Bloom settings for environmental elements
+environment_bloom_strength = 0.5
+environment_bloom_radius = 0.1
+environment_bloom_threshold = 0.0

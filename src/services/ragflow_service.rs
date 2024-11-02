@@ -2,10 +2,12 @@ use reqwest::{Client, StatusCode};
 use log::{error, info};
 use crate::config::Settings;
 use std::fmt;
-use std::process::Stdio;
 use futures::stream::{Stream, StreamExt};
 use std::pin::Pin;
+use serde_json::json;
+use crate::utils::audio_processor::AudioProcessor;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Debug)]
 pub enum RAGFlowError {
@@ -42,27 +44,29 @@ impl From<std::io::Error> for RAGFlowError {
 
 pub struct RAGFlowService {
     client: Client,
-    api_key: String,
-    base_url: String,
+    ragflow_api_key: String,
+    ragflow_api_base_url: String,
 }
 
 impl RAGFlowService {
-    pub fn new(settings: &Settings) -> Arc<Self> {
-        info!("Creating RAGFlowService with base URL: {}", settings.ragflow.ragflow_api_base_url);
-        Arc::new(Self {
-            client: Client::new(),
-            api_key: settings.ragflow.ragflow_api_key.clone(),
-            base_url: settings.ragflow.ragflow_api_base_url.clone(),
+    pub async fn new(settings: Arc<RwLock<Settings>>) -> Result<Self, RAGFlowError> {
+        let client = Client::new();
+        let settings = settings.read().await;
+
+        Ok(RAGFlowService {
+            client,
+            ragflow_api_key: settings.ragflow.ragflow_api_key.clone(),
+            ragflow_api_base_url: settings.ragflow.ragflow_api_base_url.clone(),
         })
     }
 
     pub async fn create_conversation(&self, user_id: String) -> Result<String, RAGFlowError> {
         info!("Creating conversation for user: {}", user_id);
-        let url = format!("{}api/new_conversation", self.base_url);
+        let url = format!("{}api/new_conversation", self.ragflow_api_base_url);
         info!("Full URL for create_conversation: {}", url);
         
         let response = self.client.get(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Authorization", format!("Bearer {}", self.ragflow_api_key))
             .query(&[("user_id", user_id)])
             .send()
             .await?;
@@ -81,12 +85,19 @@ impl RAGFlowService {
         }
     }
 
-    pub async fn send_message(&self, conversation_id: String, message: String, quote: bool, doc_ids: Option<Vec<String>>, stream: bool) -> Result<Pin<Box<dyn Stream<Item = Result<Vec<u8>, RAGFlowError>> + Send + 'static>>, RAGFlowError> {
+    pub async fn send_message(
+        &self,
+        conversation_id: String,
+        message: String,
+        quote: bool,
+        doc_ids: Option<Vec<String>>,
+        stream: bool,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, Vec<u8>), RAGFlowError>> + Send + 'static>>, RAGFlowError> {
         info!("Sending message to conversation: {}", conversation_id);
-        let url = format!("{}api/completion", self.base_url);
+        let url = format!("{}api/completion", self.ragflow_api_base_url);
         info!("Full URL for send_message: {}", url);
         
-        let mut request_body = serde_json::json!({
+        let mut request_body = json!({
             "conversation_id": conversation_id,
             "messages": [{"role": "user", "content": message}],
             "quote": quote,
@@ -100,28 +111,24 @@ impl RAGFlowService {
         info!("Request body: {:?}", request_body);
 
         let response = self.client.post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Authorization", format!("Bearer {}", self.ragflow_api_key))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
             .await?;
 
         info!("Response status: {}", response.status());
-
+       
         if response.status().is_success() {
-            let self_clone = Arc::new(self.clone());
             let stream = response.bytes_stream().map(move |chunk_result| {
                 match chunk_result {
                     Ok(chunk) => {
-                        let text = String::from_utf8_lossy(&chunk);
-                        self_clone.generate_audio_stream(&text)
+                        match AudioProcessor::process_json_response(&chunk) {
+                            Ok((answer, audio_data)) => Ok((answer, audio_data)),
+                            Err(e) => Err(RAGFlowError::AudioGenerationError(e)),
+                        }
                     },
-                    Err(e) => Err(RAGFlowError::from(e)),
-                }
-            }).flat_map(|result| {
-                match result {
-                    Ok(audio) => futures::stream::iter(vec![Ok(audio)]),
-                    Err(e) => futures::stream::iter(vec![Err(e)]),
+                    Err(e) => Err(RAGFlowError::ReqwestError(e)),
                 }
             });
 
@@ -134,24 +141,21 @@ impl RAGFlowService {
         }
     }
 
-    fn generate_audio_stream(&self, text: &str) -> Result<Vec<u8>, RAGFlowError> {
-        let mut child = std::process::Command::new("python3")
-            .arg("/app/src/generate_audio.py")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()?;
+    pub async fn get_conversation_history(&self, conversation_id: String) -> Result<serde_json::Value, RAGFlowError> {
+        let url = format!("{}api/conversation/{}", self.ragflow_api_base_url, conversation_id);
+        let response = self.client.get(&url)
+            .header("Authorization", format!("Bearer {}", self.ragflow_api_key))
+            .send()
+            .await?;
 
-        if let Some(mut stdin) = child.stdin.take() {
-            use std::io::Write;
-            stdin.write_all(text.as_bytes())?;
-        }
-
-        let output = child.wait_with_output()?;
-
-        if output.status.success() {
-            Ok(output.stdout)
+        if response.status().is_success() {
+            let history: serde_json::Value = response.json().await?;
+            Ok(history)
         } else {
-            Err(RAGFlowError::AudioGenerationError(String::from_utf8_lossy(&output.stderr).to_string()))
+            let status = response.status();
+            let error_message = response.text().await?;
+            error!("Failed to get conversation history. Status: {}, Error: {}", status, error_message);
+            Err(RAGFlowError::StatusError(status, error_message))
         }
     }
 }
@@ -160,8 +164,8 @@ impl Clone for RAGFlowService {
     fn clone(&self) -> Self {
         RAGFlowService {
             client: self.client.clone(),
-            api_key: self.api_key.clone(),
-            base_url: self.base_url.clone(),
+            ragflow_api_key: self.ragflow_api_key.clone(),
+            ragflow_api_base_url: self.ragflow_api_base_url.clone(),
         }
     }
 }

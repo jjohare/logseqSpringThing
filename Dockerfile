@@ -3,25 +3,18 @@ FROM node:latest AS frontend-builder
 
 WORKDIR /app
 
-# Copy package files and vite config
-COPY package.json pnpm-lock.yaml ./ 
-COPY vite.config.js ./ 
-
-# Copy the public assets
+# Copy package files, vite config, and the entire data directory
+COPY package.json pnpm-lock.yaml vite.config.js ./
 COPY data ./data
 
 # Install pnpm globally
 RUN npm install -g pnpm
 
 # Clean PNPM store and install dependencies
-RUN pnpm install 
+RUN pnpm install
 
 # Build the frontend (this will output to /app/data/dist)
 RUN pnpm run build
-
-# Ensure the dist directory is created in the correct location and copy files
-RUN mkdir -p /app/data/public/dist && \
-    cp -R /app/data/dist/* /app/data/public/dist/ || true
 
 # Stage 2: Build the Rust Backend
 FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS backend-builder
@@ -37,6 +30,7 @@ RUN apt-get update && apt-get install -y \
     libvulkan-dev \
     vulkan-tools \
     libegl1-mesa-dev \
+    libasound2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
@@ -49,13 +43,11 @@ RUN rustup default stable
 WORKDIR /usr/src/app
 
 # Copy the Cargo.toml and Cargo.lock files
-COPY Cargo.toml Cargo.lock ./ 
+COPY Cargo.toml Cargo.lock ./
 
-# Copy the source code
-COPY src ./src 
-
-# Copy settings.toml
-COPY settings.toml ./ 
+# Copy the source code and settings
+COPY src ./src
+COPY settings.toml ./settings.toml
 
 # Build the Rust application in release mode for optimized performance
 RUN cargo build --release
@@ -74,6 +66,7 @@ RUN apt-get update && apt-get install -y \
     openssl \
     libvulkan1 \
     libegl1-mesa \
+    libasound2 \
     software-properties-common \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update \
@@ -84,20 +77,25 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Create necessary directories
-RUN mkdir -p /app/data/public/dist /app/data/markdown /app/src
+RUN mkdir -p /app/data/public/dist /app/data/markdown /app/src /app/data/piper
+
+# Create an empty metadata.json file
+RUN mkdir -p /app/data/markdown && touch /app/data/markdown/metadata.json && echo "{}" > /app/data/markdown/metadata.json
 
 # Copy topics.csv file into the container
 COPY data/topics.csv /app/data/topics.csv
 
+# Copy the local piper voice model
+COPY data/piper/en_GB-northern_english_male-medium.onnx /app/data/piper/en_GB-northern_english_male-medium.onnx
+
 # Copy the built Rust binary from the backend-builder stage
 COPY --from=backend-builder /usr/src/app/target/release/webxr-graph /app/webxr-graph
 
-# Copy the built frontend files from the frontend-builder stage
-COPY --from=frontend-builder /app/data/public/dist /app/data/public/dist
-
-# Copy settings.toml from the backend-builder stage
+# Copy settings.toml from the builder stage
 COPY --from=backend-builder /usr/src/app/settings.toml /app/settings.toml
-COPY --from=backend-builder /usr/src/app/settings.toml /app/data/public/dist/settings.toml
+
+# Copy the built frontend files from the frontend-builder stage
+COPY --from=frontend-builder /app/data/dist /app/data/public/dist
 
 # Copy the generate_audio.py script
 COPY src/generate_audio.py /app/src/generate_audio.py
@@ -125,20 +123,24 @@ RUN python3.10 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
 # Upgrade pip, install wheel, and then install Piper TTS and its dependencies
-RUN pip install --no-cache-dir --upgrade pip wheel && \
-    pip install --no-cache-dir piper-phonemize==1.1.0 && \
-    pip install --no-cache-dir piper-tts==1.2.0 onnxruntime-gpu
-
-# Download Piper voice model and config
-RUN mkdir -p /app/piper && \
-    curl -L https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx -o /app/piper/en_GB-alan-medium.onnx && \
-    curl -L https://huggingface.co/rhasspy/piper-voices/raw/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json -o /app/piper/en_GB-alan-medium.onnx.json
+RUN pip install --upgrade pip wheel && \
+    pip install --upgrade piper-phonemize==1.1.0 && \
+    pip install --upgrade piper-tts==1.2.0 onnxruntime-gpu
 
 # Expose HTTPS port
 EXPOSE 8443
 
-# Create a startup script that runs nginx and the Rust application
-RUN echo '#!/bin/bash\nset -e\nnginx\nexec /app/webxr-graph' > /app/start.sh && chmod +x /app/start.sh
+# Create startup script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+# Ensure metadata.json exists\n\
+if [ ! -f /app/data/markdown/metadata.json ]; then\n\
+    echo "{}" > /app/data/markdown/metadata.json\n\
+fi\n\
+# Start nginx\n\
+nginx\n\
+# Start the Rust application\n\
+exec /app/webxr-graph' > /app/start.sh && chmod +x /app/start.sh
 
 # Set the command to run the startup script
 CMD ["/app/start.sh"]

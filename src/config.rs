@@ -1,343 +1,516 @@
-// config.rs
-
-use serde::Deserialize;
-use config::{Config, ConfigError, File, Environment};
+use config::{Config, ConfigError, File};
 use dotenv::dotenv;
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::fs;
 use std::path::Path;
-use std::fs::File as StdFile;
-use std::io::{BufRead, BufReader};
-use log::{info, error, debug};
 use std::env;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
+    #[serde(default = "default_prompt")]
     pub prompt: String,
-    #[serde(skip)]
+    #[serde(skip_deserializing)]
     pub topics: Vec<String>,
-    pub perplexity: PerplexityConfig,
-    #[serde(default)]
-    pub ragflow: RAGFlowConfig,
-    #[serde(default)]
-    pub github: GitHubConfig,
-    pub default: DefaultConfig,
+    pub github: GithubSettings,
+    pub ragflow: RagFlowSettings,
+    pub perplexity: PerplexitySettings,
+    pub openai: OpenAISettings,
+    #[serde(default = "default_settings")]
+    pub default: DefaultSettings,
+    #[serde(default = "default_visualization")]
+    pub visualization: VisualizationSettings,
+    #[serde(default = "default_bloom")]
+    pub bloom: BloomSettings,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct PerplexityConfig {
-    pub perplexity_api_key: String,
-    pub perplexity_model: String,
-    pub perplexity_api_base_url: String,
-    pub perplexity_max_tokens: u32,
-    pub perplexity_temperature: f32,
-    pub perplexity_top_p: f32,
-    pub perplexity_presence_penalty: f32,
-    pub perplexity_frequency_penalty: f32,
+fn default_prompt() -> String {
+    "Your default prompt here".to_string()
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
-pub struct RAGFlowConfig {
-    pub ragflow_api_key: String,
-    pub ragflow_api_base_url: String,
+fn default_settings() -> DefaultSettings {
+    DefaultSettings {
+        max_concurrent_requests: 2,
+        max_retries: 3,
+        retry_delay: 5,
+        api_client_timeout: 30,
+    }
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
-pub struct GitHubConfig {
+fn default_visualization() -> VisualizationSettings {
+    VisualizationSettings {
+        node_color: "0x1A0B31".to_string(),
+        edge_color: "0xff0000".to_string(),
+        hologram_color: "0xFFD700".to_string(),
+        node_size_scaling_factor: 5,
+        hologram_scale: 5,
+        hologram_opacity: 0.1,
+        edge_opacity: 0.3,
+        label_font_size: 36,
+        fog_density: 0.002,
+        force_directed_iterations: 100,
+        force_directed_repulsion: 1.0,
+        force_directed_attraction: 0.01,
+    }
+}
+
+fn default_bloom() -> BloomSettings {
+    BloomSettings {
+        node_bloom_strength: 0.1,
+        node_bloom_radius: 0.1,
+        node_bloom_threshold: 0.0,
+        edge_bloom_strength: 0.2,
+        edge_bloom_radius: 0.3,
+        edge_bloom_threshold: 0.0,
+        environment_bloom_strength: 0.5,
+        environment_bloom_radius: 0.1,
+        environment_bloom_threshold: 0.0,
+    }
+}
+
+fn default_openai_base_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
+fn default_perplexity_api_url() -> String {
+    "https://api.perplexity.ai/chat/completions".to_string()
+}
+
+fn default_topics() -> Vec<String> {
+    vec!["default_topic".to_string()]
+}
+
+fn load_topics_from_markdown() -> Vec<String> {
+    let markdown_dir = Path::new("/app/data/markdown");
+    if !markdown_dir.exists() {
+        log::info!("Markdown directory not found at {:?}, using default topics", markdown_dir);
+        return default_topics();
+    }
+
+    match fs::read_dir(markdown_dir) {
+        Ok(entries) => {
+            let mut topics: Vec<String> = entries
+                .filter_map(|entry| {
+                    entry.ok().and_then(|e| {
+                        let path = e.path();
+                        if let Some(ext) = path.extension() {
+                            if ext == "md" {
+                                // Get the filename without extension
+                                path.file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .map(|s| s.trim_end_matches(".md").to_string())
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect();
+
+            if topics.is_empty() {
+                log::info!("No markdown files found in {:?}, using default topics", markdown_dir);
+                default_topics()
+            } else {
+                // Sort topics for consistent ordering
+                topics.sort();
+                log::debug!("Loaded {} topics from markdown files", topics.len());
+                log::debug!("Topics: {:?}", topics);
+                topics
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to read markdown directory: {}", e);
+            default_topics()
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GithubSettings {
+    #[serde(alias = "GITHUB_ACCESS_TOKEN")]
     pub github_access_token: String,
+    #[serde(alias = "GITHUB_OWNER")]
     pub github_owner: String,
+    #[serde(alias = "GITHUB_REPO")]
     pub github_repo: String,
+    #[serde(alias = "GITHUB_DIRECTORY")]
     pub github_directory: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct DefaultConfig {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RagFlowSettings {
+    #[serde(alias = "RAGFLOW_API_KEY")]
+    pub ragflow_api_key: String,
+    #[serde(alias = "RAGFLOW_BASE_URL")]
+    pub ragflow_api_base_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OpenAISettings {
+    #[serde(alias = "OPENAI_API_KEY")]
+    pub openai_api_key: String,
+    #[serde(alias = "OPENAI_BASE_URL", default = "default_openai_base_url")]
+    pub openai_base_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PerplexitySettings {
+    #[serde(alias = "PERPLEXITY_API_KEY")]
+    pub perplexity_api_key: String,
+    #[serde(alias = "PERPLEXITY_MODEL")]
+    pub perplexity_model: String,
+    #[serde(alias = "PERPLEXITY_API_URL", default = "default_perplexity_api_url")]
+    pub perplexity_api_base_url: String,
+    #[serde(alias = "PERPLEXITY_MAX_TOKENS")]
+    pub perplexity_max_tokens: u32,
+    #[serde(alias = "PERPLEXITY_TEMPERATURE")]
+    pub perplexity_temperature: f32,
+    #[serde(alias = "PERPLEXITY_TOP_P")]
+    pub perplexity_top_p: f32,
+    #[serde(alias = "PERPLEXITY_PRESENCE_PENALTY")]
+    pub perplexity_presence_penalty: f32,
+    #[serde(alias = "PERPLEXITY_FREQUENCY_PENALTY")]
+    pub perplexity_frequency_penalty: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DefaultSettings {
+    #[serde(alias = "MAX_CONCURRENT_REQUESTS")]
     pub max_concurrent_requests: u32,
+    #[serde(alias = "MAX_RETRIES")]
     pub max_retries: u32,
-    pub retry_delay: u64,
-    pub api_client_timeout: u64,
+    #[serde(alias = "RETRY_DELAY")]
+    pub retry_delay: u32,
+    #[serde(alias = "API_CLIENT_TIMEOUT")]
+    pub api_client_timeout: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct VisualizationSettings {
+    #[serde(alias = "NODE_COLOR")]
+    pub node_color: String,
+    #[serde(alias = "EDGE_COLOR")]
+    pub edge_color: String,
+    #[serde(alias = "HOLOGRAM_COLOR")]
+    pub hologram_color: String,
+    #[serde(alias = "NODE_SIZE_SCALING_FACTOR")]
+    pub node_size_scaling_factor: u32,
+    #[serde(alias = "HOLOGRAM_SCALE")]
+    pub hologram_scale: u32,
+    #[serde(alias = "HOLOGRAM_OPACITY")]
+    pub hologram_opacity: f32,
+    #[serde(alias = "EDGE_OPACITY")]
+    pub edge_opacity: f32,
+    #[serde(alias = "LABEL_FONT_SIZE")]
+    pub label_font_size: u32,
+    #[serde(alias = "FOG_DENSITY")]
+    pub fog_density: f32,
+    #[serde(alias = "FORCE_DIRECTED_ITERATIONS")]
+    pub force_directed_iterations: u32,
+    #[serde(alias = "FORCE_DIRECTED_REPULSION")]
+    pub force_directed_repulsion: f32,
+    #[serde(alias = "FORCE_DIRECTED_ATTRACTION")]
+    pub force_directed_attraction: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct BloomSettings {
+    #[serde(alias = "NODE_BLOOM_STRENGTH")]
+    pub node_bloom_strength: f32,
+    #[serde(alias = "NODE_BLOOM_RADIUS")]
+    pub node_bloom_radius: f32,
+    #[serde(alias = "NODE_BLOOM_THRESHOLD")]
+    pub node_bloom_threshold: f32,
+    #[serde(alias = "EDGE_BLOOM_STRENGTH")]
+    pub edge_bloom_strength: f32,
+    #[serde(alias = "EDGE_BLOOM_RADIUS")]
+    pub edge_bloom_radius: f32,
+    #[serde(alias = "EDGE_BLOOM_THRESHOLD")]
+    pub edge_bloom_threshold: f32,
+    #[serde(alias = "ENVIRONMENT_BLOOM_STRENGTH")]
+    pub environment_bloom_strength: f32,
+    #[serde(alias = "ENVIRONMENT_BLOOM_RADIUS")]
+    pub environment_bloom_radius: f32,
+    #[serde(alias = "ENVIRONMENT_BLOOM_THRESHOLD")]
+    pub environment_bloom_threshold: f32,
 }
 
 impl Settings {
-    /// Creates a new `Settings` instance by loading configurations from files and environment variables.
     pub fn new() -> Result<Self, ConfigError> {
-        // Load environment variables from .env file if it exists
-        dotenv().ok();
-        debug!("Loaded .env file");
+        // In Docker, we don't need to load .env since environment variables are passed via --env-file
+        if !std::env::var("DOCKER").is_ok() {
+            match dotenv() {
+                Ok(_) => log::debug!("Successfully loaded .env file"),
+                Err(e) => log::warn!("Failed to load .env file: {}", e),
+            }
+        }
 
-        // Log the current working directory for debugging purposes
-        info!("Current working directory: {:?}", std::env::current_dir());
+        let run_mode = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
+        log::debug!("Loading configuration for mode: {}", run_mode);
 
-        // Initialize the configuration builder
+        // Log all relevant environment variables before config loading
+        log::debug!("Environment variables:");
+        for (key, value) in std::env::vars() {
+            if key.starts_with("GITHUB_") || key.starts_with("RAGFLOW_") || 
+               key.starts_with("PERPLEXITY_") || key.starts_with("OPENAI_") {
+                log::debug!("{}={}", key, if key.contains("TOKEN") || key.contains("KEY") { "[REDACTED]" } else { &value });
+            }
+        }
+
+        // Create a builder and add sources in order of precedence
         let mut builder = Config::builder();
 
-        // Path to the default settings file
-        let base_settings_path = Path::new("settings.toml");
-        if base_settings_path.exists() {
-            info!("Loading default settings from {:?}", base_settings_path);
-            builder = builder.add_source(File::from(base_settings_path).required(true));
-        } else {
-            error!("Default settings file not found at {:?}", base_settings_path);
-            return Err(ConfigError::NotFound("settings.toml".into()));
+        // 1. Add settings.toml for default values
+        let settings_file = File::with_name("settings.toml").required(false);
+        builder = builder.add_source(settings_file);
+        log::debug!("Added settings.toml to configuration sources");
+
+        // 2. Explicitly set environment variable overrides
+        // GitHub settings
+        if let Ok(token) = env::var("GITHUB_ACCESS_TOKEN") {
+            builder = builder.set_override("github.github_access_token", token)?;
+        }
+        if let Ok(owner) = env::var("GITHUB_OWNER") {
+            builder = builder.set_override("github.github_owner", owner)?;
+        }
+        if let Ok(repo) = env::var("GITHUB_REPO") {
+            builder = builder.set_override("github.github_repo", repo)?;
+        }
+        if let Ok(directory) = env::var("GITHUB_DIRECTORY") {
+            builder = builder.set_override("github.github_directory", directory)?;
         }
 
-        // Add environment variables to the configuration, using '_' as a separator
-        builder = builder.add_source(Environment::default().separator("_"));
-        info!("Loading environment variables");
+        // RAGFlow settings
+        if let Ok(api_key) = env::var("RAGFLOW_API_KEY") {
+            builder = builder.set_override("ragflow.ragflow_api_key", api_key)?;
+        }
+        if let Ok(base_url) = env::var("RAGFLOW_BASE_URL") {
+            builder = builder.set_override("ragflow.ragflow_api_base_url", base_url)?;
+        }
 
-        // Build the configuration
+        // Perplexity settings
+        if let Ok(api_key) = env::var("PERPLEXITY_API_KEY") {
+            builder = builder.set_override("perplexity.perplexity_api_key", api_key)?;
+        }
+        if let Ok(model) = env::var("PERPLEXITY_MODEL") {
+            builder = builder.set_override("perplexity.perplexity_model", model)?;
+        }
+        if let Ok(api_url) = env::var("PERPLEXITY_API_URL") {
+            builder = builder.set_override("perplexity.perplexity_api_base_url", api_url)?;
+        }
+        if let Ok(max_tokens) = env::var("PERPLEXITY_MAX_TOKENS") {
+            builder = builder.set_override("perplexity.perplexity_max_tokens", max_tokens)?;
+        }
+        if let Ok(temperature) = env::var("PERPLEXITY_TEMPERATURE") {
+            builder = builder.set_override("perplexity.perplexity_temperature", temperature)?;
+        }
+        if let Ok(top_p) = env::var("PERPLEXITY_TOP_P") {
+            builder = builder.set_override("perplexity.perplexity_top_p", top_p)?;
+        }
+        if let Ok(presence_penalty) = env::var("PERPLEXITY_PRESENCE_PENALTY") {
+            builder = builder.set_override("perplexity.perplexity_presence_penalty", presence_penalty)?;
+        }
+        if let Ok(frequency_penalty) = env::var("PERPLEXITY_FREQUENCY_PENALTY") {
+            builder = builder.set_override("perplexity.perplexity_frequency_penalty", frequency_penalty)?;
+        }
+
+        // OpenAI settings
+        if let Ok(api_key) = env::var("OPENAI_API_KEY") {
+            builder = builder.set_override("openai.openai_api_key", api_key)?;
+        }
+        if let Ok(base_url) = env::var("OPENAI_BASE_URL") {
+            builder = builder.set_override("openai.openai_base_url", base_url)?;
+        }
+
+        // Build the config
         let config = builder.build()?;
-        info!("Raw configuration: {:#?}", config);
 
-        // Clone the config before deserializing to retain ownership for later use
-        let config_clone = config.clone();
-        let mut settings: Settings = config_clone.try_deserialize()?;
+        // Try to deserialize and log the results
+        match config.try_deserialize::<Settings>() {
+            Ok(mut s) => {
+                log::debug!("Successfully loaded settings");
+                
+                // Load topics from markdown files
+                s.topics = load_topics_from_markdown();
+                
+                // Log final configuration state
+                log::debug!("Final configuration:");
+                log::debug!("GitHub settings: owner={}, repo={}, directory={}", 
+                    s.github.github_owner,
+                    s.github.github_repo,
+                    s.github.github_directory
+                );
+                log::debug!("RAGFlow base URL: {}", s.ragflow.ragflow_api_base_url);
+                log::debug!("Perplexity model: {}", s.perplexity.perplexity_model);
 
-        // Load and override specific configurations from environment variables or other sources
-        settings.load_github_config(&config)?;
-        settings.load_ragflow_config(&config)?;
-        settings.load_perplexity_config(&config)?;
-        settings.load_default_config(&config)?;
-        settings.load_topics_from_csv("data/topics.csv")?;
-
-        info!("Loaded topics: {:?}", settings.topics);
-        info!("Final parsed configuration: {:#?}", settings);
-
-        Ok(settings)
-    }
-
-    /// Loads and updates the GitHub configuration.
-    fn load_github_config(&mut self, config: &Config) -> Result<(), ConfigError> {
-        debug!("Loading GitHub config...");
-
-        // Attempt to load each GitHub configuration from environment variables first, then from the config file
-        let access_token = env::var("GITHUB_ACCESS_TOKEN")
-            .or_else(|_| config.get_string("github.github_access_token"))
-            .unwrap_or_default();
-
-        let github_owner = env::var("GITHUB_OWNER")
-            .or_else(|_| config.get_string("github.github_owner"))
-            .unwrap_or_default();
-
-        let github_repo = env::var("GITHUB_REPO")
-            .or_else(|_| config.get_string("github.github_repo"))
-            .unwrap_or_default();
-
-        let github_directory = env::var("GITHUB_DIRECTORY")
-            .or_else(|_| config.get_string("github.github_directory"))
-            .unwrap_or_default();
-
-        // Update the `github` field of `Settings`
-        self.github = GitHubConfig {
-            github_access_token: access_token,
-            github_owner,
-            github_repo,
-            github_directory,
-        };
-
-        debug!("Loaded GitHub config: {:?}", self.github);
-
-        // Validate that the GitHub access token is present
-        if self.github.github_access_token.is_empty() {
-            error!("GitHub Access Token is empty");
-            return Err(ConfigError::NotFound("github.github_access_token".into()));
-        }
-
-        Ok(())
-    }
-
-    /// Loads and updates the RAGFlow configuration.
-    fn load_ragflow_config(&mut self, config: &Config) -> Result<(), ConfigError> {
-        debug!("Loading RAGFlow config...");
-
-        // Attempt to load RAGFlow API key and base URL from environment variables first, then from the config file
-        let api_key = env::var("RAGFLOW_API_KEY")
-            .or_else(|_| config.get_string("ragflow.ragflow_api_key"))
-            .unwrap_or_default();
-
-        let base_url = env::var("RAGFLOW_BASE_URL") // Changed from RAGFLOW_API_BASE_URL to RAGFLOW_BASE_URL
-            .or_else(|_| config.get_string("ragflow.ragflow_api_base_url"))
-            .unwrap_or_default();
-
-        // Update the `ragflow` field of `Settings`
-        self.ragflow = RAGFlowConfig {
-            ragflow_api_key: api_key,
-            ragflow_api_base_url: base_url,
-        };
-
-        debug!("Loaded RAGFlow config: {:?}", self.ragflow);
-
-        // Validate that the RAGFlow API key is present
-        if self.ragflow.ragflow_api_key.is_empty() {
-            error!("RAGFlow API key is empty");
-            return Err(ConfigError::NotFound("ragflow.ragflow_api_key".into()));
-        }
-
-        Ok(())
-    }
-
-    /// Loads and updates the Perplexity configuration.
-    fn load_perplexity_config(&mut self, config: &Config) -> Result<(), ConfigError> {
-        debug!("Loading Perplexity config...");
-
-        // Attempt to load each Perplexity configuration from environment variables first, then from the config file
-        let api_key = env::var("PERPLEXITY_API_KEY")
-            .or_else(|_| config.get_string("perplexity.perplexity_api_key"))
-            .unwrap_or_default();
-
-        let perplexity_model = env::var("PERPLEXITY_MODEL")
-            .or_else(|_| config.get_string("perplexity.perplexity_model"))
-            .unwrap_or_default();
-
-        let perplexity_api_base_url = env::var("PERPLEXITY_API_URL") // Ensure the environment variable name matches your setup
-            .or_else(|_| config.get_string("perplexity.perplexity_api_base_url"))
-            .unwrap_or_default();
-
-        let perplexity_max_tokens = env::var("PERPLEXITY_MAX_TOKENS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| config.get_int("perplexity.perplexity_max_tokens").unwrap_or(4096) as u32);
-
-        let perplexity_temperature = env::var("PERPLEXITY_TEMPERATURE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| config.get_float("perplexity.perplexity_temperature").unwrap_or(0.7) as f32);
-
-        let perplexity_top_p = env::var("PERPLEXITY_TOP_P")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| config.get_float("perplexity.perplexity_top_p").unwrap_or(1.0) as f32);
-
-        let perplexity_presence_penalty = env::var("PERPLEXITY_PRESENCE_PENALTY")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| config.get_float("perplexity.perplexity_presence_penalty").unwrap_or(0.0) as f32);
-
-        let perplexity_frequency_penalty = env::var("PERPLEXITY_FREQUENCY_PENALTY")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| config.get_float("perplexity.perplexity_frequency_penalty").unwrap_or(0.0) as f32);
-
-        // Update the `perplexity` field of `Settings`
-        self.perplexity = PerplexityConfig {
-            perplexity_api_key: api_key,
-            perplexity_model,
-            perplexity_api_base_url,
-            perplexity_max_tokens,
-            perplexity_temperature,
-            perplexity_top_p,
-            perplexity_presence_penalty,
-            perplexity_frequency_penalty,
-        };
-
-        debug!("Loaded Perplexity config: {:?}", self.perplexity);
-
-        // Validate that the Perplexity API key is present
-        if self.perplexity.perplexity_api_key.is_empty() {
-            error!("Perplexity API key is empty");
-            return Err(ConfigError::NotFound("perplexity.perplexity_api_key".into()));
-        }
-
-        Ok(())
-    }
-
-    /// Loads and updates the Default configuration.
-    fn load_default_config(&mut self, config: &Config) -> Result<(), ConfigError> {
-        debug!("Loading Default config...");
-
-        // Attempt to load each Default configuration from environment variables first, then from the config file
-        let max_concurrent_requests = env::var("DEFAULT_MAX_CONCURRENT_REQUESTS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| config.get_int("default.max_concurrent_requests").unwrap_or(10) as u32);
-
-        let max_retries = env::var("DEFAULT_MAX_RETRIES")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| config.get_int("default.max_retries").unwrap_or(3) as u32);
-
-        let retry_delay = env::var("DEFAULT_RETRY_DELAY")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| config.get_int("default.retry_delay").unwrap_or(1000) as u64);
-
-        let api_client_timeout = env::var("DEFAULT_API_CLIENT_TIMEOUT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or_else(|| config.get_int("default.api_client_timeout").unwrap_or(5000) as u64);
-
-        // Update the `default` field of `Settings`
-        self.default = DefaultConfig {
-            max_concurrent_requests,
-            max_retries,
-            retry_delay,
-            api_client_timeout,
-        };
-
-        debug!("Loaded Default config: {:?}", self.default);
-
-        Ok(())
-    }
-
-    /// Loads topics from a CSV file and updates the `topics` field.
-    fn load_topics_from_csv(&mut self, file_path: &str) -> Result<(), ConfigError> {
-        debug!("Loading topics from CSV at path: {}", file_path);
-
-        // Log the absolute path
-        let absolute_path = std::fs::canonicalize(file_path).map_err(|e| {
-            error!("Failed to get absolute path for {}: {}", file_path, e);
-            ConfigError::Message(format!("Failed to get absolute path: {}", e))
-        })?;
-        debug!("Absolute path of topics.csv: {:?}", absolute_path);
-
-        // Check if the file exists
-        if !absolute_path.exists() {
-            error!("topics.csv does not exist at {:?}", absolute_path);
-            return Err(ConfigError::Message(format!("topics.csv does not exist at {:?}", absolute_path)));
-        }
-
-        // Attempt to open the CSV file
-        let file = StdFile::open(&absolute_path).map_err(|e| {
-            error!("Failed to open topics.csv at {:?}: {}", absolute_path, e);
-            ConfigError::Message(format!(
-                "Failed to open topics.csv at {:?}: {}. Make sure the file exists and has correct permissions.",
-                absolute_path, e
-            ))
-        })?;
-
-        let reader = BufReader::new(file);
-        let topics: Vec<String> = reader
-            .lines()
-            .enumerate()
-            .filter_map(|(i, line)| {
-                match line {
-                    Ok(l) => {
-                        let trimmed = l.trim().to_string();
-                        if trimmed.is_empty() {
-                            debug!("Skipping empty line {} in topics.csv", i + 1);
-                            None
-                        } else {
-                            Some(trimmed)
-                        }
-                    },
-                    Err(e) => {
-                        error!("Error reading line {} from topics.csv: {}", i + 1, e);
-                        None
-                    }
+                // Log presence of sensitive values without showing them
+                if !s.github.github_access_token.is_empty() {
+                    log::debug!("GitHub access token is present");
+                } else {
+                    log::warn!("GitHub access token is missing");
                 }
-            })
-            .collect();
+                if !s.ragflow.ragflow_api_key.is_empty() {
+                    log::debug!("RAGFlow API key is present");
+                }
+                if !s.perplexity.perplexity_api_key.is_empty() {
+                    log::debug!("Perplexity API key is present");
+                }
+                if !s.openai.openai_api_key.is_empty() {
+                    log::debug!("OpenAI API key is present");
+                }
 
-        // Update the `topics` field of `Settings`
-        self.topics = topics;
-
-        // Validate that at least one topic was loaded
-        if self.topics.is_empty() {
-            error!("No topics found in topics.csv at {:?}", absolute_path);
-            Err(ConfigError::Message(
-                format!("No topics found in topics.csv at {:?}", absolute_path)
-            ))
-        } else {
-            debug!("Successfully loaded {} topics from {:?}", self.topics.len(), absolute_path);
-            Ok(())
+                Ok(s)
+            }
+            Err(e) => {
+                log::error!("Failed to deserialize settings: {}", e);
+                Err(e)
+            }
         }
+    }
+}
+
+impl fmt::Display for GithubSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "GithubSettings {{ access_token: [REDACTED], owner: {}, repo: {} }}", 
+               self.github_owner, self.github_repo)
+    }
+}
+
+impl fmt::Display for RagFlowSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RagFlowSettings {{ api_base_url: {}, api_key: [REDACTED] }}", 
+               self.ragflow_api_base_url)
+    }
+}
+
+impl fmt::Display for OpenAISettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "OpenAISettings {{ base_url: {}, api_key: [REDACTED] }}", 
+               self.openai_base_url)
+    }
+}
+
+impl fmt::Display for PerplexitySettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PerplexitySettings {{ api_base_url: {}, api_key: [REDACTED], model: {} }}", 
+               self.perplexity_api_base_url, self.perplexity_model)
+    }
+}
+
+impl fmt::Display for DefaultSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DefaultSettings {{ max_concurrent_requests: {}, max_retries: {}, retry_delay: {}, api_client_timeout: {} }}", 
+               self.max_concurrent_requests,
+               self.max_retries,
+               self.retry_delay,
+               self.api_client_timeout)
+    }
+}
+
+impl fmt::Display for VisualizationSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "VisualizationSettings {{ node_color: {}, edge_color: {}, iterations: {}, repulsion: {}, attraction: {} }}", 
+               self.node_color,
+               self.edge_color,
+               self.force_directed_iterations,
+               self.force_directed_repulsion,
+               self.force_directed_attraction)
+    }
+}
+
+impl fmt::Display for BloomSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "BloomSettings {{ node_strength: {}, edge_strength: {}, environment_strength: {} }}", 
+               self.node_bloom_strength,
+               self.edge_bloom_strength,
+               self.environment_bloom_strength)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use std::fs;
+    use std::io::Write;
+
+    #[test]
+    fn test_settings_from_files() -> Result<(), Box<dyn std::error::Error>> {
+        let temp_dir = TempDir::new()?;
+        let config_path = temp_dir.path();
+
+        let default_config = r#"
+prompt = "Test prompt"
+
+[github]
+github_access_token = "test_token"
+github_owner = "test_owner"
+github_repo = "test_repo"
+github_directory = "test_directory"
+
+[ragflow]
+ragflow_api_key = "test_key"
+ragflow_api_base_url = "http://test.example.com"
+
+[openai]
+openai_api_key = "test_openai_key"
+openai_base_url = "https://api.openai.com/v1"
+
+[perplexity]
+perplexity_api_key = "test_perplexity_key"
+perplexity_model = "test_model"
+perplexity_api_base_url = "test_url"
+perplexity_max_tokens = 4096
+perplexity_temperature = 0.7
+perplexity_top_p = 1.0
+perplexity_presence_penalty = 0.0
+perplexity_frequency_penalty = 0.0
+
+[default]
+max_concurrent_requests = 5
+max_retries = 3
+retry_delay = 5
+api_client_timeout = 30
+
+[visualization]
+node_color = "0x1A0B31"
+edge_color = "0xff0000"
+hologram_color = "0xFFD700"
+node_size_scaling_factor = 5
+hologram_scale = 5
+hologram_opacity = 0.1
+edge_opacity = 0.3
+label_font_size = 36
+fog_density = 0.002
+force_directed_iterations = 100
+force_directed_repulsion = 1.0
+force_directed_attraction = 0.01
+
+[bloom]
+node_bloom_strength = 0.1
+node_bloom_radius = 0.1
+node_bloom_threshold = 0.0
+edge_bloom_strength = 0.2
+edge_bloom_radius = 0.3
+edge_bloom_threshold = 0.0
+environment_bloom_strength = 0.5
+environment_bloom_radius = 0.1
+environment_bloom_threshold = 0.0
+"#;
+
+        let settings_path = config_path.join("settings.toml");
+        let mut file = fs::File::create(&settings_path)?;
+        file.write_all(default_config.as_bytes())?;
+
+        std::env::set_var("CONFIG_DIR", config_path.to_str().unwrap());
+
+        // Test environment variable override
+        std::env::set_var("GITHUB_OWNER", "env_owner");
+        let settings = Settings::new()?;
+        assert_eq!(settings.github.github_owner, "env_owner");
+
+        Ok(())
     }
 }
