@@ -40,15 +40,15 @@ export class EnhancedNodeManager {
     private reusableScale = new Vector3();
     private camera: PerspectiveCamera;
     private updateFrameCount = 0;
-    private readonly AR_UPDATE_FREQUENCY = 2; // Update every other frame in AR
-    private readonly METADATA_DISTANCE_THRESHOLD = 50; // Distance threshold for metadata visibility
-    private readonly ANIMATION_DISTANCE_THRESHOLD = 30; // Distance threshold for animations
+    private readonly AR_UPDATE_FREQUENCY = 2;
+    private readonly METADATA_DISTANCE_THRESHOLD = 50;
+    private readonly ANIMATION_DISTANCE_THRESHOLD = 30;
+    private nodeScales: Map<string, number> = new Map(); // Store node scales
 
     constructor(scene: Scene, settings: Settings) {
         this.scene = scene;
         this.settings = settings;
 
-        // Find the camera in the scene
         let camera: PerspectiveCamera | null = null;
         scene.traverse((object) => {
             if (object instanceof PerspectiveCamera) {
@@ -75,15 +75,13 @@ export class EnhancedNodeManager {
         }
 
         this.metadataMaterial = this.materialFactory.getMetadataMaterial();
-
-        // Initialize MetadataVisualizer with camera and scene
         this.metadataVisualizer = new MetadataVisualizer(this.camera, this.scene, settings);
         this.setupInstancedMesh();
     }
 
     private setupInstancedMesh() {
         if (this.isInstanced) {
-            this.instancedMesh = new InstancedMesh(this.nodeGeometry, this.nodeMaterial, 2000); // Increased buffer
+            this.instancedMesh = new InstancedMesh(this.nodeGeometry, this.nodeMaterial, 2000);
             this.instancedMesh.count = 0;
             this.instancedMesh.layers.set(platformManager.isXRMode ? 1 : 0);
             this.scene.add(this.instancedMesh);
@@ -93,7 +91,6 @@ export class EnhancedNodeManager {
     public handleSettingsUpdate(settings: Settings): void {
         this.settings = settings;
         
-        // Update materials
         this.nodeMaterial = this.materialFactory.getNodeMaterial(settings);
         if (!this.isInstanced) {
             this.nodes.forEach(node => {
@@ -101,7 +98,6 @@ export class EnhancedNodeManager {
             });
         }
 
-        // Update geometry if needed
         const newGeometry = this.geometryFactory.getNodeGeometry(settings.visualization.nodes.quality);
         if (this.nodeGeometry !== newGeometry) {
             this.nodeGeometry = newGeometry;
@@ -115,7 +111,6 @@ export class EnhancedNodeManager {
             }
         }
 
-        // Update material settings
         this.materialFactory.updateMaterial('node-basic', settings);
         this.materialFactory.updateMaterial('node-phong', settings);
         this.materialFactory.updateMaterial('edge', settings);
@@ -132,7 +127,6 @@ export class EnhancedNodeManager {
             this.rebuildInstancedMesh();
         }
 
-        // Handle metadata visualization
         if (settings.visualization.nodes.enableMetadataVisualization) {
             const cameraPosition = this.camera.position;
             const shouldShowMetadata = (position: Vector3) => {
@@ -140,14 +134,12 @@ export class EnhancedNodeManager {
             };
 
             this.nodes.forEach((node) => {
-                // Remove existing metadata
                 node.children.slice().forEach((child: Object3D) => {
                     if (child instanceof Object3D && (child.userData as any).isMetadata) {
                         node.remove(child);
                     }
                 });
 
-                // Add new metadata visualization
                 const metadata = node.userData as NodeMetadata;
                 if (metadata && shouldShowMetadata(node.position)) {
                     this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
@@ -158,7 +150,6 @@ export class EnhancedNodeManager {
                 }
             });
         } else {
-            // Remove all metadata visualizations
             this.nodes.forEach(node => {
                 node.children.slice().forEach((child: Object3D) => {
                     if (child instanceof Object3D && (child.userData as any).isMetadata) {
@@ -175,18 +166,6 @@ export class EnhancedNodeManager {
         }
 
         nodes.forEach((node, index) => {
-            // Check if node already exists
-            const existingNode = this.nodes.get(node.id);
-            if (existingNode && !this.isInstanced) {
-                // Update existing node position
-                existingNode.position.set(
-                    node.data.position.x,
-                    node.data.position.y,
-                    node.data.position.z
-                );
-                return;
-            }
-
             const metadata: NodeMetadata = {
                 id: node.id,
                 name: node.data.metadata?.name || '',
@@ -200,48 +179,61 @@ export class EnhancedNodeManager {
                 }
             };
 
-            let nodeMesh: Mesh;
+            const scale = this.calculateNodeScale(metadata.importance);
+            this.nodeScales.set(node.id, scale); // Store the scale
 
-            if (this.settings.visualization.nodes.enableMetadataShape) {
-                nodeMesh = this.metadataVisualizer.createNodeVisual(metadata);
-                nodeMesh.position.set(metadata.position.x, metadata.position.y, metadata.position.z);
-                nodeMesh.userData = metadata;
-
-                if (this.settings.visualization.nodes.enableMetadataVisualization) {
-                    this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
-                        nodeMesh.add(group);
-                    });
-                }
-
-                this.scene.add(nodeMesh);
-                this.nodes.set(node.id, nodeMesh);
+            const existingNode = this.nodes.get(node.id);
+            if (existingNode && !this.isInstanced) {
+                existingNode.position.set(
+                    node.data.position.x,
+                    node.data.position.y,
+                    node.data.position.z
+                );
+                existingNode.scale.setScalar(scale);
+                existingNode.userData = metadata;
             } else {
-                const scale = this.calculateNodeScale(metadata.importance);
-                const position = new Vector3(metadata.position.x, metadata.position.y, metadata.position.z);
+                let nodeMesh: Mesh;
 
-                if (this.isInstanced && this.instancedMesh) {
-                    this.reusablePosition.copy(position);
-                    this.reusableScale.set(scale, scale, scale);
-                    const matrix = this.reusableMatrix.compose(this.reusablePosition, this.quaternion, this.reusableScale);
-                    this.instancedMesh.setMatrixAt(index, matrix);
-                } else {
-                    nodeMesh = new Mesh(this.nodeGeometry, this.nodeMaterial);
-                    nodeMesh.position.copy(position);
-                    nodeMesh.scale.set(scale, scale, scale);
-                    nodeMesh.layers.enable(0);
-                    nodeMesh.layers.enable(1);
+                if (this.settings.visualization.nodes.enableMetadataShape) {
+                    nodeMesh = this.metadataVisualizer.createNodeVisual(metadata);
+                    nodeMesh.position.set(metadata.position.x, metadata.position.y, metadata.position.z);
                     nodeMesh.userData = metadata;
 
-                    if (this.settings.visualization.nodes.enableMetadataVisualization && 
-                        position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD) {
+                    if (this.settings.visualization.nodes.enableMetadataVisualization) {
                         this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
-                            if (position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD)
-                                nodeMesh.add(group);
+                            nodeMesh.add(group);
                         });
                     }
 
                     this.scene.add(nodeMesh);
                     this.nodes.set(node.id, nodeMesh);
+                } else {
+                    const position = new Vector3(metadata.position.x, metadata.position.y, metadata.position.z);
+
+                    if (this.isInstanced && this.instancedMesh) {
+                        this.reusablePosition.copy(position);
+                        this.reusableScale.set(scale, scale, scale);
+                        const matrix = this.reusableMatrix.compose(this.reusablePosition, this.quaternion, this.reusableScale);
+                        this.instancedMesh.setMatrixAt(index, matrix);
+                    } else {
+                        nodeMesh = new Mesh(this.nodeGeometry, this.nodeMaterial);
+                        nodeMesh.position.copy(position);
+                        nodeMesh.scale.set(scale, scale, scale);
+                        nodeMesh.layers.enable(0);
+                        nodeMesh.layers.enable(1);
+                        nodeMesh.userData = metadata;
+
+                        if (this.settings.visualization.nodes.enableMetadataVisualization && 
+                            position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD) {
+                            this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
+                                if (position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD)
+                                    nodeMesh.add(group);
+                            });
+                        }
+
+                        this.scene.add(nodeMesh);
+                        this.nodes.set(node.id, nodeMesh);
+                    }
                 }
             }
         });
@@ -253,7 +245,7 @@ export class EnhancedNodeManager {
 
     private calculateCommitAge(timestamp: number): number {
         const now = Date.now();
-        return (now - timestamp) / (1000 * 60 * 60 * 24); // Convert to days
+        return (now - timestamp) / (1000 * 60 * 60 * 24);
     }
 
     private calculateImportance(node: { id: string, data: NodeData }): number {
@@ -285,7 +277,6 @@ export class EnhancedNodeManager {
         this.updateFrameCount++;
         const isARMode = platformManager.isXRMode;
 
-        // Skip updates based on context
         if (isARMode && this.updateFrameCount % this.AR_UPDATE_FREQUENCY !== 0) {
             return;
         }
@@ -304,6 +295,53 @@ export class EnhancedNodeManager {
                     child.rotateY(0.001 * deltaTime);
                 }
             });
+        }
+    }
+
+    public updateNodePositions(nodes: { id: string, data: { position: [number, number, number], velocity: [number, number, number] } }[]): void {
+        nodes.forEach((node, index) => {
+            const existingNode = this.nodes.get(node.id);
+            const scale = this.nodeScales.get(node.id) || this.calculateNodeScale(0.5); // Default importance of 0.5
+
+            if (existingNode) {
+                existingNode.position.set(
+                    node.data.position[0],
+                    node.data.position[1],
+                    node.data.position[2]
+                );
+            } else {
+                // Create a new node if it doesn't exist
+                if (!this.isInstanced) {
+                    const nodeMesh = new Mesh(this.nodeGeometry, this.nodeMaterial);
+                    nodeMesh.position.set(
+                        node.data.position[0],
+                        node.data.position[1],
+                        node.data.position[2]
+                    );
+                    nodeMesh.scale.setScalar(scale);
+                    nodeMesh.layers.enable(0);
+                    nodeMesh.layers.enable(1);
+                    this.scene.add(nodeMesh);
+                    this.nodes.set(node.id, nodeMesh);
+                } else if (this.instancedMesh) {
+                this.reusablePosition.set(
+                    node.data.position[0],
+                    node.data.position[1],
+                    node.data.position[2]
+                );
+                this.reusableScale.setScalar(scale);
+                this.reusableMatrix.compose(
+                    this.reusablePosition,
+                    this.quaternion,
+                    this.reusableScale
+                );
+                this.instancedMesh.setMatrixAt(index, this.reusableMatrix);
+                }
+            }
+        });
+
+        if (this.isInstanced && this.instancedMesh) {
+            this.instancedMesh.instanceMatrix.needsUpdate = true;
         }
     }
 
@@ -335,35 +373,7 @@ export class EnhancedNodeManager {
             this.scene.remove(node);
         });
         this.nodes.clear();
-    }
-
-    public updateNodePositions(nodes: { id: string, data: { position: [number, number, number], velocity: [number, number, number] } }[]): void {
-        nodes.forEach((node, index) => {
-            const existingNode = this.nodes.get(node.id);
-            if (existingNode) {
-                existingNode.position.set(
-                    node.data.position[0],
-                    node.data.position[1],
-                    node.data.position[2]
-                );
-            } else if (this.isInstanced && this.instancedMesh) {
-                this.reusablePosition.set(
-                    node.data.position[0],
-                    node.data.position[1],
-                    node.data.position[2]
-                );
-                this.reusableMatrix.compose(
-                    this.reusablePosition,
-                    this.quaternion,
-                    this.reusableScale.set(1, 1, 1)
-                );
-                this.instancedMesh.setMatrixAt(index, this.reusableMatrix);
-            }
-        });
-
-        if (this.isInstanced && this.instancedMesh) {
-            this.instancedMesh.instanceMatrix.needsUpdate = true;
-        }
+        this.nodeScales.clear();
     }
 
     public setXRMode(enabled: boolean): void {

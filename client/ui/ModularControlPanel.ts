@@ -527,19 +527,24 @@ const header = document.createElement('h3');
             // Create inputs for each array element
             value.forEach((item, index) => {
                 const itemInput = document.createElement('input');
-                itemInput.type = typeof item === 'number' ? 'number' : 'text';
-                if (itemInput.type === 'number') {
+                const isNumeric = typeof item === 'number';
+                itemInput.type = isNumeric ? 'number' : 'text';
+                if (isNumeric) {
                     itemInput.step = getNumericStep(path);
                     itemInput.min = '0';
+                    itemInput.value = item.toString();
+                } else {
+                    itemInput.value = String(item);
                 }
-                itemInput.value = item.toString();
                 itemInput.className = 'array-item';
                 itemInput.onchange = (e) => {
                     const target = e.target as HTMLInputElement;
                     const newValue = [...value];
-                    if (typeof item === 'number') {
+                    if (isNumeric) {
                         const parsed = parseFloat(target.value);
                         newValue[index] = isNaN(parsed) ? item : Math.max(0, parsed);
+                        // Update the input value to show the processed value
+                        target.value = newValue[index].toString();
                     } else {
                         newValue[index] = target.value;
                     }
@@ -570,10 +575,13 @@ const header = document.createElement('h3');
                 numberInput.type = 'number';
                 numberInput.step = getNumericStep(path);
                 numberInput.min = '0';
-                numberInput.value = value.toString();
+                numberInput.value = Math.max(0, value).toString();
                 numberInput.onchange = (e) => {
                     const target = e.target as HTMLInputElement;
-                    this.updateSetting(path, parseFloat(target.value));
+                    const parsed = parseFloat(target.value);
+                    const processedValue = isNaN(parsed) ? value : Math.max(0, parsed);
+                    target.value = processedValue.toString();
+                    this.updateSetting(path, processedValue);
                 };
                 input = numberInput;
                 break;
@@ -627,55 +635,73 @@ const header = document.createElement('h3');
     }
 
     private updateSetting(path: string, value: any): void {
-        if (this.updateTimeout !== null) {
-            window.clearTimeout(this.updateTimeout);
-        }
+        try {
+            // Get the current value to compare types
+            const currentValue = this.settingsStore.get(path);
+            
+            // Process the value based on type
+            let processedValue = value;
+            if (Array.isArray(currentValue)) {
+                processedValue = value.map((v: any, i: number) => {
+                    const originalValue = currentValue[i];
+                    if (typeof originalValue === 'number') {
+                        const parsed = parseFloat(v);
+                        return isNaN(parsed) ? originalValue : Math.max(0, parsed);
+                    }
+                    return v;
+                });
+            } else if (typeof currentValue === 'number') {
+                const parsed = parseFloat(value);
+                processedValue = isNaN(parsed) ? currentValue : Math.max(0, parsed);
+            }
 
-        this.updateTimeout = window.setTimeout(async () => {
-            try {
-                // Get the current value to compare types
-                const currentValue = this.settingsStore.get(path);
-                
-                // Ensure we maintain the correct type
-                let processedValue = value;
-                if (Array.isArray(currentValue)) {
-                    // Ensure array values maintain their original types
-                    processedValue = value.map((v: any, i: number) => {
-                        const originalValue = currentValue[i];
-                        if (typeof originalValue === 'number') {
-                            const parsed = parseFloat(v);
-                            return isNaN(parsed) ? originalValue : parsed;
-                        }
-                        return v;
+            this.settingsStore.set(path, processedValue);
+            this.emit('settings:updated', { path, value: processedValue });
+
+            // Update the UI to reflect the processed value
+            const control = this.container.querySelector(`[data-setting-path="${path}"]`);
+            if (control) {
+                if (Array.isArray(processedValue)) {
+                    const inputs = control.querySelectorAll('.array-item') as NodeListOf<HTMLInputElement>;
+                    inputs.forEach((input, i) => {
+                        input.value = processedValue[i].toString();
                     });
-                } else if (typeof currentValue === 'number') {
-                    const parsed = parseFloat(value);
-                    processedValue = isNaN(parsed) ? currentValue : parsed;
-                }
-
-                await this.settingsStore.set(path, processedValue);
-                this.emit('settings:updated', { path, value: processedValue });
-            } catch (error) {
-                logger.error(`Failed to update setting ${path}:`, error);
-                
-                // Revert the input to the current value
-                const control = this.container.querySelector(`[data-setting-path="${path}"]`);
-                if (control) {
-                    const input = control.querySelector('input, select') as HTMLInputElement;
+                } else {
+                    const input = control.querySelector('input') as HTMLInputElement;
                     if (input) {
-                        const currentValue = this.settingsStore.get(path);
-                        if (Array.isArray(currentValue)) {
-                            const inputs = control.querySelectorAll('.array-item') as NodeListOf<HTMLInputElement>;
-                            inputs.forEach((input, i) => {
-                                input.value = currentValue[i].toString();
-                            });
+                        if (input.type === 'number') {
+                            input.value = processedValue.toString();
+                        } else if (input.type === 'checkbox') {
+                            input.checked = processedValue;
+                        } else {
+                            input.value = String(processedValue);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            logger.error(`Failed to update setting ${path}:`, error);
+            // Revert the input to the current value
+            const control = this.container.querySelector(`[data-setting-path="${path}"]`);
+            if (control) {
+                const currentValue = this.settingsStore.get(path);
+                if (Array.isArray(currentValue)) {
+                    const inputs = control.querySelectorAll('.array-item') as NodeListOf<HTMLInputElement>;
+                    inputs.forEach((input, i) => {
+                        input.value = currentValue[i].toString();
+                    });
+                } else {
+                    const input = control.querySelector('input') as HTMLInputElement;
+                    if (input) {
+                        if (input.type === 'checkbox') {
+                            input.checked = Boolean(currentValue);
                         } else {
                             input.value = currentValue?.toString() || '';
                         }
                     }
                 }
             }
-        }, 100);
+        }
     }
 
     private toggleDetached(sectionId: string): void {

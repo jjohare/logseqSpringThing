@@ -426,20 +426,36 @@ export class GraphDataManager {
       return;
     }
   
-    // Log for debugging
-    logger.debug('Received binary position update:', positions);
-  
     if (positions.length % FLOATS_PER_NODE !== 0) {
       logger.error('Invalid position array length:', positions.length);
       return;
     }
   
+    // Update node positions in the internal Map
+    const nodeArray = Array.from(this.nodes.values());
+    const numNodes = positions.length / FLOATS_PER_NODE;
+    
+    for (let i = 0; i < numNodes && i < nodeArray.length; i++) {
+      const node = nodeArray[i];
+      const baseIndex = i * FLOATS_PER_NODE;
+      
+      // Update node position and velocity
+      node.data.position = {
+        x: positions[baseIndex],
+        y: positions[baseIndex + 1],
+        z: positions[baseIndex + 2]
+      };
+      node.data.velocity = {
+        x: positions[baseIndex + 3],
+        y: positions[baseIndex + 4],
+        z: positions[baseIndex + 5]
+      };
+      
+      this.nodes.set(node.id, node);
+    }
+    
     this.positionUpdateListeners.forEach(listener => {
-      try {
-        listener(positions);
-      } catch (error) {
-        logger.error('Error in position update listener:', error);
-      }
+      listener(positions);
     });
   }
 }

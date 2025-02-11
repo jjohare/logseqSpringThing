@@ -13,6 +13,7 @@ const logger = createLogger('VisualizationController');
 
 type VisualizationCategory = 'visualization' | 'physics' | 'rendering';
 type PendingUpdate = { category: VisualizationCategory; value: any };
+type NodePositionUpdate = { id: string, data: { position: [number, number, number], velocity: [number, number, number] } };
 
 export class VisualizationController {
     private static instance: VisualizationController | null = null;
@@ -24,53 +25,97 @@ export class VisualizationController {
     private pendingUpdates: Map<string, PendingUpdate> = new Map();
     private pendingEdgeUpdates: GraphData['edges'] | null = null;
     private pendingNodeUpdates: GraphData['nodes'] | null = null;
+    private lastUpdateTime: number = performance.now();
 
     private constructor() {
-        // Initialize with complete default settings
         this.currentSettings = { ...defaultSettings };
         
         // Subscribe to graph data updates
         graphDataManager.subscribe((data: GraphData) => {
             if (this.isInitialized) {
                 if (this.nodeManager) {
+                    // Update both node data and positions
                     this.nodeManager.updateNodes(data.nodes);
+                    if (data.nodes.length > 0) {
+                        const positionUpdates: NodePositionUpdate[] = data.nodes.map(node => ({
+                            id: node.id,
+                            data: {
+                                position: [node.data.position.x, node.data.position.y, node.data.position.z],
+                                velocity: [0, 0, 0] // Default velocity if not provided
+                            }
+                        }));
+                        this.nodeManager.updateNodePositions(positionUpdates);
+                    }
                 }
                 if (this.edgeManager) {
                     this.edgeManager.updateEdges(data.edges);
                 }
             } else {
-                // Queue updates until initialized
                 this.pendingNodeUpdates = data.nodes;
                 this.pendingEdgeUpdates = data.edges;
                 logger.debug('Queuing updates until initialization');
             }
+        });
+        
+        // Subscribe to position updates from WebSocket
+        graphDataManager.subscribeToPositionUpdates((positions: Float32Array) => {
+            if (!this.isInitialized || !this.nodeManager) return;
+            
+            const numNodes = positions.length / 6; // 6 floats per node (x,y,z, vx,vy,vz)
+            const updates: NodePositionUpdate[] = [];
+            
+            for (let i = 0; i < numNodes; i++) {
+                const baseIndex = i * 6;
+                updates.push({
+                    id: `node_${i}`, // Node IDs should match the order in the array
+                    data: {
+                        position: [positions[baseIndex], positions[baseIndex + 1], positions[baseIndex + 2]],
+                        velocity: [positions[baseIndex + 3], positions[baseIndex + 4], positions[baseIndex + 5]]
+                    }
+                });
+            }
+            
+            this.nodeManager.updateNodePositions(updates);
         });
     }
 
     public initializeScene(scene: Scene, camera: Camera): void {
         logger.info('Initializing visualization scene');
         
-        // Initialize managers with scene and settings
         this.edgeManager = new EdgeManager(scene, this.currentSettings);
         this.nodeManager = new EnhancedNodeManager(scene, this.currentSettings);
         this.textRenderer = new TextRenderer(camera, scene);
         this.isInitialized = true;
         
-        // Apply any pending updates
         this.applyPendingUpdates();
         
-        // Initialize with current graph data
         const currentData = graphDataManager.getGraphData();
         
-        // Handle pending node updates
         if (this.pendingNodeUpdates && this.nodeManager) {
             this.nodeManager.updateNodes(this.pendingNodeUpdates);
+            // Also update positions
+            const positionUpdates: NodePositionUpdate[] = this.pendingNodeUpdates.map(node => ({
+                id: node.id,
+                data: {
+                    position: [node.data.position.x, node.data.position.y, node.data.position.z],
+                    velocity: [0, 0, 0]
+                }
+            }));
+            this.nodeManager.updateNodePositions(positionUpdates);
             this.pendingNodeUpdates = null;
         } else if (currentData.nodes.length > 0 && this.nodeManager) {
             this.nodeManager.updateNodes(currentData.nodes);
+            // Update positions for current data
+            const positionUpdates: NodePositionUpdate[] = currentData.nodes.map(node => ({
+                id: node.id,
+                data: {
+                    position: [node.data.position.x, node.data.position.y, node.data.position.z],
+                    velocity: [0, 0, 0]
+                }
+            }));
+            this.nodeManager.updateNodePositions(positionUpdates);
         }
         
-        // Handle pending edge updates
         if (this.pendingEdgeUpdates && this.edgeManager) {
             this.edgeManager.updateEdges(this.pendingEdgeUpdates);
             this.pendingEdgeUpdates = null;
@@ -92,7 +137,6 @@ export class VisualizationController {
             let current = this.currentSettings as any;
             const parts = path.split('.');
             
-            // Update the settings object
             for (let i = 0; i < parts.length - 1; i++) {
                 const part = parts[i];
                 if (!(part in current)) {
@@ -102,7 +146,6 @@ export class VisualizationController {
             }
             current[parts[parts.length - 1]] = update.value;
             
-            // Apply the update
             this.applySettingUpdate(update.category);
         });
         
@@ -263,7 +306,6 @@ export class VisualizationController {
         if (!this.isInitialized) return;
         this.updateNodeAppearance();
         this.updateEdgeAppearance();
-        // Update text labels
         if (this.textRenderer) {
             this.textRenderer.update();
         }
@@ -301,7 +343,7 @@ export class VisualizationController {
         logger.debug('Updating rendering quality');
     }
 
-    public updateNodePositions(nodes: any[]): void {
+    public updateNodePositions(nodes: NodePositionUpdate[]): void {
         if (this.nodeManager) {
             this.nodeManager.updateNodePositions(nodes);
         }
@@ -309,12 +351,14 @@ export class VisualizationController {
 
     public update(): void {
         if (this.isInitialized) {
-            // Update node animations and state
+            const now = performance.now();
+            const deltaTime = (now - this.lastUpdateTime) / 1000; // Convert to seconds
+            this.lastUpdateTime = now;
+
             if (this.nodeManager) {
-                this.nodeManager.update(1/60); // Standard 60fps delta time
+                this.nodeManager.update(deltaTime);
             }
             
-            // Update text labels
             if (this.textRenderer) {
                 this.textRenderer.update();
             }
