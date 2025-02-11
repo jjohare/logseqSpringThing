@@ -51,7 +51,7 @@ visualization:
     wave_speed: 0.5
   labels:
     desktop_font_size: 14
-    enable_labels: true
+    enable_labels: false
     text_color: '#ffffff'
   bloom:
     edge_bloom_strength: 0.8

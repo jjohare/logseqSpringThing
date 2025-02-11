@@ -36,16 +36,6 @@ export class VisualizationController {
                 if (this.nodeManager) {
                     // Update both node data and positions
                     this.nodeManager.updateNodes(data.nodes);
-                    if (data.nodes.length > 0) {
-                        const positionUpdates: NodePositionUpdate[] = data.nodes.map(node => ({
-                            id: node.id,
-                            data: {
-                                position: [node.data.position.x, node.data.position.y, node.data.position.z],
-                                velocity: [0, 0, 0] // Default velocity if not provided
-                            }
-                        }));
-                        this.nodeManager.updateNodePositions(positionUpdates);
-                    }
                 }
                 if (this.edgeManager) {
                     this.edgeManager.updateEdges(data.edges);
@@ -93,27 +83,9 @@ export class VisualizationController {
         
         if (this.pendingNodeUpdates && this.nodeManager) {
             this.nodeManager.updateNodes(this.pendingNodeUpdates);
-            // Also update positions
-            const positionUpdates: NodePositionUpdate[] = this.pendingNodeUpdates.map(node => ({
-                id: node.id,
-                data: {
-                    position: [node.data.position.x, node.data.position.y, node.data.position.z],
-                    velocity: [0, 0, 0]
-                }
-            }));
-            this.nodeManager.updateNodePositions(positionUpdates);
             this.pendingNodeUpdates = null;
         } else if (currentData.nodes.length > 0 && this.nodeManager) {
             this.nodeManager.updateNodes(currentData.nodes);
-            // Update positions for current data
-            const positionUpdates: NodePositionUpdate[] = currentData.nodes.map(node => ({
-                id: node.id,
-                data: {
-                    position: [node.data.position.x, node.data.position.y, node.data.position.z],
-                    velocity: [0, 0, 0]
-                }
-            }));
-            this.nodeManager.updateNodePositions(positionUpdates);
         }
         
         if (this.pendingEdgeUpdates && this.edgeManager) {

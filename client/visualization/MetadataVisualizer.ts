@@ -120,7 +120,7 @@ export class MetadataVisualizer {
 
         const textGeometry = new TextGeometry(text, {
             font: this.font,
-            size: this.settings.visualization.labels.desktopFontSize / 10 || 0.5,
+            size: 0.2, // Fixed world-space size for consistent scale
             height: 0.01 // Fixed thin height for better readability
         });
 
@@ -156,7 +156,7 @@ export class MetadataVisualizer {
 
         const textGeometry = new TextGeometry(text, {
             font: this.font,
-            size: this.settings.visualization.labels.desktopFontSize / 10 || 0.5,
+            size: 0.2, // Fixed world-space size for consistent scale
             depth: 0.1, // Using depth instead of height
             curveSegments: this.settings.visualization.labels.textResolution || 4,
             bevelEnabled: false
@@ -188,7 +188,7 @@ export class MetadataVisualizer {
             // Create a new geometry for the outline to avoid sharing
             const outlineGeometry = new TextGeometry(text, {
                 font: this.font,
-                size: this.settings.visualization.labels.desktopFontSize / 10 || 0.5,
+                size: 0.2, // Fixed world-space size for consistent scale
                 depth: 0.1,
                 curveSegments: this.settings.visualization.labels.textResolution || 4,
                 bevelEnabled: false
@@ -265,7 +265,7 @@ export class MetadataVisualizer {
         const nameMesh = await this.createTextMesh(metadata.name);
         if (nameMesh) {
             nameMesh.position.y = 1.2;
-            nameMesh.scale.setScalar(0.8);
+            nameMesh.scale.setScalar(1.0); // Base size for name
             group.add(nameMesh);
         }
 
@@ -273,7 +273,7 @@ export class MetadataVisualizer {
         const ageMesh = await this.createTextMesh(`${Math.round(metadata.commitAge)} days`);
         if (ageMesh) {
             ageMesh.position.y = 0.8;
-            ageMesh.scale.setScalar(0.7);
+            ageMesh.scale.setScalar(0.8); // Slightly smaller than name
             group.add(ageMesh);
         }
 
@@ -281,7 +281,7 @@ export class MetadataVisualizer {
         const linksMesh = await this.createTextMesh(`${metadata.hyperlinkCount} links`);
         if (linksMesh) {
             linksMesh.position.y = 0.4;
-            linksMesh.scale.setScalar(0.7);
+            linksMesh.scale.setScalar(0.8); // Slightly smaller than name
             group.add(linksMesh);
         }
 

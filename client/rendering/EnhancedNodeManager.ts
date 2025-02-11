@@ -1,11 +1,8 @@
 import {
     Scene,
-    InstancedMesh,
-    Matrix4,
     Vector3,
     Mesh,
     Object3D,
-    Quaternion,
     BufferGeometry,
     Material,
     PerspectiveCamera
@@ -26,24 +23,19 @@ export class EnhancedNodeManager {
     private nodes: Map<string, Mesh> = new Map();
     private nodeGeometry: BufferGeometry;
     private nodeMaterial: Material;
-    private instancedMesh: InstancedMesh | null = null;
     private geometryFactory: GeometryFactory;
     private materialFactory: MaterialFactory;
-    private isInstanced: boolean;
     private isHologram: boolean = false;
     private hologramMaterial: HologramShaderMaterial | null = null;
     private metadataMaterial: Material | null = null;
     private metadataVisualizer: MetadataVisualizer;
-    private quaternion = new Quaternion();
-    private reusableMatrix = new Matrix4();
     private reusablePosition = new Vector3();
-    private reusableScale = new Vector3();
     private camera: PerspectiveCamera;
     private updateFrameCount = 0;
     private readonly AR_UPDATE_FREQUENCY = 2;
     private readonly METADATA_DISTANCE_THRESHOLD = 50;
     private readonly ANIMATION_DISTANCE_THRESHOLD = 30;
-    private nodeScales: Map<string, number> = new Map(); // Store node scales
+    private nodeScales: Map<string, number> = new Map();
 
     constructor(scene: Scene, settings: Settings) {
         this.scene = scene;
@@ -65,7 +57,6 @@ export class EnhancedNodeManager {
 
         this.geometryFactory = GeometryFactory.getInstance();
         this.materialFactory = MaterialFactory.getInstance();
-        this.isInstanced = settings.visualization.nodes.enableInstancing && !platformManager.isXRMode;
         this.nodeGeometry = this.geometryFactory.getNodeGeometry(settings.visualization.nodes.quality);
         this.nodeMaterial = this.materialFactory.getNodeMaterial(settings);
         this.isHologram = settings.visualization.nodes.enableHologram;
@@ -76,39 +67,22 @@ export class EnhancedNodeManager {
 
         this.metadataMaterial = this.materialFactory.getMetadataMaterial();
         this.metadataVisualizer = new MetadataVisualizer(this.camera, this.scene, settings);
-        this.setupInstancedMesh();
-    }
-
-    private setupInstancedMesh() {
-        if (this.isInstanced) {
-            this.instancedMesh = new InstancedMesh(this.nodeGeometry, this.nodeMaterial, 2000);
-            this.instancedMesh.count = 0;
-            this.instancedMesh.layers.set(platformManager.isXRMode ? 1 : 0);
-            this.scene.add(this.instancedMesh);
-        }
     }
 
     public handleSettingsUpdate(settings: Settings): void {
         this.settings = settings;
         
         this.nodeMaterial = this.materialFactory.getNodeMaterial(settings);
-        if (!this.isInstanced) {
-            this.nodes.forEach(node => {
-                node.material = this.nodeMaterial;
-            });
-        }
+        this.nodes.forEach(node => {
+            node.material = this.nodeMaterial;
+        });
 
         const newGeometry = this.geometryFactory.getNodeGeometry(settings.visualization.nodes.quality);
         if (this.nodeGeometry !== newGeometry) {
             this.nodeGeometry = newGeometry;
-            if (this.instancedMesh) {
-                this.instancedMesh.geometry = this.nodeGeometry;
-            }
-            if (!this.isInstanced) {
-                this.nodes.forEach(node => {
-                    node.geometry = this.nodeGeometry;
-                });
-            }
+            this.nodes.forEach(node => {
+                node.geometry = this.nodeGeometry;
+            });
         }
 
         this.materialFactory.updateMaterial('node-basic', settings);
@@ -116,15 +90,6 @@ export class EnhancedNodeManager {
         this.materialFactory.updateMaterial('edge', settings);
         if (this.isHologram) {
             this.materialFactory.updateMaterial('hologram', settings);
-        }
-
-        const newIsInstanced = settings.visualization.nodes.enableInstancing;
-        const newIsHologram = settings.visualization.nodes.enableHologram;
-
-        if (newIsInstanced !== this.isInstanced || newIsHologram !== this.isHologram) {
-            this.isInstanced = newIsInstanced;
-            this.isHologram = newIsHologram;
-            this.rebuildInstancedMesh();
         }
 
         if (settings.visualization.nodes.enableMetadataVisualization) {
@@ -161,11 +126,7 @@ export class EnhancedNodeManager {
     }
 
     updateNodes(nodes: { id: string, data: NodeData }[]) {
-        if (this.isInstanced && this.instancedMesh) {
-            this.instancedMesh.count = nodes.length;
-        }
-
-        nodes.forEach((node, index) => {
+        nodes.forEach((node) => {
             const metadata: NodeMetadata = {
                 id: node.id,
                 name: node.data.metadata?.name || '',
@@ -180,10 +141,10 @@ export class EnhancedNodeManager {
             };
 
             const scale = this.calculateNodeScale(metadata.importance);
-            this.nodeScales.set(node.id, scale); // Store the scale
+            this.nodeScales.set(node.id, scale);
 
             const existingNode = this.nodes.get(node.id);
-            if (existingNode && !this.isInstanced) {
+            if (existingNode) {
                 existingNode.position.set(
                     node.data.position.x,
                     node.data.position.y,
@@ -191,56 +152,36 @@ export class EnhancedNodeManager {
                 );
                 existingNode.scale.setScalar(scale);
                 existingNode.userData = metadata;
+                existingNode.updateMatrix();
+                existingNode.updateMatrixWorld();
             } else {
                 let nodeMesh: Mesh;
+                nodeMesh = new Mesh(this.nodeGeometry, this.nodeMaterial);
+                nodeMesh.position.set(
+                    node.data.position.x,
+                    node.data.position.y,
+                    node.data.position.z
+                );
+                nodeMesh.scale.setScalar(scale);
+                nodeMesh.layers.enable(0);
+                nodeMesh.layers.enable(1);
+                nodeMesh.userData = metadata;
+                nodeMesh.updateMatrix();
+                nodeMesh.updateMatrixWorld();
 
-                if (this.settings.visualization.nodes.enableMetadataShape) {
-                    nodeMesh = this.metadataVisualizer.createNodeVisual(metadata);
-                    nodeMesh.position.set(metadata.position.x, metadata.position.y, metadata.position.z);
-                    nodeMesh.userData = metadata;
-
-                    if (this.settings.visualization.nodes.enableMetadataVisualization) {
-                        this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
+                if (this.settings.visualization.nodes.enableMetadataVisualization && 
+                    nodeMesh.position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD) {
+                    this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
+                        if (nodeMesh.position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD) {
                             nodeMesh.add(group);
-                        });
-                    }
-
-                    this.scene.add(nodeMesh);
-                    this.nodes.set(node.id, nodeMesh);
-                } else {
-                    const position = new Vector3(metadata.position.x, metadata.position.y, metadata.position.z);
-
-                    if (this.isInstanced && this.instancedMesh) {
-                        this.reusablePosition.copy(position);
-                        this.reusableScale.set(scale, scale, scale);
-                        const matrix = this.reusableMatrix.compose(this.reusablePosition, this.quaternion, this.reusableScale);
-                        this.instancedMesh.setMatrixAt(index, matrix);
-                    } else {
-                        nodeMesh = new Mesh(this.nodeGeometry, this.nodeMaterial);
-                        nodeMesh.position.copy(position);
-                        nodeMesh.scale.set(scale, scale, scale);
-                        nodeMesh.layers.enable(0);
-                        nodeMesh.layers.enable(1);
-                        nodeMesh.userData = metadata;
-
-                        if (this.settings.visualization.nodes.enableMetadataVisualization && 
-                            position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD) {
-                            this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
-                                if (position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD)
-                                    nodeMesh.add(group);
-                            });
                         }
-
-                        this.scene.add(nodeMesh);
-                        this.nodes.set(node.id, nodeMesh);
-                    }
+                    });
                 }
+
+                this.scene.add(nodeMesh);
+                this.nodes.set(node.id, nodeMesh);
             }
         });
-
-        if (this.isInstanced && this.instancedMesh) {
-            this.instancedMesh.instanceMatrix.needsUpdate = true;
-        }
     }
 
     private calculateCommitAge(timestamp: number): number {
@@ -259,20 +200,6 @@ export class EnhancedNodeManager {
         return min + (max - min) * importance;
     }
 
-    private rebuildInstancedMesh() {
-        if (this.instancedMesh) {
-            this.instancedMesh.geometry.dispose();
-            this.instancedMesh.material.dispose();
-            this.scene.remove(this.instancedMesh);
-        }
-        if (this.isInstanced) {
-            this.instancedMesh = new InstancedMesh(this.nodeGeometry, this.nodeMaterial, 1000);
-            this.instancedMesh.count = 0;
-            this.instancedMesh.layers.set(platformManager.isXRMode ? 1 : 0);
-            this.scene.add(this.instancedMesh);
-        }
-    }
-
     update(deltaTime: number) {
         this.updateFrameCount++;
         const isARMode = platformManager.isXRMode;
@@ -287,9 +214,6 @@ export class EnhancedNodeManager {
 
         if (this.settings.visualization.animations.enableNodeAnimations) {
             const cameraPosition = this.camera.position;
-            if (this.instancedMesh) {
-                this.instancedMesh.instanceMatrix.needsUpdate = true;
-            }
             this.scene.traverse((child: Object3D) => {
                 if (child instanceof Mesh && (child.material as any).type === 'LineBasicMaterial' && child.position.distanceTo(cameraPosition) < this.ANIMATION_DISTANCE_THRESHOLD) {
                     child.rotateY(0.001 * deltaTime);
@@ -299,9 +223,9 @@ export class EnhancedNodeManager {
     }
 
     public updateNodePositions(nodes: { id: string, data: { position: [number, number, number], velocity: [number, number, number] } }[]): void {
-        nodes.forEach((node, index) => {
+        nodes.forEach((node) => {
             const existingNode = this.nodes.get(node.id);
-            const scale = this.nodeScales.get(node.id) || this.calculateNodeScale(0.5); // Default importance of 0.5
+            if (!existingNode) return; // Skip if node doesn't exist, it will be created by updateNodes
 
             if (existingNode) {
                 existingNode.position.set(
@@ -309,40 +233,10 @@ export class EnhancedNodeManager {
                     node.data.position[1],
                     node.data.position[2]
                 );
-            } else {
-                // Create a new node if it doesn't exist
-                if (!this.isInstanced) {
-                    const nodeMesh = new Mesh(this.nodeGeometry, this.nodeMaterial);
-                    nodeMesh.position.set(
-                        node.data.position[0],
-                        node.data.position[1],
-                        node.data.position[2]
-                    );
-                    nodeMesh.scale.setScalar(scale);
-                    nodeMesh.layers.enable(0);
-                    nodeMesh.layers.enable(1);
-                    this.scene.add(nodeMesh);
-                    this.nodes.set(node.id, nodeMesh);
-                } else if (this.instancedMesh) {
-                this.reusablePosition.set(
-                    node.data.position[0],
-                    node.data.position[1],
-                    node.data.position[2]
-                );
-                this.reusableScale.setScalar(scale);
-                this.reusableMatrix.compose(
-                    this.reusablePosition,
-                    this.quaternion,
-                    this.reusableScale
-                );
-                this.instancedMesh.setMatrixAt(index, this.reusableMatrix);
-                }
+                existingNode.updateMatrix();
+                existingNode.updateMatrixWorld();
             }
         });
-
-        if (this.isInstanced && this.instancedMesh) {
-            this.instancedMesh.instanceMatrix.needsUpdate = true;
-        }
     }
 
     handleHandInteraction(hand: XRHandWithHaptics) {
@@ -356,11 +250,6 @@ export class EnhancedNodeManager {
     }
 
     dispose() {
-        if (this.instancedMesh) {
-            this.instancedMesh.geometry.dispose();
-            this.instancedMesh.material.dispose();
-            this.scene.remove(this.instancedMesh);
-        }
         if (this.isHologram && this.hologramMaterial) {
             this.hologramMaterial.dispose();
         }
@@ -377,9 +266,6 @@ export class EnhancedNodeManager {
     }
 
     public setXRMode(enabled: boolean): void {
-        if (this.instancedMesh) {
-            this.instancedMesh.layers.set(enabled ? 1 : 0);
-        }
         this.nodes.forEach(node => {
             node.layers.set(enabled ? 1 : 0);
             node.traverse((child: Object3D) => {

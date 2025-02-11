@@ -184,7 +184,7 @@ Directories:
 
 # Project Codebase
 
-Generated: Tue 11 Feb 10:06:43 GMT 2025
+Generated: Tue 11 Feb 16:50:05 GMT 2025
 
 ## Project Structure
 
@@ -1451,11 +1451,11 @@ system:
     session_timeout: 3600
   debug:
     enabled: false
-    enable_data_debug: false
+    enable_data_debug: true
     enable_websocket_debug: false
     log_binary_headers: false
-    log_full_json: false
-    log_level: info
+    log_full_json: true
+    log_level: debug
     log_format: json
 xr:
   mode: inline
@@ -2548,6 +2548,13 @@ exec /app/webxr
                 "IPv4Address": "172.19.0.2/16",
                 "IPv6Address": ""
             },
+            "6330baef2ffb0d0f6c3742a500baee7a2201745a207fa1993b8be4f43ee33ca4": {
+                "Name": "cloudflared-tunnel",
+                "EndpointID": "3849eaf4cf6d4952a86b8a8783eaa9a1d90423d14ca295b3c86b739d852a16d8",
+                "MacAddress": "02:42:ac:13:00:0a",
+                "IPv4Address": "172.19.0.10/16",
+                "IPv6Address": ""
+            },
             "6f29e52e755469407f276c8296b30e93e939cd4fb971c861a6391f9f7c3b6e16": {
                 "Name": "ragflow-mysql",
                 "EndpointID": "654c07ea7d9d5fc00918d71bcf5d0df1a029fefc2587e036ffca8f4660f95961",
@@ -2583,11 +2590,11 @@ exec /app/webxr
                 "IPv4Address": "172.19.0.4/16",
                 "IPv6Address": ""
             },
-            "c150bc31c26902fead10ad5fefedcb895bd99ab7bd76b1e2bd52189f9e9e17ad": {
-                "Name": "cloudflared-tunnel",
-                "EndpointID": "c3486fa067992ea0afb673ccd05c2c5457710f115aa9c69b68941ed632fccc36",
-                "MacAddress": "02:42:ac:13:00:0a",
-                "IPv4Address": "172.19.0.10/16",
+            "c0bd5e235bc0df1b028a8ec67f4e42c46e1ded24aae126042a098e86787594ff": {
+                "Name": "logseq-xr-webxr",
+                "EndpointID": "656d420b9911d28a0af5f80a62de7e5cd02a27a7ed36e2f6e8aa1711960b832d",
+                "MacAddress": "02:42:ac:13:00:0c",
+                "IPv4Address": "172.19.0.12/16",
                 "IPv6Address": ""
             },
             "c5b92a96025baeae548518eaafe88ef76e70e6d90e5951a8750d01c56b6c8d4a": {
@@ -2595,13 +2602,6 @@ exec /app/webxr
                 "EndpointID": "44cee519c20433e6f98f813ce2d313f091996b2779ce3e3be8b6d4ac9c0888e5",
                 "MacAddress": "02:42:ac:13:00:09",
                 "IPv4Address": "172.19.0.9/16",
-                "IPv6Address": ""
-            },
-            "d47107f83bed3e1c58dd9cc3dcd68664cf31c8409e5b8054a3e2bb9a31e1397c": {
-                "Name": "logseq-xr-webxr",
-                "EndpointID": "f9ccb13f1924dff2e339a310f6ba5c0bee270e2f36bfd38391c8bc87dabf8ff6",
-                "MacAddress": "02:42:ac:13:00:0c",
-                "IPv4Address": "172.19.0.12/16",
                 "IPv6Address": ""
             }
         },
@@ -6819,15 +6819,15 @@ export class EnhancedNodeManager {
     private reusableScale = new Vector3();
     private camera: PerspectiveCamera;
     private updateFrameCount = 0;
-    private readonly AR_UPDATE_FREQUENCY = 2; // Update every other frame in AR
-    private readonly METADATA_DISTANCE_THRESHOLD = 50; // Distance threshold for metadata visibility
-    private readonly ANIMATION_DISTANCE_THRESHOLD = 30; // Distance threshold for animations
+    private readonly AR_UPDATE_FREQUENCY = 2;
+    private readonly METADATA_DISTANCE_THRESHOLD = 50;
+    private readonly ANIMATION_DISTANCE_THRESHOLD = 30;
+    private nodeScales: Map<string, number> = new Map(); // Store node scales
 
     constructor(scene: Scene, settings: Settings) {
         this.scene = scene;
         this.settings = settings;
 
-        // Find the camera in the scene
         let camera: PerspectiveCamera | null = null;
         scene.traverse((object) => {
             if (object instanceof PerspectiveCamera) {
@@ -6854,15 +6854,13 @@ export class EnhancedNodeManager {
         }
 
         this.metadataMaterial = this.materialFactory.getMetadataMaterial();
-
-        // Initialize MetadataVisualizer with camera and scene
         this.metadataVisualizer = new MetadataVisualizer(this.camera, this.scene, settings);
         this.setupInstancedMesh();
     }
 
     private setupInstancedMesh() {
         if (this.isInstanced) {
-            this.instancedMesh = new InstancedMesh(this.nodeGeometry, this.nodeMaterial, 2000); // Increased buffer
+            this.instancedMesh = new InstancedMesh(this.nodeGeometry, this.nodeMaterial, 2000);
             this.instancedMesh.count = 0;
             this.instancedMesh.layers.set(platformManager.isXRMode ? 1 : 0);
             this.scene.add(this.instancedMesh);
@@ -6872,7 +6870,6 @@ export class EnhancedNodeManager {
     public handleSettingsUpdate(settings: Settings): void {
         this.settings = settings;
         
-        // Update materials
         this.nodeMaterial = this.materialFactory.getNodeMaterial(settings);
         if (!this.isInstanced) {
             this.nodes.forEach(node => {
@@ -6880,7 +6877,6 @@ export class EnhancedNodeManager {
             });
         }
 
-        // Update geometry if needed
         const newGeometry = this.geometryFactory.getNodeGeometry(settings.visualization.nodes.quality);
         if (this.nodeGeometry !== newGeometry) {
             this.nodeGeometry = newGeometry;
@@ -6894,7 +6890,6 @@ export class EnhancedNodeManager {
             }
         }
 
-        // Update material settings
         this.materialFactory.updateMaterial('node-basic', settings);
         this.materialFactory.updateMaterial('node-phong', settings);
         this.materialFactory.updateMaterial('edge', settings);
@@ -6911,7 +6906,6 @@ export class EnhancedNodeManager {
             this.rebuildInstancedMesh();
         }
 
-        // Handle metadata visualization
         if (settings.visualization.nodes.enableMetadataVisualization) {
             const cameraPosition = this.camera.position;
             const shouldShowMetadata = (position: Vector3) => {
@@ -6919,14 +6913,12 @@ export class EnhancedNodeManager {
             };
 
             this.nodes.forEach((node) => {
-                // Remove existing metadata
                 node.children.slice().forEach((child: Object3D) => {
                     if (child instanceof Object3D && (child.userData as any).isMetadata) {
                         node.remove(child);
                     }
                 });
 
-                // Add new metadata visualization
                 const metadata = node.userData as NodeMetadata;
                 if (metadata && shouldShowMetadata(node.position)) {
                     this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
@@ -6937,7 +6929,6 @@ export class EnhancedNodeManager {
                 }
             });
         } else {
-            // Remove all metadata visualizations
             this.nodes.forEach(node => {
                 node.children.slice().forEach((child: Object3D) => {
                     if (child instanceof Object3D && (child.userData as any).isMetadata) {
@@ -6949,16 +6940,6 @@ export class EnhancedNodeManager {
     }
 
     updateNodes(nodes: { id: string, data: NodeData }[]) {
-        // Clear existing nodes
-        if (!this.isInstanced) {
-            this.nodes.forEach(node => {
-                this.scene.remove(node);
-                if (node.geometry) node.geometry.dispose();
-                if (node.material) node.material.dispose();
-            });
-            this.nodes.clear();
-        }
-
         if (this.isInstanced && this.instancedMesh) {
             this.instancedMesh.count = nodes.length;
         }
@@ -6977,48 +6958,61 @@ export class EnhancedNodeManager {
                 }
             };
 
-            let nodeMesh: Mesh;
+            const scale = this.calculateNodeScale(metadata.importance);
+            this.nodeScales.set(node.id, scale); // Store the scale
 
-            if (this.settings.visualization.nodes.enableMetadataShape) {
-                nodeMesh = this.metadataVisualizer.createNodeVisual(metadata);
-                nodeMesh.position.set(metadata.position.x, metadata.position.y, metadata.position.z);
-                nodeMesh.userData = metadata;
-
-                if (this.settings.visualization.nodes.enableMetadataVisualization) {
-                    this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
-                        nodeMesh.add(group);
-                    });
-                }
-
-                this.scene.add(nodeMesh);
-                this.nodes.set(node.id, nodeMesh);
+            const existingNode = this.nodes.get(node.id);
+            if (existingNode && !this.isInstanced) {
+                existingNode.position.set(
+                    node.data.position.x,
+                    node.data.position.y,
+                    node.data.position.z
+                );
+                existingNode.scale.setScalar(scale);
+                existingNode.userData = metadata;
             } else {
-                const scale = this.calculateNodeScale(metadata.importance);
-                const position = new Vector3(metadata.position.x, metadata.position.y, metadata.position.z);
+                let nodeMesh: Mesh;
 
-                if (this.isInstanced && this.instancedMesh) {
-                    this.reusablePosition.copy(position);
-                    this.reusableScale.set(scale, scale, scale);
-                    const matrix = this.reusableMatrix.compose(this.reusablePosition, this.quaternion, this.reusableScale);
-                    this.instancedMesh.setMatrixAt(index, matrix);
-                } else {
-                    nodeMesh = new Mesh(this.nodeGeometry, this.nodeMaterial);
-                    nodeMesh.position.copy(position);
-                    nodeMesh.scale.set(scale, scale, scale);
-                    nodeMesh.layers.enable(0);
-                    nodeMesh.layers.enable(1);
+                if (this.settings.visualization.nodes.enableMetadataShape) {
+                    nodeMesh = this.metadataVisualizer.createNodeVisual(metadata);
+                    nodeMesh.position.set(metadata.position.x, metadata.position.y, metadata.position.z);
                     nodeMesh.userData = metadata;
 
-                    if (this.settings.visualization.nodes.enableMetadataVisualization && 
-                        position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD) {
+                    if (this.settings.visualization.nodes.enableMetadataVisualization) {
                         this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
-                            if (position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD)
-                                nodeMesh.add(group);
+                            nodeMesh.add(group);
                         });
                     }
 
                     this.scene.add(nodeMesh);
                     this.nodes.set(node.id, nodeMesh);
+                } else {
+                    const position = new Vector3(metadata.position.x, metadata.position.y, metadata.position.z);
+
+                    if (this.isInstanced && this.instancedMesh) {
+                        this.reusablePosition.copy(position);
+                        this.reusableScale.set(scale, scale, scale);
+                        const matrix = this.reusableMatrix.compose(this.reusablePosition, this.quaternion, this.reusableScale);
+                        this.instancedMesh.setMatrixAt(index, matrix);
+                    } else {
+                        nodeMesh = new Mesh(this.nodeGeometry, this.nodeMaterial);
+                        nodeMesh.position.copy(position);
+                        nodeMesh.scale.set(scale, scale, scale);
+                        nodeMesh.layers.enable(0);
+                        nodeMesh.layers.enable(1);
+                        nodeMesh.userData = metadata;
+
+                        if (this.settings.visualization.nodes.enableMetadataVisualization && 
+                            position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD) {
+                            this.metadataVisualizer.createMetadataLabel(metadata).then((group) => {
+                                if (position.distanceTo(this.camera.position) < this.METADATA_DISTANCE_THRESHOLD)
+                                    nodeMesh.add(group);
+                            });
+                        }
+
+                        this.scene.add(nodeMesh);
+                        this.nodes.set(node.id, nodeMesh);
+                    }
                 }
             }
         });
@@ -7030,7 +7024,7 @@ export class EnhancedNodeManager {
 
     private calculateCommitAge(timestamp: number): number {
         const now = Date.now();
-        return (now - timestamp) / (1000 * 60 * 60 * 24); // Convert to days
+        return (now - timestamp) / (1000 * 60 * 60 * 24);
     }
 
     private calculateImportance(node: { id: string, data: NodeData }): number {
@@ -7062,7 +7056,6 @@ export class EnhancedNodeManager {
         this.updateFrameCount++;
         const isARMode = platformManager.isXRMode;
 
-        // Skip updates based on context
         if (isARMode && this.updateFrameCount % this.AR_UPDATE_FREQUENCY !== 0) {
             return;
         }
@@ -7081,6 +7074,53 @@ export class EnhancedNodeManager {
                     child.rotateY(0.001 * deltaTime);
                 }
             });
+        }
+    }
+
+    public updateNodePositions(nodes: { id: string, data: { position: [number, number, number], velocity: [number, number, number] } }[]): void {
+        nodes.forEach((node, index) => {
+            const existingNode = this.nodes.get(node.id);
+            const scale = this.nodeScales.get(node.id) || this.calculateNodeScale(0.5); // Default importance of 0.5
+
+            if (existingNode) {
+                existingNode.position.set(
+                    node.data.position[0],
+                    node.data.position[1],
+                    node.data.position[2]
+                );
+            } else {
+                // Create a new node if it doesn't exist
+                if (!this.isInstanced) {
+                    const nodeMesh = new Mesh(this.nodeGeometry, this.nodeMaterial);
+                    nodeMesh.position.set(
+                        node.data.position[0],
+                        node.data.position[1],
+                        node.data.position[2]
+                    );
+                    nodeMesh.scale.setScalar(scale);
+                    nodeMesh.layers.enable(0);
+                    nodeMesh.layers.enable(1);
+                    this.scene.add(nodeMesh);
+                    this.nodes.set(node.id, nodeMesh);
+                } else if (this.instancedMesh) {
+                this.reusablePosition.set(
+                    node.data.position[0],
+                    node.data.position[1],
+                    node.data.position[2]
+                );
+                this.reusableScale.setScalar(scale);
+                this.reusableMatrix.compose(
+                    this.reusablePosition,
+                    this.quaternion,
+                    this.reusableScale
+                );
+                this.instancedMesh.setMatrixAt(index, this.reusableMatrix);
+                }
+            }
+        });
+
+        if (this.isInstanced && this.instancedMesh) {
+            this.instancedMesh.instanceMatrix.needsUpdate = true;
         }
     }
 
@@ -7112,35 +7152,7 @@ export class EnhancedNodeManager {
             this.scene.remove(node);
         });
         this.nodes.clear();
-    }
-
-    public updateNodePositions(nodes: { id: string, data: { position: [number, number, number], velocity: [number, number, number] } }[]): void {
-        nodes.forEach((node, index) => {
-            const existingNode = this.nodes.get(node.id);
-            if (existingNode) {
-                existingNode.position.set(
-                    node.data.position[0],
-                    node.data.position[1],
-                    node.data.position[2]
-                );
-            } else if (this.isInstanced && this.instancedMesh) {
-                this.reusablePosition.set(
-                    node.data.position[0],
-                    node.data.position[1],
-                    node.data.position[2]
-                );
-                this.reusableMatrix.compose(
-                    this.reusablePosition,
-                    this.quaternion,
-                    this.reusableScale.set(1, 1, 1)
-                );
-                this.instancedMesh.setMatrixAt(index, this.reusableMatrix);
-            }
-        });
-
-        if (this.isInstanced && this.instancedMesh) {
-            this.instancedMesh.instanceMatrix.needsUpdate = true;
-        }
+        this.nodeScales.clear();
     }
 
     public setXRMode(enabled: boolean): void {
@@ -7164,6 +7176,7 @@ import { Settings } from '../types/settings/base';
 import { defaultSettings } from '../state/defaultSettings';
 import { XRHandWithHaptics } from '../types/xr';
 import { EdgeManager } from './EdgeManager';
+import { EnhancedNodeManager } from './EnhancedNodeManager';
 import { graphDataManager } from '../state/graphData';
 import { TextRenderer } from './textRenderer';
 import { GraphData } from '../core/types';
@@ -7172,49 +7185,113 @@ const logger = createLogger('VisualizationController');
 
 type VisualizationCategory = 'visualization' | 'physics' | 'rendering';
 type PendingUpdate = { category: VisualizationCategory; value: any };
+type NodePositionUpdate = { id: string, data: { position: [number, number, number], velocity: [number, number, number] } };
 
 export class VisualizationController {
     private static instance: VisualizationController | null = null;
     private currentSettings: Settings;
     private edgeManager: EdgeManager | null = null;
+    private nodeManager: EnhancedNodeManager | null = null;
     private textRenderer: TextRenderer | null = null;
     private isInitialized: boolean = false;
     private pendingUpdates: Map<string, PendingUpdate> = new Map();
     private pendingEdgeUpdates: GraphData['edges'] | null = null;
+    private pendingNodeUpdates: GraphData['nodes'] | null = null;
+    private lastUpdateTime: number = performance.now();
 
     private constructor() {
-        // Initialize with complete default settings
         this.currentSettings = { ...defaultSettings };
         
         // Subscribe to graph data updates
         graphDataManager.subscribe((data: GraphData) => {
-            if (this.isInitialized && this.edgeManager) {
-                this.edgeManager.updateEdges(data.edges);
+            if (this.isInitialized) {
+                if (this.nodeManager) {
+                    // Update both node data and positions
+                    this.nodeManager.updateNodes(data.nodes);
+                    if (data.nodes.length > 0) {
+                        const positionUpdates: NodePositionUpdate[] = data.nodes.map(node => ({
+                            id: node.id,
+                            data: {
+                                position: [node.data.position.x, node.data.position.y, node.data.position.z],
+                                velocity: [0, 0, 0] // Default velocity if not provided
+                            }
+                        }));
+                        this.nodeManager.updateNodePositions(positionUpdates);
+                    }
+                }
+                if (this.edgeManager) {
+                    this.edgeManager.updateEdges(data.edges);
+                }
             } else {
-                // Queue edge updates until initialized
+                this.pendingNodeUpdates = data.nodes;
                 this.pendingEdgeUpdates = data.edges;
-                logger.debug('Queuing edge updates until initialization');
+                logger.debug('Queuing updates until initialization');
             }
+        });
+        
+        // Subscribe to position updates from WebSocket
+        graphDataManager.subscribeToPositionUpdates((positions: Float32Array) => {
+            if (!this.isInitialized || !this.nodeManager) return;
+            
+            const numNodes = positions.length / 6; // 6 floats per node (x,y,z, vx,vy,vz)
+            const updates: NodePositionUpdate[] = [];
+            
+            for (let i = 0; i < numNodes; i++) {
+                const baseIndex = i * 6;
+                updates.push({
+                    id: `node_${i}`, // Node IDs should match the order in the array
+                    data: {
+                        position: [positions[baseIndex], positions[baseIndex + 1], positions[baseIndex + 2]],
+                        velocity: [positions[baseIndex + 3], positions[baseIndex + 4], positions[baseIndex + 5]]
+                    }
+                });
+            }
+            
+            this.nodeManager.updateNodePositions(updates);
         });
     }
 
     public initializeScene(scene: Scene, camera: Camera): void {
         logger.info('Initializing visualization scene');
         
-        // Initialize edge manager with scene and settings
         this.edgeManager = new EdgeManager(scene, this.currentSettings);
+        this.nodeManager = new EnhancedNodeManager(scene, this.currentSettings);
         this.textRenderer = new TextRenderer(camera, scene);
         this.isInitialized = true;
         
-        // Apply any pending updates
         this.applyPendingUpdates();
         
-        // Initialize with current graph data
         const currentData = graphDataManager.getGraphData();
-        if (this.pendingEdgeUpdates) {
+        
+        if (this.pendingNodeUpdates && this.nodeManager) {
+            this.nodeManager.updateNodes(this.pendingNodeUpdates);
+            // Also update positions
+            const positionUpdates: NodePositionUpdate[] = this.pendingNodeUpdates.map(node => ({
+                id: node.id,
+                data: {
+                    position: [node.data.position.x, node.data.position.y, node.data.position.z],
+                    velocity: [0, 0, 0]
+                }
+            }));
+            this.nodeManager.updateNodePositions(positionUpdates);
+            this.pendingNodeUpdates = null;
+        } else if (currentData.nodes.length > 0 && this.nodeManager) {
+            this.nodeManager.updateNodes(currentData.nodes);
+            // Update positions for current data
+            const positionUpdates: NodePositionUpdate[] = currentData.nodes.map(node => ({
+                id: node.id,
+                data: {
+                    position: [node.data.position.x, node.data.position.y, node.data.position.z],
+                    velocity: [0, 0, 0]
+                }
+            }));
+            this.nodeManager.updateNodePositions(positionUpdates);
+        }
+        
+        if (this.pendingEdgeUpdates && this.edgeManager) {
             this.edgeManager.updateEdges(this.pendingEdgeUpdates);
             this.pendingEdgeUpdates = null;
-        } else if (currentData.edges.length > 0) {
+        } else if (currentData.edges.length > 0 && this.edgeManager) {
             this.edgeManager.updateEdges(currentData.edges);
         }
         
@@ -7222,7 +7299,7 @@ export class VisualizationController {
     }
 
     private applyPendingUpdates(): void {
-        if (!this.isInitialized || !this.edgeManager) {
+        if (!this.isInitialized) {
             logger.debug('Cannot apply pending updates - not initialized');
             return;
         }
@@ -7232,7 +7309,6 @@ export class VisualizationController {
             let current = this.currentSettings as any;
             const parts = path.split('.');
             
-            // Update the settings object
             for (let i = 0; i < parts.length - 1; i++) {
                 const part = parts[i];
                 if (!(part in current)) {
@@ -7242,7 +7318,6 @@ export class VisualizationController {
             }
             current[parts[parts.length - 1]] = update.value;
             
-            // Apply the update
             this.applySettingUpdate(update.category);
         });
         
@@ -7403,7 +7478,6 @@ export class VisualizationController {
         if (!this.isInitialized) return;
         this.updateNodeAppearance();
         this.updateEdgeAppearance();
-        // Update text labels
         if (this.textRenderer) {
             this.textRenderer.update();
         }
@@ -7412,6 +7486,9 @@ export class VisualizationController {
     private updateNodeAppearance(): void {
         if (!this.isInitialized) return;
         logger.debug('Updating node appearance');
+        if (this.nodeManager) {
+            this.nodeManager.handleSettingsUpdate(this.currentSettings);
+        }
     }
 
     private updateEdgeAppearance(): void {
@@ -7438,28 +7515,33 @@ export class VisualizationController {
         logger.debug('Updating rendering quality');
     }
 
-    public updateEdges(edges: any[]): void {
-        if (!this.isInitialized) {
-            this.pendingEdgeUpdates = edges;
-            logger.debug('Queuing edge updates', { count: edges.length });
-            return;
-        }
-
-        if (this.edgeManager) {
-            this.edgeManager.updateEdges(edges);
-            logger.debug('Edges updated', { count: edges.length });
-        } else {
-            logger.warn('EdgeManager not initialized');
+    public updateNodePositions(nodes: NodePositionUpdate[]): void {
+        if (this.nodeManager) {
+            this.nodeManager.updateNodePositions(nodes);
         }
     }
 
     public update(): void {
-        if (this.isInitialized && this.textRenderer) {
-            this.textRenderer.update();
+        if (this.isInitialized) {
+            const now = performance.now();
+            const deltaTime = (now - this.lastUpdateTime) / 1000; // Convert to seconds
+            this.lastUpdateTime = now;
+
+            if (this.nodeManager) {
+                this.nodeManager.update(deltaTime);
+            }
+            
+            if (this.textRenderer) {
+                this.textRenderer.update();
+            }
         }
     }
 
     public dispose(): void {
+        if (this.nodeManager) {
+            this.nodeManager.dispose();
+            this.nodeManager = null;
+        }
         if (this.edgeManager) {
             this.edgeManager.dispose();
             this.edgeManager = null;
@@ -7469,6 +7551,7 @@ export class VisualizationController {
         this.isInitialized = false;
         this.pendingUpdates.clear();
         this.pendingEdgeUpdates = null;
+        this.pendingNodeUpdates = null;
         VisualizationController.instance = null;
     }
 }
@@ -9113,20 +9196,36 @@ export class GraphDataManager {
       return;
     }
   
-    // Log for debugging
-    logger.debug('Received binary position update:', positions);
-  
     if (positions.length % FLOATS_PER_NODE !== 0) {
       logger.error('Invalid position array length:', positions.length);
       return;
     }
   
+    // Update node positions in the internal Map
+    const nodeArray = Array.from(this.nodes.values());
+    const numNodes = positions.length / FLOATS_PER_NODE;
+    
+    for (let i = 0; i < numNodes && i < nodeArray.length; i++) {
+      const node = nodeArray[i];
+      const baseIndex = i * FLOATS_PER_NODE;
+      
+      // Update node position and velocity
+      node.data.position = {
+        x: positions[baseIndex],
+        y: positions[baseIndex + 1],
+        z: positions[baseIndex + 2]
+      };
+      node.data.velocity = {
+        x: positions[baseIndex + 3],
+        y: positions[baseIndex + 4],
+        z: positions[baseIndex + 5]
+      };
+      
+      this.nodes.set(node.id, node);
+    }
+    
     this.positionUpdateListeners.forEach(listener => {
-      try {
-        listener(positions);
-      } catch (error) {
-        logger.error('Error in position update listener:', error);
-      }
+      listener(positions);
     });
   }
 }
@@ -12218,15 +12317,22 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
     private async createSubsection(subcategory: string, paths: string[]): Promise<HTMLElement> {
         const subsection = document.createElement('div');
         subsection.className = 'settings-subsection';
-        
-        const header = document.createElement('h3');
+
+const header = document.createElement('h3');
         header.textContent = formatSettingName(subcategory);
         header.className = 'settings-subsection-header';
         subsection.appendChild(header);
         
+        // Sort paths to ensure consistent ordering
+        paths.sort();
+
+        // Create controls for each property
         for (const path of paths) {
-            const control = await this.createSettingControl(path);
-            subsection.appendChild(control);
+            const value = this.settingsStore.get(path);
+            if (value !== undefined && value !== null) {
+                const control = await this.createSettingControl(path);
+                subsection.appendChild(control);
+            }
         }
         
         return subsection;
@@ -12251,6 +12357,51 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
     private async createInputElement(path: string, value: any): Promise<HTMLElement> {
         const type = typeof value;
         let input: HTMLElement;
+        
+        const getNumericStep = (path: string): string => {
+            if (path.includes('size') || path.includes('iterations')) return '1';
+            if (path.includes('opacity') || path.includes('strength')) return '0.1';
+            if (path.includes('intensity')) return '0.1';
+            return '0.01';
+        };
+
+        // Handle arrays specially
+        if (Array.isArray(value)) {
+            const div = document.createElement('div');
+            div.className = 'array-input';
+
+            // Create inputs for each array element
+            value.forEach((item, index) => {
+                const itemInput = document.createElement('input');
+                const isNumeric = typeof item === 'number';
+                itemInput.type = isNumeric ? 'number' : 'text';
+                if (isNumeric) {
+                    itemInput.step = getNumericStep(path);
+                    itemInput.min = '0';
+                    itemInput.value = item.toString();
+                } else {
+                    itemInput.value = String(item);
+                }
+                itemInput.className = 'array-item';
+                itemInput.onchange = (e) => {
+                    const target = e.target as HTMLInputElement;
+                    const newValue = [...value];
+                    if (isNumeric) {
+                        const parsed = parseFloat(target.value);
+                        newValue[index] = isNaN(parsed) ? item : Math.max(0, parsed);
+                        // Update the input value to show the processed value
+                        target.value = newValue[index].toString();
+                    } else {
+                        newValue[index] = target.value;
+                    }
+                    this.updateSetting(path, newValue);
+                };
+                div.appendChild(itemInput);
+            });
+
+            input = div;
+            return input;
+        }
 
         switch (type) {
             case 'boolean': {
@@ -12268,11 +12419,15 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
             case 'number': {
                 const numberInput = document.createElement('input');
                 numberInput.type = 'number';
-                numberInput.value = value.toString();
-                numberInput.step = '0.01';
+                numberInput.step = getNumericStep(path);
+                numberInput.min = '0';
+                numberInput.value = Math.max(0, value).toString();
                 numberInput.onchange = (e) => {
                     const target = e.target as HTMLInputElement;
-                    this.updateSetting(path, parseFloat(target.value));
+                    const parsed = parseFloat(target.value);
+                    const processedValue = isNaN(parsed) ? value : Math.max(0, parsed);
+                    target.value = processedValue.toString();
+                    this.updateSetting(path, processedValue);
                 };
                 input = numberInput;
                 break;
@@ -12282,6 +12437,7 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
                 if (path.toLowerCase().includes('color')) {
                     const colorInput = document.createElement('input');
                     colorInput.type = 'color';
+                    colorInput.className = 'color-input';
                     colorInput.value = value;
                     colorInput.onchange = (e) => {
                         const target = e.target as HTMLInputElement;
@@ -12302,10 +12458,22 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
             }
 
             default: {
-                const div = document.createElement('div');
-                div.className = 'value-display';
-                div.textContent = value?.toString() || '';
-                input = div;
+                if (value === null || value === undefined) {
+                    const div = document.createElement('div');
+                    div.className = 'value-display';
+                    div.textContent = String(value);
+                    input = div;
+                } else {
+                    // For any other type, create a text input
+                    const textInput = document.createElement('input');
+                    textInput.type = 'text';
+                    textInput.value = String(value);
+                    textInput.onchange = (e) => {
+                        const target = e.target as HTMLInputElement;
+                        this.updateSetting(path, target.value);
+                    };
+                    input = textInput;
+                }
             }
         }
 
@@ -12313,18 +12481,73 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
     }
 
     private updateSetting(path: string, value: any): void {
-        if (this.updateTimeout !== null) {
-            window.clearTimeout(this.updateTimeout);
-        }
-
-        this.updateTimeout = window.setTimeout(async () => {
-            try {
-                await this.settingsStore.set(path, value);
-                this.emit('settings:updated', { path, value });
-            } catch (error) {
-                logger.error(`Failed to update setting ${path}:`, error);
+        try {
+            // Get the current value to compare types
+            const currentValue = this.settingsStore.get(path);
+            
+            // Process the value based on type
+            let processedValue = value;
+            if (Array.isArray(currentValue)) {
+                processedValue = value.map((v: any, i: number) => {
+                    const originalValue = currentValue[i];
+                    if (typeof originalValue === 'number') {
+                        const parsed = parseFloat(v);
+                        return isNaN(parsed) ? originalValue : Math.max(0, parsed);
+                    }
+                    return v;
+                });
+            } else if (typeof currentValue === 'number') {
+                const parsed = parseFloat(value);
+                processedValue = isNaN(parsed) ? currentValue : Math.max(0, parsed);
             }
-        }, 100);
+
+            this.settingsStore.set(path, processedValue);
+            this.emit('settings:updated', { path, value: processedValue });
+
+            // Update the UI to reflect the processed value
+            const control = this.container.querySelector(`[data-setting-path="${path}"]`);
+            if (control) {
+                if (Array.isArray(processedValue)) {
+                    const inputs = control.querySelectorAll('.array-item') as NodeListOf<HTMLInputElement>;
+                    inputs.forEach((input, i) => {
+                        input.value = processedValue[i].toString();
+                    });
+                } else {
+                    const input = control.querySelector('input') as HTMLInputElement;
+                    if (input) {
+                        if (input.type === 'number') {
+                            input.value = processedValue.toString();
+                        } else if (input.type === 'checkbox') {
+                            input.checked = processedValue;
+                        } else {
+                            input.value = String(processedValue);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            logger.error(`Failed to update setting ${path}:`, error);
+            // Revert the input to the current value
+            const control = this.container.querySelector(`[data-setting-path="${path}"]`);
+            if (control) {
+                const currentValue = this.settingsStore.get(path);
+                if (Array.isArray(currentValue)) {
+                    const inputs = control.querySelectorAll('.array-item') as NodeListOf<HTMLInputElement>;
+                    inputs.forEach((input, i) => {
+                        input.value = currentValue[i].toString();
+                    });
+                } else {
+                    const input = control.querySelector('input') as HTMLInputElement;
+                    if (input) {
+                        if (input.type === 'checkbox') {
+                            input.checked = Boolean(currentValue);
+                        } else {
+                            input.value = currentValue?.toString() || '';
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private toggleDetached(sectionId: string): void {
@@ -12565,16 +12788,69 @@ ui/ModularControlPanel.css
 .setting-control input[type="color"] {
     width: 40px;
     height: 24px;
-    padding: 0;
-    border: none;
+    padding: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 4px;
     cursor: pointer;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.array-input {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    min-width: 120px;
+}
+
+.array-input .array-item {
+    width: 60px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: #fff;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.array-input .array-item[type="number"] {
+    -moz-appearance: textfield;
+}
+
+.array-input .array-item[type="number"]::-webkit-outer-spin-button,
+.array-input .array-item[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 .setting-control input[type="checkbox"] {
     width: 16px;
     height: 16px;
     cursor: pointer;
+}
+
+.value-display {
+    color: #ddd;
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    min-width: 120px;
+    text-align: right;
+    white-space: pre;
+    overflow-x: auto;
+}
+
+.value-display.subcategory-value {
+    text-align: left;
+    margin: 0.5rem 0 1rem;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.15);
+    border-left: 3px solid #4287f5;
+    font-size: 0.85rem;
+    min-width: unset;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .nested-object-subsection {
@@ -12679,16 +12955,6 @@ ui/ModularControlPanel.css
 .not-authenticated {
     color: #666;
     font-style: italic;
-}
-
-.value-display {
-    color: #ddd;
-    font-family: monospace;
-    background: rgba(0, 0, 0, 0.2);
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    min-width: 120px;
-    text-align: right;
 }
 
 .control-panel {
