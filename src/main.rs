@@ -44,21 +44,12 @@ async fn main() -> std::io::Result<()> {
     // Initialize logging with settings-based configuration
     let log_config = {
         let settings_read = settings.read().await;
-        let file_level = if settings_read.system.debug.enabled {
-            "debug"
-        } else {
-            &settings_read.system.debug.log_level
-        };
-        
-        let console_level = if settings_read.system.debug.enable_websocket_debug {
-            "debug"
-        } else {
-            &settings_read.system.debug.log_level
-        };
+        // Only use debug level if debug is enabled, otherwise use configured level
+        let log_level = &settings_read.system.debug.log_level;
         
         LogConfig::new(
-            file_level,
-            console_level,
+            log_level,
+            log_level,
         )
     };
 

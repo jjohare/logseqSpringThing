@@ -69,6 +69,7 @@ pub struct EdgeSettings {
     pub enable_arrows: bool,
     pub opacity: f32,
     pub width_range: Vec<f32>,
+    pub quality: String
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -105,7 +106,7 @@ pub struct AnimationSettings {
     pub pulse_enabled: bool,
     pub pulse_speed: f32,
     pub pulse_strength: f32,
-    pub wave_speed: f32,
+    pub wave_speed: f32
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -113,6 +114,11 @@ pub struct LabelSettings {
     pub desktop_font_size: u32,
     pub enable_labels: bool,
     pub text_color: String,
+    pub text_outline_color: String,
+    pub text_outline_width: f32,
+    pub text_resolution: u32,
+    pub text_padding: u32,
+    pub billboard_mode: String
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -409,6 +415,7 @@ impl Default for Settings {
                     enable_arrows: false,
                     opacity: 0.6,
                     width_range: vec![1.0, 3.0],
+                    quality: "medium".to_string()
                 },
                 physics: PhysicsSettings {
                     attraction_strength: 0.015,
@@ -439,12 +446,17 @@ impl Default for Settings {
                     pulse_enabled: false,
                     pulse_speed: 1.0,
                     pulse_strength: 1.0,
-                    wave_speed: 1.0,
+                    wave_speed: 1.0
                 },
                 labels: LabelSettings {
                     desktop_font_size: 48,
                     enable_labels: true,
                     text_color: "#FFFFFF".to_string(),
+                    text_outline_color: "#000000".to_string(),
+                    text_outline_width: 0.1,
+                    text_resolution: 32,
+                    text_padding: 2,
+                    billboard_mode: "camera".to_string(),
                 },
                 bloom: BloomSettings {
                     edge_bloom_strength: 0.3,
@@ -518,11 +530,11 @@ impl Default for Settings {
                     session_timeout: 3600,
                 },
                 debug: DebugSettings {
-                    enabled: true,
-                    enable_data_debug: true,
-                    enable_websocket_debug: true,
-                    log_binary_headers: true,
-                    log_full_json: true,
+                    enabled: false,
+                    enable_data_debug: false,
+                    enable_websocket_debug: false,
+                    log_binary_headers: false,
+                    log_full_json: false,
                     log_level: "debug".to_string(),
                     log_format: "json".to_string(),
                 },

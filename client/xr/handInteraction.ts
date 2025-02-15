@@ -1,9 +1,9 @@
 import { Vector3 } from 'three';
 import { XRHandWithHaptics } from '../types/xr';
 import { WebSocketService } from '../websocket/websocketService';
-import { NodeManager } from '../rendering/nodes';
+import { NodeManagerFacade } from '../rendering/node/NodeManagerFacade';
+import { NodeInteractionManager } from '../rendering/node/interaction/NodeInteractionManager';
 import { createLogger } from '../core/logger';
-import { Node } from '../core/types';
 
 const _logger = createLogger('HandInteraction');
 
@@ -11,11 +11,11 @@ export class HandInteractionManager {
     private static instance: HandInteractionManager;
     private lastPinchState: boolean = false;
     private websocketService: WebSocketService;
-    private nodeManager: NodeManager;
+    private nodeManager?: NodeManagerFacade;
+    private interactionManager?: NodeInteractionManager;
 
     private constructor() {
         this.websocketService = WebSocketService.getInstance();
-        this.nodeManager = NodeManager.getInstance();
     }
 
     public static getInstance(): HandInteractionManager {
@@ -25,7 +25,14 @@ export class HandInteractionManager {
         return HandInteractionManager.instance;
     }
 
+    public setNodeManager(nodeManager: NodeManagerFacade): void {
+        this.nodeManager = nodeManager;
+        this.interactionManager = NodeInteractionManager.getInstance(nodeManager.getInstancedMesh());
+    }
+
     public processHandInput(hand: XRHandWithHaptics): void {
+        if (!this.nodeManager || !this.interactionManager) return;
+
         const thumbTip = hand.hand.joints['thumb-tip'];
         const indexTip = hand.hand.joints['index-finger-tip'];
 
@@ -43,47 +50,45 @@ export class HandInteractionManager {
                 this.handlePinchGesture(indexTip.position);
             }
         }
+
+        // Pass hand data to interaction manager
+        this.interactionManager.handleHandInteraction(hand);
     }
 
     private handlePinchGesture(position: Vector3): void {
-        // Find closest node to index finger tip
-        const nodes = this.nodeManager.getCurrentNodes();
-        let closestNode: Node | null = null;
-        let closestDistance = Infinity;
+        if (!this.nodeManager || !this.interactionManager) return;
 
-        for (const node of nodes) {
-            const nodePos = this.nodeManager.getNodePosition(node.id);
-            const distance = nodePos.distanceTo(position);
-            if (distance < closestDistance && distance < 0.1) { // 10cm threshold
-                closestNode = node;
-                closestDistance = distance;
-            }
-        }
+        // Get the instance mesh
+        const instanceMesh = this.nodeManager.getInstancedMesh();
+        if (!instanceMesh) return;
 
-        if (closestNode && closestNode.id) {
-            _logger.debug(`Pinch gesture detected on node ${closestNode.id}`);
-            
-            // Send node position update through websocket
-            this.websocketService.sendNodeUpdates([{
-                id: closestNode.id,
-                position: {
-                    x: position.x,
-                    y: position.y,
-                    z: position.z
-                },
-                velocity: {
-                    x: 0,
-                    y: 0,
-                    z: 0
-                }
-            }]);
+        // Get the intersected node index
+        const intersectedNodeIndex = this.interactionManager.getIntersectedNodeIndex(position);
+        if (intersectedNodeIndex === -1) return;
 
-            // Also update local node position
-            this.nodeManager.updateNodePosition(closestNode.id, position);
-        }
+        // Get node ID from instance index
+        const nodeId = this.nodeManager.getNodeId(intersectedNodeIndex);
+        if (!nodeId) return;
+
+        _logger.debug(`Pinch gesture detected on node ${nodeId}`);
+        
+        // Send node position update through websocket
+        this.websocketService.sendNodeUpdates([{
+            id: nodeId,
+            position: { x: position.x, y: position.y, z: position.z },
+            velocity: { x: 0, y: 0, z: 0 }
+        }]);
+
+        // Update local node position
+        this.nodeManager.updateNodePositions([{
+            id: nodeId,
+            data: { position: [position.x, position.y, position.z], velocity: [0, 0, 0] }
+        }]);
     }
 
     public dispose(): void {
         this.lastPinchState = false;
+        this.nodeManager = undefined;
+        this.interactionManager = undefined;
     }
 }

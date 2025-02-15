@@ -7,12 +7,12 @@ export const defaultSettings: Settings = {
             metalness: 0.8,
             opacity: 1.0,
             roughness: 0.2,
-            sizeRange: [40, 120], // Native units for node sizes
-            quality: 'high',
-            enableInstancing: false,
-            enableHologram: false,
+            sizeRange: [20, 60], // Reduced node sizes
+            quality: 'medium', // Default to medium quality for better performance
+            enableInstancing: true,
+            enableHologram: true,
             enableMetadataShape: false,
-            enableMetadataVisualization: false,
+            enableMetadataVisualization: false, // Disable for performance
             colorRangeAge: ['#ff0000', '#00ff00'],
             colorRangeLinks: ['#0000ff', '#ff00ff']
         },
@@ -23,7 +23,15 @@ export const defaultSettings: Settings = {
             enableArrows: false,
             opacity: 0.8,
             widthRange: [1.5, 4.0],
-            quality: 'medium'
+            quality: 'medium',
+            // New shader-based edge settings
+            enableFlowEffect: true,
+            flowSpeed: 1.0,
+            flowIntensity: 0.6,
+            glowStrength: 0.4,
+            distanceIntensity: 0.3,
+            useGradient: false,
+            gradientColors: ['#888888', '#aaaaaa']
         },
         physics: {
             attractionStrength: 0.015,
@@ -65,9 +73,9 @@ export const defaultSettings: Settings = {
             textColor: '#ffffff',
             textOutlineColor: '#000000',
             textOutlineWidth: 0.1,
-            textResolution: 32,
+            textResolution: 16,
             textPadding: 2,
-            billboardMode: 'camera'
+            billboardMode: 'camera' 
         },
         bloom: {
             edgeBloomStrength: 1.1,
@@ -79,21 +87,21 @@ export const defaultSettings: Settings = {
             threshold: 0.3
         },
         hologram: {
-            ringCount: 3,
-            sphereSizes: [40, 80, 120],  // Native world units
+            ringCount: 2,
+            sphereSizes: [40, 80],  // Reduced to 2 layers
             ringRotationSpeed: 1.0,
             ringColor: '#00ffff',
             ringOpacity: 0.6,
-            enableBuckminster: true,
-            buckminsterSize: 120,  // Native world units
-            buckminsterOpacity: 0.6,
+            enableBuckminster: false,
             enableGeodesic: false,
-            geodesicSize: 100,  // Native world units
-            geodesicOpacity: 0.5,
+            buckminsterSize: 0,  // Keep but set to 0 since disabled
+            buckminsterOpacity: 0,  // Keep but set to 0 since disabled
+            geodesicSize: 0,  // Keep but set to 0 since disabled
+            geodesicOpacity: 0,  // Keep but set to 0 since disabled
             enableTriangleSphere: true,
-            triangleSphereSize: 140,  // Native world units
-            triangleSphereOpacity: 0.4,
-            globalRotationSpeed: 1.0
+            triangleSphereSize: 80,  // Single size for instanced geometry
+            triangleSphereOpacity: 0.15,
+            globalRotationSpeed: 0.03
         }
     },
     system: {

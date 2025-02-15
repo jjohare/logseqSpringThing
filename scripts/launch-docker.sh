@@ -241,7 +241,7 @@ verify_client_structure() {
         "$PROJECT_ROOT/client/core/logger.ts"
         "$PROJECT_ROOT/client/websocket/websocketService.ts"
         "$PROJECT_ROOT/client/rendering/scene.ts"
-        "$PROJECT_ROOT/client/rendering/nodes.ts"
+        "$PROJECT_ROOT/client/rendering/node/geometry/NodeGeometryManager.ts"
         "$PROJECT_ROOT/client/rendering/textRenderer.ts"
         "$PROJECT_ROOT/client/state/settings.ts"
         "$PROJECT_ROOT/client/state/graphData.ts"

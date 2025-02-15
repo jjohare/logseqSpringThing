@@ -55,11 +55,7 @@ impl SocketFlowServer {
                 if encoder.write_all(&data).is_ok() {
                     if let Ok(compressed) = encoder.finish() {
                         if compressed.len() < data.len() {
-                            debug!(
-                                "Compressed binary message: {} -> {} bytes",
-                                data.len(),
-                                compressed.len()
-                            );
+                            debug!("Compressed binary message: {} -> {} bytes", data.len(), compressed.len());
                             return compressed;
                         }
                     }
@@ -77,16 +73,11 @@ impl SocketFlowServer {
                 match decoder.read_to_end(&mut decompressed) {
                     Ok(_) => {
                         if decompressed.len() > data.len() {
-                            debug!(
-                                "Decompressed binary message: {} -> {} bytes",
-                                data.len(),
-                                decompressed.len()
-                            );
+                            debug!("Decompressed binary message: {} -> {} bytes", data.len(), decompressed.len());
                             return Ok(decompressed);
                         }
                     }
                     Err(e) => {
-                        // If decompression fails, assume the data wasn't compressed
                         debug!("Decompression failed (data likely uncompressed): {}", e);
                     }
                 }
@@ -149,7 +140,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SocketFlowServer 
                                 // Start sending GPU-computed position updates
                                 let app_state = self.app_state.clone();
                                 
-                                ctx.run_interval(self.update_interval, move |actor, ctx| {
+                                ctx.run_interval(self.update_interval, move |act, ctx| {
                                     let app_state_clone = app_state.clone();
 
                                     let fut = async move {
@@ -160,10 +151,16 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SocketFlowServer 
 
                                         // Only process and send updates if we have nodes
                                         if !raw_nodes.is_empty() {
-                                            debug!(
-                                                "Processing binary update for {} nodes",
-                                                raw_nodes.len()
-                                            );
+                                            // Check debug settings
+                                            let should_debug = if let Ok(settings) = app_state_clone.settings.try_read() {
+                                                settings.system.debug.enabled && 
+                                                settings.system.debug.enable_websocket_debug
+                                            } else {
+                                                 false
+                                           };
+                                            if should_debug {
+                                                debug!("Processing binary update for {} nodes", raw_nodes.len());
+                                            }
                                             let nodes: Vec<NodeData> = raw_nodes
                                                 .into_iter()
                                                 .map(|node| NodeData {
@@ -181,26 +178,27 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SocketFlowServer 
                                                 })
                                                 .collect::<Vec<_>>();
 
-                                            debug!(
-                                                "Encoding binary update with {} nodes",
-                                                nodes.len()
-                                            );
+                                            if should_debug {
+                                                debug!("Encoding binary update with {} nodes", nodes.len());
+                                            }
                                             let data = binary_protocol::encode_node_data(
                                                 &nodes,
                                                 MessageType::PositionVelocityUpdate,
                                             );
-                                            debug!("Binary message size: {} bytes", data.len());
+                                            if should_debug {
+                                                debug!("Binary message size: {} bytes", data.len());
+                                            }
                                             Some(data)
                                         } else {
-                                            debug!("No nodes to update, skipping binary message");
+                                            // Skip debug log when no nodes to update
                                             None
                                         }
                                     };
 
-                                    let fut = fut.into_actor(actor);
-                                    ctx.spawn(fut.map(|maybe_binary_data, actor, ctx| {
+                                    let fut = fut.into_actor(act);
+                                    ctx.spawn(fut.map(|maybe_binary_data, act, ctx| {
                                         if let Some(binary_data) = maybe_binary_data {
-                                            let final_data = actor.maybe_compress(binary_data);
+                                            let final_data = act.maybe_compress(binary_data);
                                             ctx.binary(final_data);
                                         }
                                         // Do not send any message if there are no nodes
@@ -298,11 +296,16 @@ pub async fn socket_flow_handler(
     app_state: web::Data<AppState>,
     settings: web::Data<Arc<RwLock<crate::config::Settings>>>,
 ) -> Result<HttpResponse, Error> {
-    debug!("WebSocket connection attempt from {:?}", req.peer_addr());
+    let should_debug = settings.try_read().map(|s| {
+        s.system.debug.enabled && s.system.debug.enable_websocket_debug
+    }).unwrap_or(false);
+
+    if should_debug {
+        debug!("WebSocket connection attempt from {:?}", req.peer_addr());
+    }
 
     // Check for WebSocket upgrade
     if !req.headers().contains_key("Upgrade") {
-        debug!("Not a WebSocket upgrade request");
         return Ok(HttpResponse::BadRequest().body("WebSocket upgrade required"));
     }
 

@@ -3,7 +3,7 @@ import { createLogger } from '../core/logger';
 import { defaultSettings } from './defaultSettings';
 import { buildApiUrl } from '../core/api';
 import { API_ENDPOINTS } from '../core/constants';
-import { Logger } from '../core/logger';
+import { Logger, LoggerConfig } from '../core/logger';
 import { validateSettings, validateSettingValue, ValidationError } from '../types/settings/validation';
 import { convertObjectKeysToSnakeCase, convertObjectKeysToCamelCase } from '../core/utils';
 
@@ -70,6 +70,12 @@ export class SettingsStore {
                         // Use server settings as base, filling in any missing fields with defaults
                         this.settings = this.deepMerge({ ...defaultSettings }, camelCaseSettings);
                         this.settingsOrigin = 'server';
+                        
+                        // Initialize logger configuration from settings
+                        if (this.settings.system?.debug) {
+                            LoggerConfig.setGlobalDebug(this.settings.system.debug.enabled);
+                            LoggerConfig.setFullJson(this.settings.system.debug.logFullJson);
+                        }
                         logger.info('Using server settings with defaults as fallback');
                     } else {
                         const errorText = await response.text();
@@ -83,6 +89,12 @@ export class SettingsStore {
                     }
                     logger.warn('Error loading server settings, falling back to defaults:', error);
                     this.settings = { ...defaultSettings };
+                    
+                    // Initialize logger with default settings
+                    if (this.settings.system?.debug) {
+                        LoggerConfig.setGlobalDebug(this.settings.system.debug.enabled);
+                        LoggerConfig.setFullJson(this.settings.system.debug.logFullJson);
+                    }
                     this.settingsOrigin = 'default';
                     
                     // Validate default settings
@@ -146,7 +158,7 @@ export class SettingsStore {
         };
     }
 
-    public async subscribe(path: string, callback: SettingsChangeCallback): Promise<() => void> {
+    public async subscribe(path: string, callback: SettingsChangeCallback, immediate: boolean = false): Promise<() => void> {
         if (!this.initialized) {
             await this.initialize();
         }
@@ -160,10 +172,12 @@ export class SettingsStore {
             subscribers.push(callback);
         }
 
-        // Immediately call callback with current value
-        const value = this.get(path);
-        if (value !== undefined) {
-            callback(path, value);
+        // Only call callback immediately if explicitly requested
+        if (immediate) {
+            const value = this.get(path);
+            if (value !== undefined) {
+                callback(path, value);
+            }
         }
 
         return () => {
@@ -183,6 +197,14 @@ export class SettingsStore {
     public async set(path: string, value: unknown): Promise<void> {
         try {
             // Validate the specific setting change
+            // Update logger config if debug settings change
+            if (path.startsWith('system.debug')) {
+                if (path === 'system.debug.enabled') {
+                    LoggerConfig.setGlobalDebug(value as boolean);
+                } else if (path === 'system.debug.logFullJson') {
+                    LoggerConfig.setFullJson(value as boolean);
+                }
+            }
             const validationErrors = validateSettingValue(path, value, this.settings);
             if (validationErrors.length > 0) {
                 this.notifyValidationErrors(validationErrors);
@@ -263,8 +285,8 @@ export class SettingsStore {
             gestureSmoothing: preparedSettings.xr.gestureSmoothing ?? defaultXR.gestureSmoothing,
             mode: preparedSettings.xr.mode ?? defaultXR.mode,
             roomScale: preparedSettings.xr.roomScale ?? defaultXR.roomScale,
-            quality: preparedSettings.xr.quality ?? defaultXR.quality,
             spaceType: preparedSettings.xr.spaceType ?? defaultXR.spaceType,
+            quality: preparedSettings.xr.quality ?? defaultXR.quality,
             enableHandTracking: preparedSettings.xr.enableHandTracking ?? defaultXR.enableHandTracking,
             handMeshEnabled: preparedSettings.xr.handMeshEnabled ?? defaultXR.handMeshEnabled,
             handMeshColor: preparedSettings.xr.handMeshColor ?? defaultXR.handMeshColor,
@@ -362,11 +384,20 @@ export class SettingsStore {
     private notifySubscribers(path: string, value: unknown): void {
         const subscribers = this.subscribers.get(path);
         if (subscribers) {
+            let scheduledCallbacks = new Set<SettingsChangeCallback>();
+            
             subscribers.forEach(callback => {
                 try {
-                    callback(path, value);
+                    if (!scheduledCallbacks.has(callback)) {
+                        scheduledCallbacks.add(callback);
+                        window.requestAnimationFrame(() => {
+                            if (scheduledCallbacks.has(callback)) {
+                                callback(path, value);
+                            }
+                        });
+                    }
                 } catch (error) {
-                    this.logger.error(`Error in settings subscriber for ${path}:`, error);
+                    this.logger.error(`Error scheduling settings notification for ${path}:`, error);
                 }
             });
         }
@@ -393,33 +424,23 @@ export class SettingsStore {
         return result;
     }
 
-    private updateSettingValue(path: string, value: unknown): void {
+   private updateSettingValue(path: string, value: unknown): void {
         if (!path) {
             throw new Error('Setting path cannot be empty');
         }
-        
+
         const parts = path.split('.');
         const section = parts[0];
         const lastKey = parts.pop()!;
-        const target = parts.reduce((obj: any, key) => {
-            if (!(key in obj)) {
-                obj[key] = {};
-            }
-            return obj[key];
-        }, this.settings);
 
-        if (!target || typeof target !== 'object') {
-            throw new Error(`Invalid settings path: ${path}`);
-        }
-
-        // Update the specific value
-        target[lastKey] = value;
+        // Create a new settings object with the updated value
+        this.settings = this.deepUpdate(this.settings, parts, lastKey, value);
 
         // If this is an XR setting, ensure all required fields are present
         if (section === 'xr') {
             const currentXR = this.settings.xr;
             const defaultXR = defaultSettings.xr;
-            
+
             // Ensure all required XR fields are present with defaults
             this.settings.xr = {
                 ...currentXR,
@@ -439,6 +460,18 @@ export class SettingsStore {
                 movementAxes: currentXR.movementAxes ?? defaultXR.movementAxes
             };
         }
+    }
+
+    private deepUpdate(obj: any, path: string[], lastKey: string, value: unknown): any {
+        if (path.length === 0) {
+            return { ...obj, [lastKey]: value };
+        }
+
+        const key = path.shift()!;
+        return {
+            ...obj,
+            [key]: this.deepUpdate(obj[key] || {}, path, lastKey, value)
+        };
     }
 
     public dispose(): void {

@@ -234,46 +234,9 @@ export class GraphDataManager {
    * Enable binary position updates via WebSocket
    */
   public enableBinaryUpdates(): void {
-    try {
-      const ws = new WebSocket(`wss://${window.location.host}/wss`);
-      ws.binaryType = 'arraybuffer';
-      
-      ws.onopen = () => {
-        logger.info('WebSocket connection established');
-        this.setWebSocketService({
-          send: (data: ArrayBuffer) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(data);
-            }
-          }
-        });
-        this.setBinaryUpdatesEnabled(true);
-      };
-      
-      ws.onmessage = (event: MessageEvent) => {
-        if (event.data instanceof ArrayBuffer) {
-          const positions = new Float32Array(event.data);
-          this.updateNodePositions(positions);
-          this.notifyPositionUpdateListeners(positions);
-        }
-      };
-      
-      ws.onerror = (error) => {
-        logger.error('WebSocket error:', error);
-        this.setBinaryUpdatesEnabled(false);
-      };
-      
-      ws.onclose = () => {
-        logger.warn('WebSocket connection closed');
-        this.setBinaryUpdatesEnabled(false);
-        // Attempt to reconnect after a delay
-        setTimeout(() => this.enableBinaryUpdates(), 5000);
-      };
-      
-    } catch (error) {
-      logger.error('Failed to initialize WebSocket:', error);
-      this.setBinaryUpdatesEnabled(false);
-    }
+    // Enable binary updates flag - actual WebSocket connection is handled by WebSocketService
+    this.setBinaryUpdatesEnabled(true);
+    logger.info('Binary updates enabled');
   }
 
   /**
@@ -425,38 +388,15 @@ export class GraphDataManager {
     if (!this.binaryUpdatesEnabled) {
       return;
     }
-  
+    logger.debug('Received binary position update:', positions);
+       
     if (positions.length % FLOATS_PER_NODE !== 0) {
       logger.error('Invalid position array length:', positions.length);
       return;
-    }
-  
-    // Update node positions in the internal Map
-    const nodeArray = Array.from(this.nodes.values());
-    const numNodes = positions.length / FLOATS_PER_NODE;
-    
-    for (let i = 0; i < numNodes && i < nodeArray.length; i++) {
-      const node = nodeArray[i];
-      const baseIndex = i * FLOATS_PER_NODE;
-      
-      // Update node position and velocity
-      node.data.position = {
-        x: positions[baseIndex],
-        y: positions[baseIndex + 1],
-        z: positions[baseIndex + 2]
-      };
-      node.data.velocity = {
-        x: positions[baseIndex + 3],
-        y: positions[baseIndex + 4],
-        z: positions[baseIndex + 5]
-      };
-      
-      this.nodes.set(node.id, node);
-    }
-    
-    this.positionUpdateListeners.forEach(listener => {
-      listener(positions);
-    });
+    }  
+
+        // Notify listeners of position updates
+        this.notifyPositionUpdateListeners(positions);
   }
 }
 

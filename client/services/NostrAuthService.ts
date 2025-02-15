@@ -1,6 +1,8 @@
 import { SettingsEventEmitter, SettingsEventType } from './SettingsEventEmitter';
 import { SettingsPersistenceService } from './SettingsPersistenceService';
 import { createLogger } from '../core/logger';
+import { buildApiUrl } from '../core/api';
+import { API_ENDPOINTS } from '../core/constants';
 
 const logger = createLogger('NostrAuthService');
 
@@ -61,7 +63,16 @@ export class NostrAuthService {
     public async initialize(): Promise<void> {
         const storedPubkey = localStorage.getItem('nostr_pubkey');
         if (storedPubkey) {
+            // Wait for checkAuthStatus to complete
             await this.checkAuthStatus(storedPubkey);
+            
+            // Emit auth state change after initialization
+            this.eventEmitter.emit(SettingsEventType.AUTH_STATE_CHANGED, {
+                authState: {
+                    isAuthenticated: this.currentUser !== null,
+                    pubkey: this.currentUser?.pubkey
+                }
+            });
         }
     }
 
@@ -119,7 +130,7 @@ export class NostrAuthService {
             const signedEvent = await this.createAuthEvent(pubkey);
 
             // Send authentication request to server
-            const response = await fetch('/api/auth/nostr', {
+            const response = await fetch(buildApiUrl(API_ENDPOINTS.AUTH_NOSTR), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -172,7 +183,7 @@ export class NostrAuthService {
         
         if (currentPubkey && token) {
             try {
-                await fetch('/api/auth/nostr', {
+                await fetch(buildApiUrl(API_ENDPOINTS.AUTH_NOSTR), {
                     method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json',
@@ -243,7 +254,7 @@ export class NostrAuthService {
         }
 
         try {
-            const response = await fetch('/api/auth/nostr/verify', {
+            const response = await fetch(buildApiUrl(API_ENDPOINTS.AUTH_NOSTR_VERIFY), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -263,6 +274,7 @@ export class NostrAuthService {
                 throw new Error('Invalid session');
             }
 
+            // Set currentUser before emitting event
             this.currentUser = {
                 pubkey,
                 isPowerUser: verifyData.is_power_user,
@@ -270,13 +282,6 @@ export class NostrAuthService {
             };
 
             this.settingsPersistence.setCurrentPubkey(pubkey);
-            
-            this.eventEmitter.emit(SettingsEventType.AUTH_STATE_CHANGED, {
-                authState: {
-                    isAuthenticated: true,
-                    pubkey
-                }
-            });
         } catch (error) {
             logger.error('Auth check failed:', error);
             await this.logout();

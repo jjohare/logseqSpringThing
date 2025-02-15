@@ -32,7 +32,12 @@ export const API_ENDPOINTS = {
     WEBSOCKET_CONTROL: '/api/websocket/control',
     
     // File endpoints
-    FILES: '/api/files'
+    FILES: '/api/files',
+    
+    // Auth endpoints
+    AUTH_NOSTR: '/api/auth/nostr',
+    AUTH_NOSTR_VERIFY: '/api/auth/nostr/verify',
+    AUTH_NOSTR_LOGOUT: '/api/auth/nostr/logout'
 } as const;
 
 export type ApiEndpoints = typeof API_ENDPOINTS[keyof typeof API_ENDPOINTS];

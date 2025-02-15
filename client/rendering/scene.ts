@@ -2,7 +2,19 @@
  * Three.js scene management with simplified setup
  */
 
-import { Scene, PerspectiveCamera, WebGLRenderer, Color, AmbientLight, DirectionalLight, GridHelper, Vector2, Material, Mesh, Object3D } from 'three';
+import {
+  Scene,
+  PerspectiveCamera,
+  WebGLRenderer,
+  Color,
+  AmbientLight,
+  DirectionalLight,
+  GridHelper,
+  Vector2,
+  Material,
+  Mesh,
+  Object3D
+} from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
@@ -15,6 +27,7 @@ const logger = createLogger('SceneManager');
 
 // Constants
 const BACKGROUND_COLOR = 0x212121;  // Material Design Grey 900
+const LOW_PERF_FPS_THRESHOLD = 45;  // FPS threshold for low performance mode
 
 export class SceneManager {
   private static instance: SceneManager;
@@ -23,6 +36,8 @@ export class SceneManager {
   private scene: Scene;
   private camera: PerspectiveCamera;
   private renderer: WebGLRenderer;
+  private canvas: HTMLCanvasElement;
+  private currentRenderingSettings: Settings['visualization']['rendering'] | null = null;
   private controls: OrbitControls;
   private sceneGrid: GridHelper | null = null;
   
@@ -34,9 +49,15 @@ export class SceneManager {
   private animationFrameId: number | null = null;
   private isRunning: boolean = false;
   private visualizationController: VisualizationController | null = null;
+  private lastFrameTime: number = 0;
+  private readonly FRAME_BUDGET: number = 16; // Target 60fps (1000ms/60)
+  private frameCount: number = 0;
+  private lastFpsUpdate: number = 0;
+  private currentFps: number = 60;
 
   private constructor(canvas: HTMLCanvasElement) {
     logger.log('Initializing SceneManager');
+    this.canvas = canvas;
     
     // Create scene
     this.scene = new Scene();
@@ -69,6 +90,10 @@ export class SceneManager {
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    
+    // Enable performance optimizations
+    (this.renderer as any).sortObjects = false;  // Disable automatic object sorting
+    (this.renderer as any).physicallyCorrectLights = false;  // Disable physically correct lighting
 
     // Create controls
     this.controls = new OrbitControls(this.camera, canvas);
@@ -89,15 +114,19 @@ export class SceneManager {
     const renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(renderPass);
 
-    // Initialize bloom with disabled state
+    // Initialize bloom with default state
     this.bloomPass = new UnrealBloomPass(
       new Vector2(window.innerWidth, window.innerHeight),
-      0.0,  // Strength
-      0.0,  // Radius
-      1.0   // High threshold to effectively disable bloom
+      1.5,  // Default strength
+      0.4,  // Default radius
+      0.85  // Default threshold
     );
-    this.bloomPass.enabled = false;  // Explicitly disable bloom
-    this.bloomPass.threshold = 1.0;  // Set high threshold to further ensure no bloom
+    
+    // Initialize custom bloom properties
+    (this.bloomPass as any).edgeStrength = 3.0;
+    (this.bloomPass as any).nodeStrength = 2.0;
+    (this.bloomPass as any).environmentStrength = 1.0;
+    
     this.composer.addPass(this.bloomPass);
 
     // Setup basic lighting
@@ -154,12 +183,17 @@ export class SceneManager {
 
     this.renderer.setSize(width, height);
     this.composer.setSize(width, height);
+    
+    // Update bloom resolution
+    if (this.bloomPass) {
+      this.bloomPass.resolution.set(width, height);
+    }
   }
 
   start(): void {
     if (this.isRunning) return;
     this.isRunning = true;
-    this.animate();
+    requestAnimationFrame(this.animate);
     logger.log('Scene rendering started');
   }
 
@@ -183,8 +217,24 @@ export class SceneManager {
     logger.log('Scene rendering stopped');
   }
 
-  private animate = (): void => {
+  private animate = (timestamp: number): void => {
     if (!this.isRunning) return;
+
+    // Calculate FPS
+    this.frameCount++;
+    if (timestamp - this.lastFpsUpdate >= 1000) {
+      this.currentFps = (this.frameCount * 1000) / (timestamp - this.lastFpsUpdate);
+      this.frameCount = 0;
+      this.lastFpsUpdate = timestamp;
+
+      // Apply performance optimizations if FPS is low
+      if (this.currentFps < LOW_PERF_FPS_THRESHOLD) {
+        this.applyLowPerformanceOptimizations();
+      }
+    }
+
+    const deltaTime = timestamp - this.lastFrameTime;
+    this.lastFrameTime = timestamp;
 
     // Set up animation loop
     if (this.renderer.xr.enabled) {
@@ -192,37 +242,49 @@ export class SceneManager {
       this.renderer.setAnimationLoop(this.render);
     } else {
       // For non-XR, use requestAnimationFrame
-      this.animationFrameId = requestAnimationFrame(this.animate);
-      this.render();
+      this.render(deltaTime);
+      if (this.isRunning) {
+        this.animationFrameId = requestAnimationFrame(this.animate);
+      }
     }
   }
 
-  private render = (): void => {
+  private render = (deltaTime?: number): void => {
+    const startTime = performance.now();
+
     // Update controls only in non-XR mode
     if (!this.renderer.xr.enabled) {
-      this.controls.update();
-      // Show scene grid in non-XR mode
-      if (this.sceneGrid) this.sceneGrid.visible = true;
+      // Only update controls if enough time has passed
+      if (!deltaTime || deltaTime >= this.FRAME_BUDGET) {
+        this.controls.update();
+        // Show scene grid in non-XR mode
+        if (this.sceneGrid) this.sceneGrid.visible = true;
+      }
     } else {
       // Hide scene grid in XR mode
       if (this.sceneGrid) this.sceneGrid.visible = false;
     }
 
-    // Update visualization controller
-    this.visualizationController?.update();
+    // Check if we have time for visualization update
+    // Always update visualization to maintain smooth movement
+    (this.visualizationController as any)?.update(deltaTime || 0);
 
-    // Determine if we should use post-processing
-    const usePostProcessing = !this.renderer.xr.enabled &&
-                            this.bloomPass.enabled &&
-                            (this.bloomPass.strength > 0 ||
-                             this.bloomPass.radius > 0 ||
-                             (this.bloomPass as any).edgeStrength > 0 ||
-                             (this.bloomPass as any).nodeStrength > 0 ||
-                             (this.bloomPass as any).environmentStrength > 0);
+    // Check remaining time for rendering
+    const preRenderTime = performance.now();
+    const remainingTime = this.FRAME_BUDGET - (preRenderTime - startTime);
 
-    // Render scene
-    if (usePostProcessing) {
-      this.composer.render();
+    if (remainingTime >= 0) {
+      // Use post-processing in non-XR mode when bloom is enabled
+      if (!this.renderer.xr.enabled && this.bloomPass.enabled) {
+        // Skip bloom if we're running low on time
+        if (remainingTime >= 8) { // Give bloom half our frame budget
+          this.composer.render();
+        } else {
+          this.renderer.render(this.scene, this.camera);
+        }
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
     } else {
       this.renderer.render(this.scene, this.camera);
     }
@@ -330,66 +392,147 @@ export class SceneManager {
       return;
     }
 
-    const { rendering, bloom } = settings.visualization;
+    const { rendering: newRendering, bloom: newBloom } = settings.visualization;
+    const hasRenderingChanged = JSON.stringify(this.currentRenderingSettings) !== JSON.stringify(newRendering);
 
     // Update bloom settings
-    if (bloom) {
-      if (!bloom.enabled) {
-        // When disabled, set all bloom parameters to zero/disabled state
-        this.bloomPass.enabled = false;
-        this.bloomPass.strength = 0;
-        this.bloomPass.radius = 0;
-        this.bloomPass.threshold = 1.0;
-        (this.bloomPass as any).edgeStrength = 0;
-        (this.bloomPass as any).nodeStrength = 0;
-        (this.bloomPass as any).environmentStrength = 0;
-      } else {
-        // Only enable and set parameters if explicitly enabled
-        this.bloomPass.enabled = true;
-        this.bloomPass.strength = bloom.strength || 0;
-        this.bloomPass.radius = bloom.radius || 0;
-        this.bloomPass.threshold = 0.3; // Standard threshold when enabled
-        (this.bloomPass as any).edgeStrength = bloom.edgeBloomStrength || 0;
-        (this.bloomPass as any).nodeStrength = bloom.nodeBloomStrength || 0;
-        (this.bloomPass as any).environmentStrength = bloom.environmentBloomStrength || 0;
-      }
-      logger.debug('Bloom settings updated:', {
+    if (newBloom) {
+      const currentBloom = {
         enabled: this.bloomPass.enabled,
         strength: this.bloomPass.strength,
         radius: this.bloomPass.radius,
-        threshold: this.bloomPass.threshold
+        threshold: this.bloomPass.threshold,
+        edgeStrength: (this.bloomPass as any).edgeStrength,
+        nodeStrength: (this.bloomPass as any).nodeStrength,
+        environmentStrength: (this.bloomPass as any).environmentStrength
+      };
+
+      const newBloomSettings = {
+        enabled: newBloom.enabled,
+        strength: newBloom.enabled ? (newBloom.strength || 1.5) : 0,
+        radius: newBloom.enabled ? (newBloom.radius || 0.4) : 0,
+        threshold: newBloom.enabled ? 0.3 : 1.0,
+        edgeStrength: newBloom.enabled ? (newBloom.edgeBloomStrength || 3.0) : 0,
+        nodeStrength: newBloom.enabled ? (newBloom.nodeBloomStrength || 2.0) : 0,
+        environmentStrength: newBloom.enabled ? (newBloom.environmentBloomStrength || 1.0) : 0
+      };
+
+      const hasBloomChanged = JSON.stringify(currentBloom) !== JSON.stringify(newBloomSettings);
+      
+      if (hasBloomChanged) {
+        this.bloomPass.enabled = newBloomSettings.enabled;
+        this.bloomPass.strength = newBloomSettings.strength;
+        this.bloomPass.radius = newBloomSettings.radius;
+        this.bloomPass.threshold = newBloomSettings.threshold;
+        (this.bloomPass as any).edgeStrength = newBloomSettings.edgeStrength;
+        (this.bloomPass as any).nodeStrength = newBloomSettings.nodeStrength;
+        (this.bloomPass as any).environmentStrength = newBloomSettings.environmentStrength;
+      }
+    }
+
+    if (hasRenderingChanged) {
+      this.currentRenderingSettings = newRendering;
+
+      // Update background color
+      if (newRendering.backgroundColor) {
+        this.scene.background = new Color(newRendering.backgroundColor);
+      }
+
+      // Update lighting
+      const lights = this.scene.children.filter(child => 
+        child instanceof AmbientLight || child instanceof DirectionalLight
+      );
+      
+      lights.forEach(light => {
+        if (light instanceof AmbientLight) {
+          light.intensity = newRendering.ambientLightIntensity;
+        } else if (light instanceof DirectionalLight) {
+          light.intensity = newRendering.directionalLightIntensity;
+        }
+      });
+
+      // Update renderer settings
+      if (this.renderer) {
+        // Note: Some settings can only be changed at renderer creation
+        if (newRendering.enableAntialiasing) {
+          logger.warn('Antialiasing setting change requires renderer recreation');
+          this.recreateRenderer();
+        }
+        if (newRendering.enableShadows) {
+          logger.warn('Shadow settings change requires renderer recreation');
+        }
+      }
+    }
+
+    // Only log if something actually changed
+    if (hasRenderingChanged) {
+      logger.debug('Scene settings updated:', {
+        rendering: newRendering,
+        bloom: {
+          enabled: this.bloomPass.enabled,
+          strength: this.bloomPass.strength
+        }
       });
     }
+  }
 
-    // Update background color
-    if (rendering.backgroundColor) {
-      this.scene.background = new Color(rendering.backgroundColor);
-    }
-
-    // Update lighting
-    const lights = this.scene.children.filter(child => 
-      child instanceof AmbientLight || child instanceof DirectionalLight
-    );
+  private recreateRenderer(): void {
+    logger.log('Recreating renderer with updated settings');
     
-    lights.forEach(light => {
-      if (light instanceof AmbientLight) {
-        light.intensity = rendering.ambientLightIntensity;
-      } else if (light instanceof DirectionalLight) {
-        light.intensity = rendering.directionalLightIntensity;
+    // Store current XR state
+    const wasXREnabled = this.renderer.xr.enabled;
+    
+    // Dispose of current renderer
+    this.renderer.dispose();
+    
+    // Create new renderer with updated settings
+    this.renderer = new WebGLRenderer({
+      canvas: this.canvas,
+      antialias: this.currentRenderingSettings?.enableAntialiasing || true,
+      alpha: true,
+      powerPreference: 'high-performance',
+      xr: {
+        enabled: wasXREnabled
+      }
+    });
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    
+    // Recreate composer with new renderer
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.composer.addPass(this.bloomPass);
+  }
+
+  private applyLowPerformanceOptimizations(): void {
+    // Optimize materials
+    this.scene.traverse((object: Object3D) => {
+      if (object instanceof Mesh) {
+        const material = object.material as Material;
+        if (material) {
+          // Disable expensive material features using type assertion
+          (material as any).fog = false;
+          (material as any).side = 0; // FrontSide = 0
+          
+          // Disable shadows
+          (object as any).castShadow = false;
+          (object as any).receiveShadow = false;
+          
+          // Force material update
+          material.needsUpdate = true;
+        }
       }
     });
 
-    // Update renderer settings
-    if (this.renderer) {
-      // Note: Some settings can only be changed at renderer creation
-      if (rendering.enableAntialiasing) {
-        logger.warn('Antialiasing setting change requires renderer recreation');
-      }
-      if (rendering.enableShadows) {
-        logger.warn('Shadow settings change requires renderer recreation');
-      }
+    // Optimize renderer
+    (this.renderer as any).shadowMap.enabled = false;
+    
+    // Disable bloom in low performance mode
+    if (this.bloomPass && this.currentFps < 30) {
+      this.bloomPass.enabled = false;
     }
 
-    logger.debug('Scene settings updated:', rendering);
+    // Log optimization application
+    logger.debug(`Applied low performance optimizations at ${this.currentFps.toFixed(1)} FPS`);
   }
 }

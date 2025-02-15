@@ -1,48 +1,49 @@
 visualization:
   nodes:
-    base_color: '#4287f5'
+    base_color: '#df90c2'
     metalness: 0.2
-    opacity: 0.6
-    roughness: 0.8
+    opacity: 1.0
+    roughness: 0.7
     size_range:
-    - 40.0
-    - 120.0
-    quality: high
-    enable_instancing: false
-    enable_hologram: false
-    enable_metadata_shape: true
-    enable_metadata_visualization: true
+    - 200.0
+    - 700.0
+    quality: medium
+    enable_instancing: true
+    enable_hologram: true
+    enable_metadata_shape: false
+    enable_metadata_visualization: false
   edges:
-    arrow_size: 5.0
+    arrow_size: 2.0
     base_width: 2.0
-    color: '#6087c3'
+    color: '#0c2140'
     enable_arrows: true
-    opacity: 0.9
+    opacity: 0.5
     width_range:
-    - 1.0
+    - 2.0
     - 3.0
+    quality: high
   physics:
     attraction_strength: 0.02
-    bounds_size: 200.0
-    collision_radius: 0.5
-    damping: 0.8
+    bounds_size: 0.33
+    collision_radius: 1.0
+    damping: 1.0
     enable_bounds: true
     enabled: true
-    iterations: 200
-    max_velocity: 0.5
-    repulsion_strength: 800.0
-    spring_strength: 0.025
+    iterations: 100
+    max_velocity: 0.4
+    repulsion_strength: 700.0
+    spring_strength: 0.02
   rendering:
-    ambient_light_intensity: 0.4
+    ambient_light_intensity: 0.41
     background_color: '#1a1a2e'
-    directional_light_intensity: 0.6
-    enable_ambient_occlusion: false
+    directional_light_intensity: 0.7
+    enable_ambient_occlusion: true
     enable_antialiasing: true
     enable_shadows: false
-    environment_intensity: 0.3
+    environment_intensity: 0.7
   animations:
-    enable_motion_blur: false
-    enable_node_animations: false
+    enable_motion_blur: true
+    enable_node_animations: true
     motion_blur_strength: 0.2
     selection_wave_enabled: false
     pulse_enabled: false
@@ -50,34 +51,38 @@ visualization:
     pulse_strength: 0.6
     wave_speed: 0.5
   labels:
-    desktop_font_size: 14
-    enable_labels: false
-    text_color: '#ffffff'
+    desktop_font_size: 10
+    enable_labels: true
+    text_color: '#000000'
+    text_outline_color: '#ffffff'
+    text_outline_width: 0.1
+    text_resolution: 16
+    text_padding: 2
+    billboard_mode: camera
   bloom:
-    edge_bloom_strength: 0.8
+    edge_bloom_strength: 0.4
     enabled: true
-    environment_bloom_strength: 0.4
-    node_bloom_strength: 1.2
-    radius: 0.8
-    strength: 0.7
+    environment_bloom_strength: 1.0
+    node_bloom_strength: 2.0
+    radius: 1.0
+    strength: 1.0
   hologram:
     ring_count: 2
     ring_color: '#c2a200'
-    ring_opacity: 0.01
+    ring_opacity: 0.001
     sphere_sizes:
     - 40.0
     - 80.0
-    - 120.0
-    ring_rotation_speed: 1.0
-    enable_buckminster: true
-    buckminster_size: 80.0
-    buckminster_opacity: 0.05
-    enable_geodesic: true
-    geodesic_size: 60.0
-    geodesic_opacity: 0.05
+    ring_rotation_speed: 10.0
+    enable_buckminster: false
+    buckminster_size: 0.0
+    buckminster_opacity: 0.0
+    enable_geodesic: false
+    geodesic_size: 0.0
+    geodesic_opacity: 0.0
     enable_triangle_sphere: true
-    triangle_sphere_size: 20.0
-    triangle_sphere_opacity: 0.1
+    triangle_sphere_size: 80.0
+    triangle_sphere_opacity: 0.15
     global_rotation_speed: 0.03
 system:
   network:
@@ -102,7 +107,7 @@ system:
     binary_chunk_size: 2048
     binary_update_rate: 60
     binary_message_version: 1
-    compression_enabled: true
+    compression_enabled: false
     compression_threshold: 512
     heartbeat_interval: 10000
     heartbeat_timeout: 30000
@@ -125,11 +130,11 @@ system:
     session_timeout: 3600
   debug:
     enabled: false
-    enable_data_debug: true
+    enable_data_debug: false
     enable_websocket_debug: false
     log_binary_headers: false
-    log_full_json: true
-    log_level: debug
+    log_full_json: false
+    log_level: warn
     log_format: json
 xr:
   mode: inline

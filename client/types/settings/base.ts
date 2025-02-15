@@ -41,7 +41,15 @@ export interface EdgeSettings {
     baseWidth: number;
     enableArrows: boolean;
     widthRange: [number, number];
-    quality: 'low' | 'medium' | 'high'
+    quality: 'low' | 'medium' | 'high';
+    // New shader-based edge settings
+    enableFlowEffect: boolean;
+    flowSpeed: number;
+    flowIntensity: number;
+    glowStrength: number;
+    distanceIntensity: number;
+    useGradient: boolean;
+    gradientColors: [string, string];
 }
 
 export interface AnimationSettings {

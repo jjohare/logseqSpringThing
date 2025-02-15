@@ -1,4 +1,23 @@
 /* Panel styles are now in index.html */
+.nested-object-container {
+    margin-left: 1rem;
+    padding-left: 0.5rem;
+    border-left: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.debug-disabled-message {
+    color: #666;
+    font-style: italic;
+    padding: 0.5rem;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+    margin: 0.5rem 0;
+}
+
+.value-display {
+    color: #666;
+    font-style: italic;
+}
 
 .panel-toggle-btn {
     position: fixed;

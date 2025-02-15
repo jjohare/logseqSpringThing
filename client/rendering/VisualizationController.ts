@@ -4,10 +4,12 @@ import { Settings } from '../types/settings/base';
 import { defaultSettings } from '../state/defaultSettings';
 import { XRHandWithHaptics } from '../types/xr';
 import { EdgeManager } from './EdgeManager';
-import { EnhancedNodeManager } from './EnhancedNodeManager';
+import { NodeManagerFacade } from './node/NodeManagerFacade';
 import { graphDataManager } from '../state/graphData';
 import { TextRenderer } from './textRenderer';
 import { GraphData } from '../core/types';
+import { WebSocketService } from '../websocket/websocketService';
+import { MaterialFactory } from './factories/MaterialFactory';
 
 const logger = createLogger('VisualizationController');
 
@@ -19,16 +21,17 @@ export class VisualizationController {
     private static instance: VisualizationController | null = null;
     private currentSettings: Settings;
     private edgeManager: EdgeManager | null = null;
-    private nodeManager: EnhancedNodeManager | null = null;
+    private nodeManager: NodeManagerFacade | null = null;
     private textRenderer: TextRenderer | null = null;
     private isInitialized: boolean = false;
     private pendingUpdates: Map<string, PendingUpdate> = new Map();
-    private pendingEdgeUpdates: GraphData['edges'] | null = null;
-    private pendingNodeUpdates: GraphData['nodes'] | null = null;
     private lastUpdateTime: number = performance.now();
+    private websocketService: WebSocketService;
 
     private constructor() {
-        this.currentSettings = { ...defaultSettings };
+        // Initialize with complete default settings
+        this.currentSettings = defaultSettings;
+        this.websocketService = WebSocketService.getInstance();
         
         // Subscribe to graph data updates
         graphDataManager.subscribe((data: GraphData) => {
@@ -41,9 +44,23 @@ export class VisualizationController {
                     this.edgeManager.updateEdges(data.edges);
                 }
             } else {
-                this.pendingNodeUpdates = data.nodes;
-                this.pendingEdgeUpdates = data.edges;
-                logger.debug('Queuing updates until initialization');
+                // Queue updates until initialized
+                if (import.meta.env.DEV) logger.debug('Queuing updates until initialization');
+            }
+        });
+
+        // Subscribe to websocket binary updates
+        this.websocketService.onBinaryMessage((nodes) => {
+            if (this.nodeManager && this.isInitialized) {
+                // Convert binary node data to the format expected by updateNodePositions
+                const updates = nodes.map(node => ({
+                    id: node.id.toString(),
+                    data: {
+                        position: node.position,
+                        velocity: node.velocity
+                    }
+                }));
+                this.nodeManager.updateNodePositions(updates);
             }
         });
         
@@ -72,56 +89,50 @@ export class VisualizationController {
     public initializeScene(scene: Scene, camera: Camera): void {
         logger.info('Initializing visualization scene');
         
-        this.edgeManager = new EdgeManager(scene, this.currentSettings);
-        this.nodeManager = new EnhancedNodeManager(scene, this.currentSettings);
+        // Ensure camera can see nodes
+        camera.layers.enable(0);
+        logger.debug('Camera layers configured');
+        
+        // Enable WebSocket debugging
+        this.currentSettings.system.debug.enabled = true;
+        this.currentSettings.system.debug.enableWebsocketDebug = true;
+        
+        // Connect to websocket first
+        this.websocketService.connect().then(() => {
+            logger.info('WebSocket connected, enabling binary updates');
+            graphDataManager.enableBinaryUpdates();
+            
+            // Send initial request for data
+            this.websocketService.sendMessage({ 
+                type: 'requestInitialData',
+                timestamp: Date.now()
+            });
+        }).catch(error => {
+            logger.error('Failed to connect WebSocket:', error);
+        });
+        
+        const materialFactory = MaterialFactory.getInstance();
+        this.nodeManager = NodeManagerFacade.getInstance(
+            scene,
+            camera,
+            materialFactory.getNodeMaterial(this.currentSettings)
+        );
+        this.edgeManager = new EdgeManager(scene, this.currentSettings, this.nodeManager.getNodeInstanceManager());
         this.textRenderer = new TextRenderer(camera, scene);
         this.isInitialized = true;
         
-        this.applyPendingUpdates();
-        
+        if (import.meta.env.DEV) logger.debug('Scene managers initialized');
+
+        // Initialize with current graph data (if any)
         const currentData = graphDataManager.getGraphData();
-        
-        if (this.pendingNodeUpdates && this.nodeManager) {
-            this.nodeManager.updateNodes(this.pendingNodeUpdates);
-            this.pendingNodeUpdates = null;
-        } else if (currentData.nodes.length > 0 && this.nodeManager) {
+        if (currentData.nodes.length > 0 && this.nodeManager) {
             this.nodeManager.updateNodes(currentData.nodes);
         }
-        
-        if (this.pendingEdgeUpdates && this.edgeManager) {
-            this.edgeManager.updateEdges(this.pendingEdgeUpdates);
-            this.pendingEdgeUpdates = null;
-        } else if (currentData.edges.length > 0 && this.edgeManager) {
-            this.edgeManager.updateEdges(currentData.edges);
-        }
-        
-        logger.info('Visualization scene initialized');
-    }
 
-    private applyPendingUpdates(): void {
-        if (!this.isInitialized) {
-            logger.debug('Cannot apply pending updates - not initialized');
-            return;
-        }
+        // Start animation loop
+        this.animate();
 
-        logger.debug(`Applying ${this.pendingUpdates.size} pending updates`);
-        this.pendingUpdates.forEach((update, path) => {
-            let current = this.currentSettings as any;
-            const parts = path.split('.');
-            
-            for (let i = 0; i < parts.length - 1; i++) {
-                const part = parts[i];
-                if (!(part in current)) {
-                    current[part] = {};
-                }
-                current = current[part];
-            }
-            current[parts[parts.length - 1]] = update.value;
-            
-            this.applySettingUpdate(update.category);
-        });
-        
-        this.pendingUpdates.clear();
+        logger.info('Scene initialization complete');
     }
 
     public static getInstance(): VisualizationController {
@@ -321,14 +332,29 @@ export class VisualizationController {
         }
     }
 
-    public update(): void {
-        if (this.isInitialized) {
-            const now = performance.now();
-            const deltaTime = (now - this.lastUpdateTime) / 1000; // Convert to seconds
-            this.lastUpdateTime = now;
+    private animate = (): void => {
+        if (!this.isInitialized) return;
 
+        requestAnimationFrame(this.animate);
+        const currentTime = performance.now();
+        const deltaTime = (currentTime - this.lastUpdateTime) / 1000;
+        this.update(deltaTime);
+    }
+
+    public update(deltaTime: number): void {
+        if (this.isInitialized) {
+            const currentTime = performance.now();
+            if (deltaTime === 0) {
+                deltaTime = (currentTime - this.lastUpdateTime) / 1000;
+            }
+            this.lastUpdateTime = currentTime;
             if (this.nodeManager) {
                 this.nodeManager.update(deltaTime);
+            }
+
+            // Update edge animations
+            if (this.edgeManager) {
+                this.edgeManager.update(deltaTime);
             }
             
             if (this.textRenderer) {
@@ -338,20 +364,15 @@ export class VisualizationController {
     }
 
     public dispose(): void {
-        if (this.nodeManager) {
-            this.nodeManager.dispose();
-            this.nodeManager = null;
+        // Dispose of managers and cleanup websocket
+        if (this.textRenderer) {
+            this.textRenderer.dispose();
+            this.textRenderer = null;
         }
-        if (this.edgeManager) {
-            this.edgeManager.dispose();
-            this.edgeManager = null;
-        }
-        this.textRenderer?.dispose();
-        this.currentSettings = { ...defaultSettings };
+        this.nodeManager?.dispose();
+        this.edgeManager?.dispose();
+        this.websocketService.dispose();
         this.isInitialized = false;
-        this.pendingUpdates.clear();
-        this.pendingEdgeUpdates = null;
-        this.pendingNodeUpdates = null;
         VisualizationController.instance = null;
     }
 }

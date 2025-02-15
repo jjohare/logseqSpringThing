@@ -67,12 +67,25 @@ export class WebSocketService {
         // Don't automatically connect - wait for explicit connect() call
     }
 
-    public connect(): void {
+    public connect(): Promise<void> {
         if (this.connectionState !== ConnectionState.DISCONNECTED) {
             logger.warn('WebSocket already connected or connecting');
-            return;
+            // If already connecting, return a promise that resolves when connected
+            if (this.connectionState === ConnectionState.CONNECTING) {
+                return new Promise((resolve) => {
+                    const checkConnection = () => {
+                        if (this.connectionState === ConnectionState.CONNECTED) {
+                            resolve();
+                        } else {
+                            setTimeout(checkConnection, 100);
+                        }
+                    };
+                    checkConnection();
+                });
+            }
+            return Promise.resolve();
         }
-        this.initializeWebSocket();
+        return this.initializeWebSocket();
     }
 
     private async initializeWebSocket(): Promise<void> {
@@ -88,11 +101,19 @@ export class WebSocketService {
             }
 
             this.connectionState = ConnectionState.CONNECTING;
-            this.ws = new WebSocket(this.url);
-            this.setupWebSocketHandlers();
+            return new Promise((resolve, reject) => {
+                this.ws = new WebSocket(this.url);
+                this.setupWebSocketHandlers();
+                
+                // Add one-time open handler to resolve the promise
+                this.ws!.addEventListener('open', () => resolve(), { once: true });
+                // Add one-time error handler to reject the promise
+                this.ws!.addEventListener('error', (e) => reject(e), { once: true });
+            });
         } catch (error) {
             logger.error('Failed to initialize WebSocket:', error);
             this.handleReconnect();
+            return Promise.reject(error);
         }
     }
 
@@ -200,7 +221,9 @@ export class WebSocketService {
 
     private handleBinaryMessage(buffer: ArrayBuffer): void {
         try {
+            debugLog('Processing binary message:', { size: buffer.byteLength });
             const decompressedBuffer = this.tryDecompress(buffer);
+            debugLog('After decompression:', { size: decompressedBuffer.byteLength });
             
             if (!decompressedBuffer || decompressedBuffer.byteLength < 8) {
                 throw new Error(`Invalid buffer size: ${decompressedBuffer?.byteLength ?? 0} bytes`);
@@ -210,6 +233,7 @@ export class WebSocketService {
             let offset = 0;
 
             const messageType = dataView.getUint32(offset, true);
+            debugLog('Binary message type:', { type: messageType });
             offset += 4;
 
             if (messageType !== this.MessageType.PositionVelocityUpdate) {
@@ -218,6 +242,7 @@ export class WebSocketService {
             }
 
             const nodeCount = dataView.getUint32(offset, true);
+            debugLog('Node count:', { count: nodeCount });
             offset += 4;
 
             const expectedSize = 8 + (nodeCount * 28);
@@ -252,7 +277,13 @@ export class WebSocketService {
             }
 
             if (nodes.length > 0 && this.binaryMessageCallback) {
+                debugLog('Calling binary message callback with nodes:', { count: nodes.length });
                 this.binaryMessageCallback(nodes);
+            } else {
+                debugLog('No nodes to process or no callback registered', {
+                    nodesLength: nodes.length,
+                    hasCallback: !!this.binaryMessageCallback
+                });
             }
         } catch (error) {
             logger.error('Failed to process binary message:', error);
@@ -278,9 +309,13 @@ export class WebSocketService {
             
             this.connectionState = ConnectionState.RECONNECTING;
             
-            this.reconnectTimeout = window.setTimeout(() => {
+            this.reconnectTimeout = window.setTimeout(async () => {
                 this.reconnectTimeout = null;
-                this.connect();
+                try {
+                    await this.connect();
+                } catch (error) {
+                    logger.error('Reconnection attempt failed:', error);
+                }
             }, delay);
         } else {
             this.handleReconnectFailure();

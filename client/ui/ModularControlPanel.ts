@@ -4,7 +4,7 @@ import { getAllSettingPaths, formatSettingName } from '../types/settings/utils';
 import { ValidationErrorDisplay } from '../components/settings/ValidationErrorDisplay';
 import { createLogger } from '../core/logger';
 import { platformManager } from '../platform/platformManager';
-import { nostrAuth, NostrUser } from '../services/NostrAuthService';
+import { nostrAuth } from '../services/NostrAuthService';
 import { EventEmitter } from '../utils/eventEmitter';
 
 const logger = createLogger('ModularControlPanel');
@@ -203,47 +203,11 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
 
         const loginBtn = document.createElement('button');
         loginBtn.className = 'nostr-login-btn';
-        loginBtn.onclick = async () => {
-            try {
-                // Show loading state
-                loginBtn.disabled = true;
-                loginBtn.textContent = 'Connecting...';
-                
-                const result = await nostrAuth.login();
-                if (result.authenticated) {
-                    this.updateAuthUI(result.user);
-                } else {
-                    throw new Error(result.error || 'Authentication failed');
-                }
-            } catch (error) {
-                logger.error('Nostr login failed:', error);
-                const errorMsg = document.createElement('div');
-                errorMsg.className = 'auth-error';
-                
-                // Provide more user-friendly error messages
-                let errorText = 'Login failed';
-                if (error instanceof Error) {
-                    if (error.message.includes('Alby extension not found')) {
-                        errorText = 'Please install Alby extension to use Nostr login';
-                    } else if (error.message.includes('Failed to get public key')) {
-                        errorText = 'Please allow access to your Nostr public key';
-                    } else {
-                        errorText = error.message;
-                    }
-                }
-                
-                errorMsg.textContent = errorText;
-                content.appendChild(errorMsg);
-                setTimeout(() => errorMsg.remove(), 5000);
-            } finally {
-                // Reset button state
-                loginBtn.disabled = false;
-                this.updateAuthUI(nostrAuth.getCurrentUser());
-            }
-        };
-
+        loginBtn.textContent = 'Login with Nostr';  // Set initial text
+        
         const statusDisplay = document.createElement('div');
         statusDisplay.className = 'auth-status';
+        statusDisplay.innerHTML = '<div class="not-authenticated">Not authenticated</div>';  // Set initial state
         
         content.appendChild(loginBtn);
         content.appendChild(statusDisplay);
@@ -251,7 +215,7 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
 
         this.container.insertBefore(authSection, this.container.firstChild);
 
-        // Add some basic styles for the auth section
+        // Add styles
         const style = document.createElement('style');
         style.textContent = `
             .auth-section {
@@ -308,48 +272,74 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
         `;
         document.head.appendChild(style);
 
+        // Set up login button click handler
+        loginBtn.onclick = async () => {
+            try {
+                loginBtn.disabled = true;
+                loginBtn.textContent = 'Connecting...';
+                
+                const result = await nostrAuth.login();
+                if (!result.authenticated) {
+                    throw new Error(result.error || 'Authentication failed');
+                }
+            } catch (error) {
+                logger.error('Nostr login failed:', error);
+                const errorMsg = document.createElement('div');
+                errorMsg.className = 'auth-error';
+                
+                let errorText = 'Login failed';
+                if (error instanceof Error) {
+                    if (error.message.includes('Alby extension not found')) {
+                        errorText = 'Please install Alby extension to use Nostr login';
+                    } else if (error.message.includes('Failed to get public key')) {
+                        errorText = 'Please allow access to your Nostr public key';
+                    } else {
+                        errorText = error.message;
+                    }
+                }
+                
+                errorMsg.textContent = errorText;
+                content.appendChild(errorMsg);
+                setTimeout(() => errorMsg.remove(), 5000);
+            } finally {
+                loginBtn.disabled = false;
+            }
+        };
+
+        // Subscribe to auth state changes
         this.unsubscribers.push(
-            nostrAuth.onAuthStateChanged(({ user }) => {
-                this.updateAuthUI(user);
+            nostrAuth.onAuthStateChanged(({ authenticated, user }) => {
+                if (authenticated && user) {
+                    loginBtn.textContent = 'Logout';
+                    loginBtn.onclick = async () => {
+                        try {
+                            loginBtn.disabled = true;
+                            loginBtn.textContent = 'Logging out...';
+                            await nostrAuth.logout();
+                        } catch (error) {
+                            logger.error('Logout failed:', error);
+                        }
+                    };
+                    statusDisplay.innerHTML = `
+                        <div class="user-info">
+                            <div class="pubkey">${user.pubkey.substring(0, 8)}...</div>
+                            <div class="role">${user.isPowerUser ? 'Power User' : 'Basic User'}</div>
+                        </div>
+                    `;
+                } else {
+                    loginBtn.textContent = 'Login with Nostr';
+                    loginBtn.onclick = () => nostrAuth.login();
+                    statusDisplay.innerHTML = '<div class="not-authenticated">Not authenticated</div>';
+                }
+                loginBtn.disabled = false;
             })
         );
 
+        // Initialize Nostr auth and wait for it to complete
         await nostrAuth.initialize();
-        this.updateAuthUI(nostrAuth.getCurrentUser());
     }
 
-    private updateAuthUI(user: NostrUser | null | undefined): void {
-        const loginBtn = this.container.querySelector('.nostr-login-btn') as HTMLButtonElement;
-        const statusDisplay = this.container.querySelector('.auth-status') as HTMLDivElement;
 
-        if (!loginBtn || !statusDisplay) return;
-
-        if (user) {
-            loginBtn.textContent = 'Logout';
-            loginBtn.onclick = async () => {
-                try {
-                    loginBtn.disabled = true;
-                    loginBtn.textContent = 'Logging out...';
-                    await nostrAuth.logout();
-                } catch (error) {
-                    logger.error('Logout failed:', error);
-                } finally {
-                    loginBtn.disabled = false;
-                }
-            };
-            statusDisplay.innerHTML = `
-                <div class="user-info">
-                    <div class="pubkey">${user.pubkey.substring(0, 8)}...</div>
-                    <div class="role">${user.isPowerUser ? 'Power User' : 'Basic User'}</div>
-                </div>
-            `;
-        } else {
-            loginBtn.textContent = 'Login with Nostr';
-            loginBtn.onclick = () => nostrAuth.login();
-            statusDisplay.innerHTML = '<div class="not-authenticated">Not authenticated</div>';
-        }
-        loginBtn.disabled = false;
-    }
 
     private isAdvancedCategory(category: string): boolean {
         const advancedCategories = ['physics', 'rendering', 'debug', 'network'];
@@ -472,7 +462,7 @@ export class ModularControlPanel extends EventEmitter<ModularControlPanelEvents>
         const subsection = document.createElement('div');
         subsection.className = 'settings-subsection';
 
-const header = document.createElement('h3');
+        const header = document.createElement('h3');
         header.textContent = formatSettingName(subcategory);
         header.className = 'settings-subsection-header';
         subsection.appendChild(header);
@@ -511,6 +501,30 @@ const header = document.createElement('h3');
     private async createInputElement(path: string, value: any): Promise<HTMLElement> {
         const type = typeof value;
         let input: HTMLElement;
+
+        // Handle nested objects
+        if (type === 'object' && value !== null && !Array.isArray(value)) {
+            const container = document.createElement('div');
+            container.className = 'nested-object-container';
+
+            // Skip rendering for debug objects unless debug is enabled
+            if (path.includes('system.debug') && !this.settingsStore.get('system.debug.enabled')) {
+                const debugDisabled = document.createElement('div');
+                debugDisabled.className = 'debug-disabled-message';
+                debugDisabled.textContent = 'Enable debug settings to configure';
+                return debugDisabled;
+            }
+
+            // Create controls for each nested property
+            for (const [key] of Object.entries(value)) {
+                const propPath = `${path}.${key}`;
+                const propControl = await this.createSettingControl(propPath);
+                container.appendChild(propControl);
+            }
+
+            input = container;
+            return input;
+        }
         
         const getNumericStep = (path: string): string => {
             if (path.includes('size') || path.includes('iterations')) return '1';
@@ -612,22 +626,10 @@ const header = document.createElement('h3');
             }
 
             default: {
-                if (value === null || value === undefined) {
-                    const div = document.createElement('div');
-                    div.className = 'value-display';
-                    div.textContent = String(value);
-                    input = div;
-                } else {
-                    // For any other type, create a text input
-                    const textInput = document.createElement('input');
-                    textInput.type = 'text';
-                    textInput.value = String(value);
-                    textInput.onchange = (e) => {
-                        const target = e.target as HTMLInputElement;
-                        this.updateSetting(path, target.value);
-                    };
-                    input = textInput;
-                }
+                const div = document.createElement('div');
+                div.className = 'value-display';
+                div.textContent = value === null || value === undefined ? 'Not set' : String(value);
+                input = div;
             }
         }
 
@@ -635,69 +637,46 @@ const header = document.createElement('h3');
     }
 
     private updateSetting(path: string, value: any): void {
+        // Remove the setTimeout
         try {
             // Get the current value to compare types
             const currentValue = this.settingsStore.get(path);
             
-            // Process the value based on type
+            // Ensure we maintain the correct type
             let processedValue = value;
             if (Array.isArray(currentValue)) {
+                // Ensure array values maintain their original types
                 processedValue = value.map((v: any, i: number) => {
                     const originalValue = currentValue[i];
                     if (typeof originalValue === 'number') {
                         const parsed = parseFloat(v);
-                        return isNaN(parsed) ? originalValue : Math.max(0, parsed);
+                        return isNaN(parsed) ? originalValue : parsed;
                     }
                     return v;
                 });
             } else if (typeof currentValue === 'number') {
                 const parsed = parseFloat(value);
-                processedValue = isNaN(parsed) ? currentValue : Math.max(0, parsed);
+                processedValue = isNaN(parsed) ? currentValue : parsed;
             }
 
             this.settingsStore.set(path, processedValue);
             this.emit('settings:updated', { path, value: processedValue });
-
-            // Update the UI to reflect the processed value
-            const control = this.container.querySelector(`[data-setting-path="${path}"]`);
-            if (control) {
-                if (Array.isArray(processedValue)) {
-                    const inputs = control.querySelectorAll('.array-item') as NodeListOf<HTMLInputElement>;
-                    inputs.forEach((input, i) => {
-                        input.value = processedValue[i].toString();
-                    });
-                } else {
-                    const input = control.querySelector('input') as HTMLInputElement;
-                    if (input) {
-                        if (input.type === 'number') {
-                            input.value = processedValue.toString();
-                        } else if (input.type === 'checkbox') {
-                            input.checked = processedValue;
-                        } else {
-                            input.value = String(processedValue);
-                        }
-                    }
-                }
-            }
         } catch (error) {
             logger.error(`Failed to update setting ${path}:`, error);
+            
             // Revert the input to the current value
             const control = this.container.querySelector(`[data-setting-path="${path}"]`);
             if (control) {
-                const currentValue = this.settingsStore.get(path);
-                if (Array.isArray(currentValue)) {
-                    const inputs = control.querySelectorAll('.array-item') as NodeListOf<HTMLInputElement>;
-                    inputs.forEach((input, i) => {
-                        input.value = currentValue[i].toString();
-                    });
-                } else {
-                    const input = control.querySelector('input') as HTMLInputElement;
-                    if (input) {
-                        if (input.type === 'checkbox') {
-                            input.checked = Boolean(currentValue);
-                        } else {
-                            input.value = currentValue?.toString() || '';
-                        }
+                const input = control.querySelector('input, select') as HTMLInputElement;
+                if (input) {
+                    const currentValue = this.settingsStore.get(path);
+                    if (Array.isArray(currentValue)) {
+                        const inputs = control.querySelectorAll('.array-item') as NodeListOf<HTMLInputElement>;
+                        inputs.forEach((input, i) => {
+                            input.value = currentValue[i].toString();
+                        });
+                    } else {
+                        input.value = currentValue?.toString() || '';
                     }
                 }
             }

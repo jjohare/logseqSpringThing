@@ -421,7 +421,11 @@ export function transformNodeData(node: any): Node {
   return {
     id: node.id,
     data: {
-      position: node.data.position,
+      position: {
+        x: node.data.position.x,
+        y: node.data.position.y,
+        z: node.data.position.z
+      },
       velocity: node.data.velocity || { x: 0, y: 0, z: 0 },
       metadata: {
         name: node.data.metadata?.name || node.id,

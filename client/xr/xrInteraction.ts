@@ -1,5 +1,4 @@
 import { XRSessionManager } from './xrSessionManager';
-import { NodeManager } from '../rendering/nodes';
 import { SettingsStore } from '../state/SettingsStore';
 import { createLogger } from '../core/logger';
 import { WebSocketService } from '../websocket/websocketService';
@@ -18,7 +17,7 @@ export class XRInteraction {
     private websocketService: WebSocketService;
 
     private xrManager: XRSessionManager;
-    private constructor(xrManager: XRSessionManager, _: NodeManager) {
+    private constructor(xrManager: XRSessionManager) {
         this.xrManager = xrManager;
         this.settingsStore = SettingsStore.getInstance();
         this.websocketService = WebSocketService.getInstance();
@@ -49,9 +48,9 @@ export class XRInteraction {
         }
     }
 
-    public static getInstance(xrManager: XRSessionManager, nodeManager: NodeManager): XRInteraction {
+    public static getInstance(xrManager: XRSessionManager): XRInteraction {
         if (!XRInteraction.instance) {
-            XRInteraction.instance = new XRInteraction(xrManager, nodeManager);
+            XRInteraction.instance = new XRInteraction(xrManager);
         }
         return XRInteraction.instance;
     }

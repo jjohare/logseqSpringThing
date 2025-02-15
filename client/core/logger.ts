@@ -1,5 +1,5 @@
-let debugEnabled = true;
-let logFullJson = true;
+let debugEnabled = false;
+let logFullJson = false;
 
 export interface Logger {
     debug: (...args: any[]) => void;
@@ -40,10 +40,14 @@ export function createLogger(context: string): Logger {
             }
         },
         log: (...args: any[]): void => {
-            console.log(getPrefix(), ...formatArgs(args));
+            if (debugEnabled) {
+                console.log(getPrefix(), ...formatArgs(args));
+            }
         },
         info: (...args: any[]): void => {
-            console.info(getPrefix(), ...formatArgs(args));
+            if (debugEnabled) {
+                console.info(getPrefix(), ...formatArgs(args));
+            }
         },
         warn: (...args: any[]): void => {
             console.warn(getPrefix(), ...formatArgs(args));
@@ -58,7 +62,9 @@ export function createLogger(context: string): Logger {
 export const LoggerConfig = {
     setGlobalDebug(enabled: boolean) {
         debugEnabled = enabled;
-        console.log(`[Logger] Debug logging ${enabled ? 'enabled' : 'disabled'}`);
+        if (enabled) {
+            console.log(`[Logger] Debug logging enabled`);
+        }
     },
     setFullJson(enabled: boolean) {
         logFullJson = enabled;

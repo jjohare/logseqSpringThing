@@ -189,6 +189,9 @@ declare module 'three' {
     rotateZ(angle: number): this;
     setAttribute(name: string, attribute: BufferAttribute): this;
     setIndex(index: BufferAttribute): this;
+    computeBoundingSphere(): void;
+    boundingSphere: { center: Vector3; radius: number } | null;
+    boundingBox: { min: Vector3; max: Vector3 } | null;
   }
 
   export class PlaneGeometry extends BufferGeometry {
@@ -260,6 +263,11 @@ declare module 'three' {
     decompose(position: Vector3, quaternion: Quaternion, scale: Vector3): this;
     fromArray(array: ArrayLike<number>, offset?: number): this;
     extractRotation(m: Matrix4): this;
+    makeRotationX(theta: number): this;
+    makeRotationY(theta: number): this;
+    makeRotationZ(theta: number): this;
+    makeScale(x: number, y: number, z: number): this;
+    multiply(m: Matrix4): this;
     makeRotationFromQuaternion(q: Quaternion): this;
   }
 
