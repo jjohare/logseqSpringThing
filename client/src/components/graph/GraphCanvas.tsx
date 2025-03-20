@@ -8,6 +8,7 @@ import XRController from '../xr/XRController'
 import XRVisualizationConnector from '../XRVisualizationConnector'
 import { useSettingsStore } from '../../lib/settings-store'
 import { createLogger } from '../../lib/utils/logger'
+import { SceneManager } from '../../lib/managers/scene-manager'
 import { debugState } from '../../lib/utils/debug-state'
 
 const logger = createLogger('GraphCanvas')
@@ -166,6 +167,21 @@ const GraphCanvas = () => {
   const settings = useSettingsStore(state => state.settings)
   const showStats = settings?.visualization?.showStats || false
   const xrEnabled = settings?.xr?.enabled !== false
+  
+  // Disable SceneManager to prevent conflicts with React Three Fiber
+  useEffect(() => {
+    // Attempt to cleanup any existing SceneManager instance
+    try {
+      // This prevents SceneManager from trying to initialize its own renderer
+      // which conflicts with React Three Fiber
+      if (typeof SceneManager.cleanup === 'function') {
+        SceneManager.cleanup();
+        logger.info('Cleaned up SceneManager to prevent conflicts with React Three Fiber');
+      }
+    } catch (error) {
+      logger.error('Error cleaning up SceneManager:', error);
+    }
+  }, []);
   
   return (
     <div className="absolute inset-0 overflow-hidden">

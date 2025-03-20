@@ -6,6 +6,7 @@ import NostrAuthSection from './NostrAuthSection'
 import { SettingsSection } from './SettingsSection'
 import { ChevronLeft, ChevronRight, Settings2 } from 'lucide-react'
 import { Button } from './ui/button'
+import { ControlPanelProvider } from './control-panel-context'
 import { SettingControl } from './types'
 
 const logger = createLogger('ControlPanel')
@@ -102,77 +103,79 @@ const ControlPanel: React.FC = () => {
       </Button>
       
       {isOpen && (
-        <div className="flex flex-col h-full overflow-hidden">
-          {/* Panel Header */}
-          <div className="border-b border-border p-4">
-            <h2 className="text-lg font-semibold">Settings</h2>
-          </div>
-          
-          {/* Panel Content */}
-          <div className="flex flex-col md:flex-row h-full overflow-hidden">
-            {/* Section Sidebar */}
-            <div className="w-full md:w-1/3 border-r border-border p-2 overflow-y-auto">
-              <nav className="space-y-1">
-                {PANEL_SECTIONS.map(section => (
-                  <button
-                    key={section.id}
-                    className={`w-full text-left px-3 py-2 rounded-md flex items-center space-x-2 ${
-                      activeSection === section.id 
-                        ? 'bg-primary text-primary-foreground' 
-                        : 'hover:bg-accent'
-                    }`}
-                    onClick={() => handleSectionChange(section.id)}
-                  >
-                    {section.icon}
-                    <span>{section.title}</span>
-                  </button>
-                ))}
-              </nav>
+        <ControlPanelProvider>
+          <div className="flex flex-col h-full overflow-hidden">
+            {/* Panel Header */}
+            <div className="border-b border-border p-4">
+              <h2 className="text-lg font-semibold">Settings</h2>
             </div>
             
-            {/* Main Content */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {activeSection === 'auth' ? (
-                <NostrAuthSection />
-              ) : (
-                <>
-                  {/* Subsection Tabs if available */}
-                  {currentSection && currentSection.subsections.length > 0 && (
-                    <div className="border-b border-border mb-4">
-                      <div className="flex space-x-2 overflow-x-auto">
-                        {currentSection.subsections.map(subsection => (
-                          <button
-                            key={subsection.id}
-                            className={`px-3 py-2 ${
-                              activeSubsection === subsection.id
-                                ? 'border-b-2 border-primary font-medium'
-                                : 'text-muted-foreground hover:text-foreground'
-                            }`}
-                            onClick={() => handleSubsectionChange(subsection.id)}
-                          >
-                            {subsection.title}
-                          </button>
-                        ))}
+            {/* Panel Content */}
+            <div className="flex flex-col md:flex-row h-full overflow-hidden">
+              {/* Section Sidebar */}
+              <div className="w-full md:w-1/3 border-r border-border p-2 overflow-y-auto">
+                <nav className="space-y-1">
+                  {PANEL_SECTIONS.map(section => (
+                    <button
+                      key={section.id}
+                      className={`w-full text-left px-3 py-2 rounded-md flex items-center space-x-2 ${
+                        activeSection === section.id 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'hover:bg-accent'
+                      }`}
+                      onClick={() => handleSectionChange(section.id)}
+                    >
+                      {section.icon}
+                      <span>{section.title}</span>
+                    </button>
+                  ))}
+                </nav>
+              </div>
+              
+              {/* Main Content */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {activeSection === 'auth' ? (
+                  <NostrAuthSection />
+                ) : (
+                  <>
+                    {/* Subsection Tabs if available */}
+                    {currentSection && currentSection.subsections.length > 0 && (
+                      <div className="border-b border-border mb-4">
+                        <div className="flex space-x-2 overflow-x-auto">
+                          {currentSection.subsections.map(subsection => (
+                            <button
+                              key={subsection.id}
+                              className={`px-3 py-2 ${
+                                activeSubsection === subsection.id
+                                  ? 'border-b-2 border-primary font-medium'
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                              onClick={() => handleSubsectionChange(subsection.id)}
+                            >
+                              {subsection.title}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  
-                  {/* Settings for current section/subsection */}
-                  <SettingsSection
-                    id={activeSection} 
-                    title={currentSection?.title || ''}
-                      settings={
-                        activeSubsection && 
-                      settings[activeSection] && 
-                        settings[activeSection][activeSubsection] ? 
-                          settings[activeSection][activeSubsection] as Record<string, SettingControl | Record<string, SettingControl>> : {}
-                      }
-                  />
-                </>
-              )}
+                    )}
+                    
+                    {/* Settings for current section/subsection */}
+                    <SettingsSection
+                      id={activeSection} 
+                      title={currentSection?.title || ''}
+                        settings={
+                          activeSubsection && 
+                        settings[activeSection] && 
+                          settings[activeSection][activeSubsection] ? 
+                            settings[activeSection][activeSubsection] as Record<string, SettingControl | Record<string, SettingControl>> : {}
+                        }
+                    />
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </ControlPanelProvider>
       )}
     </div>
   )

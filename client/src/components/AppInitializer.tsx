@@ -4,7 +4,6 @@ import { debugState } from '../lib/utils/debug-state';
 import { useSettingsStore } from '../lib/settings-store';
 import WebSocketService from '../lib/services/websocket-service';
 import { graphDataManager } from '../lib/managers/graph-data-manager';
-import { SceneManager } from '../lib/managers/scene-manager';
 
 const logger = createLogger('AppInitializer');
 
@@ -34,18 +33,7 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
             debugState.enablePerformanceDebug(debugSettings.showPerformance);
           }
         }
-        
-        // Get canvas for Three.js rendering
-        const canvas = document.getElementById('main-canvas') as HTMLCanvasElement;
-        if (!canvas) {
-          throw new Error('Could not find #main-canvas element');
-        }
-        
-        // Initialize scene manager
-        const sceneManager = SceneManager.getInstance(canvas);
-        sceneManager.handleSettingsUpdate(settings);
-        sceneManager.start();
-        
+
         // Initialize WebSocket
         await initializeWebSocket(settings);
         
@@ -132,24 +120,6 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
       throw error;
     }
   };
-
-  // Create a subscription to settings changes
-  useEffect(() => {
-    if (!settings) return;
-    
-    // Get the scene manager
-    const canvas = document.getElementById('main-canvas') as HTMLCanvasElement;
-    if (!canvas) return;
-    
-    const sceneManager = SceneManager.getInstance(canvas);
-    
-    // Update scene with latest settings
-    sceneManager.handleSettingsUpdate(settings);
-    
-    if (debugState.isEnabled()) {
-      logger.debug('Settings updated in AppInitializer');
-    }
-  }, [settings]);
 
   return null; // This component doesn't render anything directly
 };

@@ -59,16 +59,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl --retry 5 --retry-delay 2 --retry-connrefused https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.84.0
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Configure cargo for better network resilience
+# Configure cargo with direct crates.io registry access and improved network resilience
 RUN mkdir -p ~/.cargo && \
-    echo '[source.crates-io]' >> ~/.cargo/config.toml && \
+    echo '[source.crates-io]' > ~/.cargo/config.toml && \
     echo 'registry = "https://github.com/rust-lang/crates.io-index"' >> ~/.cargo/config.toml && \
-    echo 'replace-with = "ustc"' >> ~/.cargo/config.toml && \
-    echo '[source.ustc]' >> ~/.cargo/config.toml && \
-    echo 'registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"' >> ~/.cargo/config.toml && \
+    echo 'protocol = "sparse"' >> ~/.cargo/config.toml && \
+    echo '' >> ~/.cargo/config.toml && \
     echo '[net]' >> ~/.cargo/config.toml && \
     echo 'retry = 10' >> ~/.cargo/config.toml && \
-    echo 'timeout = 120' >> ~/.cargo/config.toml && \
+    echo 'timeout = 180' >> ~/.cargo/config.toml && \
+    echo 'connect-timeout = 60' >> ~/.cargo/config.toml && \
+    echo 'low-speed-limit = 10' >> ~/.cargo/config.toml && \
     echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
 
 WORKDIR /usr/src/app
@@ -81,23 +82,31 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
 # Create dummy src directory and build dependencies
 RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    GIT_HASH=$(git rev-parse HEAD || echo "development") && \
-    CARGO_NET_GIT_FETCH_WITH_CLI=true \
-    CARGO_HTTP_TIMEOUT=120 \
+    echo "fn main() {}" > src/main.rs
+
+# Set environment variables for Cargo
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
+    CARGO_HTTP_TIMEOUT=180 \
+    CARGO_HTTP_CONNECT_TIMEOUT=60 \
     CARGO_HTTP_CHECK_REVOKE=false \
+    CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
+    CARGO_REGISTRY_DEFAULT=crates-io
+
+# Build dependencies
+RUN GIT_HASH=$(git rev-parse HEAD || echo "development") && \
     cargo update && \
     (cargo build --release --features gpu --jobs $(nproc) --offline || \
-    (sleep 2 && cargo build --release --jobs $(nproc)) || \
-    (sleep 5 && cargo build --release --jobs 1))
+    (sleep 2 && RUST_BACKTRACE=1 cargo build --release --jobs $(nproc)) || \
+    (sleep 5 && RUST_BACKTRACE=1 cargo build --release --jobs 1))
 
 # Now copy the real source code and build
 COPY src ./src
 
+# Build the actual application
 RUN GIT_HASH=$(git rev-parse HEAD || echo "development") && \
     (cargo build --release --features gpu --jobs $(nproc) --offline || \
-    (sleep 2 && cargo build --release --jobs $(nproc)) || \
-    (sleep 5 && cargo build --release --jobs 1))
+    (sleep 2 && RUST_BACKTRACE=1 cargo build --release --jobs $(nproc)) || \
+    (sleep 5 && RUST_BACKTRACE=1 cargo build --release --jobs 1))
 
 # Stage 3: Final Runtime Image
 FROM nvidia/cuda:12.8.1-devel-ubuntu22.04

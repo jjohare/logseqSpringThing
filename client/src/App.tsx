@@ -30,22 +30,28 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark">
       <main className="relative h-screen w-screen overflow-hidden bg-background text-foreground">
-        {isLoading ? (
-          <div className="flex h-full w-full items-center justify-center">
-            <div className="flex flex-col items-center space-y-4">
-              <div className="text-2xl">Loading Graph Visualization</div>
-              <div className="h-2 w-48 overflow-hidden rounded-full bg-gray-700">
-                <div className="animate-pulse h-full bg-primary"></div>
+        {/* Always render the GraphCanvas but conditionally show loading overlay */}
+        <div className="h-full w-full bg-background">
+          <GraphCanvas />
+          
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+              <div className="flex flex-col items-center space-y-4">
+                <div className="text-2xl">Loading Graph Visualization</div>
+                <div className="h-2 w-48 overflow-hidden rounded-full bg-gray-700">
+                  <div className="animate-pulse h-full bg-primary"></div>
+                </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <>
-            <GraphCanvas />
-            <ControlPanel />
-          </>
-        )}
+          )}
+        </div>
         
+        {/* Render ControlPanel only after loading is complete */}
+        {!isLoading && (
+          <div className="z-20 relative">
+            <ControlPanel />
+          </div>
+        )}
         {/* AppInitializer is always rendered but doesn't show anything */}
         <AppInitializer onInitialized={handleInitialized} />
       </main>
