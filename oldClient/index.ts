@@ -326,7 +326,4 @@ async function init() {
     }
 }
 
-// Start the application
-init().catch(error => {
-    console.error('Failed to initialize application:', error);
-});
+

@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Control Panel Styles */
+.settings-panel {
+  @apply fixed right-4 top-4 z-50 w-80 rounded-lg bg-card p-4 text-card-foreground shadow-lg;
+}
+
+.settings-section {
+  @apply mb-4 rounded-md border border-border bg-card p-2;
+}
+
+.section-header {
+  @apply flex items-center justify-between border-b border-border pb-2;
+}
+
+.section-content {
+  @apply mt-2 space-y-2;
+}
+
+.settings-subsection {
+  @apply pt-2;
+}
+
+.settings-subsection-header {
+  @apply text-sm font-medium text-muted-foreground;
+}
+
+.setting-control {
+  @apply flex items-center justify-between gap-2 py-1;
+}
+
+.detached-panel {
+  @apply absolute cursor-move rounded-md border border-border bg-card shadow-lg;
+}
