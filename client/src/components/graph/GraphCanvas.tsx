@@ -1,107 +1,223 @@
 import React, { useRef, useEffect } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import { Canvas, useThree, useFrame } from '@react-three/fiber'
+import { OrbitControls, Stats } from '@react-three/drei'
 import * as THREE from 'three'
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { EffectComposer, RenderPass, UnrealBloomPass } from 'three-stdlib'
 import GraphManager from './GraphManager'
+import XRController from '../xr/XRController'
+import { useSettingsStore } from '../../lib/settings-store'
+import { createLogger } from '../../lib/utils/logger'
+import { debugState } from '../../lib/utils/debug-state'
 
-const BACKGROUND_COLOR = 0x000000;
+const logger = createLogger('GraphCanvas')
 
-const GraphCanvas = () => {
-  const mesh = useRef<THREE.Mesh>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { scene, camera, gl, size } = useThree()
-  const composer = useRef<any>(null)
-
+// Composition of post-processing effects
+const Effects = () => {
+  const { gl, scene, camera, size } = useThree()
+  const composerRef = useRef<EffectComposer>()
+  const settings = useSettingsStore(state => state.settings?.visualization?.bloom)
+  
   useEffect(() => {
-    // Set background color
-    scene.background = new THREE.Color(BACKGROUND_COLOR);
-
-    // Set camera position
-    camera.position.set(0, 10, 50);
-    camera.lookAt(0, 0, 0);
-
-    // Initialize renderer settings
-    gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-    // Setup lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(1, 1, 1).normalize();
-    scene.add(directionalLight);
-
-    // Setup post processing
-    let renderPass: any, bloomPass: any;
-
-    Promise.all([
-      import('three/examples/jsm/postprocessing/EffectComposer.js'),
-      import('three/examples/jsm/postprocessing/RenderPass.js'),
-      import('three/examples/jsm/postprocessing/UnrealBloomPass.js'),
-    ]).then(([EffectComposerModule, RenderPassModule, UnrealBloomPassModule]) => {
-      renderPass = new RenderPassModule.RenderPass(scene, camera);
-      bloomPass = new UnrealBloomPassModule.UnrealBloomPass(
+    // Create effect composer for post-processing
+    const composer = new EffectComposer(gl)
+    const renderPass = new RenderPass(scene, camera)
+    composer.addPass(renderPass)
+    
+    // Add bloom effect if enabled in settings
+    if (settings?.enabled) {
+      const bloomPass = new UnrealBloomPass(
         new THREE.Vector2(size.width, size.height),
-        1.5,
-        0.4,
-        0.85
-      );
-
-      composer.current = new EffectComposerModule.EffectComposer(gl);
-      composer.current.addPass(renderPass);
-      composer.current.addPass(bloomPass);
-
-      // Handle resize
-      const handleResize = () => {
-        (camera as THREE.PerspectiveCamera).aspect = window.innerWidth / window.innerHeight;
-        (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
-        gl.setSize(window.innerWidth, window.innerHeight);
-        composer.current.setSize(window.innerWidth, window.innerHeight);
-      };
-
-      window.addEventListener('resize', handleResize);
-      handleResize();
-      return () => window.removeEventListener('resize', handleResize);
-    });
-  }, [scene, camera, gl, size])
-
+        settings.strength || 1.5,
+        settings.radius || 0.4,
+        settings.threshold || 0.85
+      )
+      composer.addPass(bloomPass)
+    }
+    
+    composerRef.current = composer
+    
+    // Handle resize
+    const handleResize = () => {
+      composer.setSize(size.width, size.height)
+    }
+    
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      composer.dispose()
+    }
+  }, [gl, scene, camera, size, settings])
+  
+  // Update effects on frame render
   useFrame(() => {
-    if (mesh.current) {
-      mesh.current.rotation.x = mesh.current.rotation.y += 0.01
+    if (composerRef.current) {
+      composerRef.current.render()
     }
-    if (composer.current) {
-      composer.current.render()
-    } else {
-      gl.render(scene, camera)
-    }
-  })
+  }, 1) // Higher priority than default (0)
+  
+  return null
+}
 
+// Initialize WebXR in the scene
+const InitializeXR = () => {
+  const { gl } = useThree()
+  const settings = useSettingsStore(state => state.settings)
+  const xrEnabled = settings?.xr?.enabled !== false
+  
+  useEffect(() => {
+    if (xrEnabled) {
+      gl.xr.enabled = true
+      
+      // Set reference space type based on settings
+      if (settings?.xr?.roomScale) {
+        gl.xr.setReferenceSpaceType('local-floor')
+      } else {
+        gl.xr.setReferenceSpaceType('local')
+      }
+      
+      if (debugState.isEnabled()) {
+        logger.info('WebXR enabled on renderer')
+      }
+    }
+  }, [gl, xrEnabled, settings?.xr?.roomScale])
+  
+  return null
+}
+
+// Scene setup with lighting and background
+const SceneSetup = () => {
+  const { scene } = useThree()
+  const settings = useSettingsStore(state => state.settings?.visualization)
+  
+  useEffect(() => {
+    // Set background color from settings or default
+    if (settings?.sceneBackground !== undefined) {
+      scene.background = new THREE.Color(settings.sceneBackground)
+    } else {
+      scene.background = new THREE.Color(0x000000) // Black default
+    }
+    
+    // Setup base lighting if not already present
+    if (!scene.children.some(child => child instanceof THREE.AmbientLight)) {
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+      scene.add(ambientLight)
+    }
+    
+    if (!scene.children.some(child => child instanceof THREE.DirectionalLight)) {
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+      directionalLight.position.set(1, 1, 1).normalize()
+      scene.add(directionalLight)
+    }
+    
+    if (debugState.isEnabled()) {
+      logger.info('Scene setup complete')
+    }
+    
+    return () => {
+      // Lights are removed with scene, no need to clean up
+    }
+  }, [scene, settings])
+  
+  return null
+}
+
+// Camera setup and configuration
+const CameraSetup = () => {
+  const { camera } = useThree()
+  const settings = useSettingsStore(state => state.settings?.visualization?.camera)
+  
+  useEffect(() => {
+    if (!settings) return
+    
+    // Apply camera settings
+    if (camera instanceof THREE.PerspectiveCamera) {
+      if (settings.fov !== undefined) camera.fov = settings.fov
+      if (settings.near !== undefined) camera.near = settings.near
+      if (settings.far !== undefined) camera.far = settings.far
+      if (settings.position) {
+        camera.position.set(
+          settings.position.x,
+          settings.position.y,
+          settings.position.z
+        )
+      }
+      if (settings.lookAt) {
+        camera.lookAt(
+          settings.lookAt.x,
+          settings.lookAt.y,
+          settings.lookAt.z
+        )
+      }
+      camera.updateProjectionMatrix()
+    }
+    
+    if (debugState.isEnabled()) {
+      logger.info('Camera configured')
+    }
+  }, [camera, settings])
+  
+  return null
+}
+
+// Main GraphCanvas component
+const GraphCanvas = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const settings = useSettingsStore(state => state.settings)
+  const showStats = settings?.visualization?.showStats || false
+  const xrEnabled = settings?.xr?.enabled !== false
+  
   return (
-    <Canvas ref={canvasRef}>
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[-2, 5, 2]} intensity={1} />
-      <mesh ref={mesh} rotation={[0, 0, 0]} scale={1}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshStandardMaterial color="orange" />
-      </mesh>
-      <OrbitControls
-        enableDamping
-        dampingFactor={0.1}
-        screenSpacePanning
-        minDistance={1}
-        maxDistance={2000}
-        enableRotate
-        enableZoom
-        enablePan
-        rotateSpeed={1.0}
-        zoomSpeed={1.2}
-        panSpeed={0.8}
-      />
-      <GraphManager />
-    </Canvas>
+    <div className="absolute inset-0 overflow-hidden">
+      <Canvas
+        ref={canvasRef}
+        gl={{
+          antialias: settings?.visualization?.rendering?.antialias !== false,
+          alpha: true,
+          powerPreference: 'high-performance'
+        }}
+        camera={{
+          fov: 75,
+          near: 0.1,
+          far: 2000,
+          position: [0, 10, 50]
+        }}
+        id="main-canvas"
+      >
+        {/* Initialize WebXR */}
+        <InitializeXR />
+        
+        {/* Scene setup must come first to initialize properly */}
+        <SceneSetup />
+        <CameraSetup />
+        
+        {/* Graph visualization */}
+        <GraphManager />
+        
+        {/* XR support */}
+        {xrEnabled && <XRController />}
+        
+        {/* Camera controls */}
+        <OrbitControls
+          enableDamping
+          dampingFactor={0.1}
+          screenSpacePanning
+          minDistance={1}
+          maxDistance={2000}
+          enableRotate
+          enableZoom
+          enablePan
+          rotateSpeed={1.0}
+          zoomSpeed={1.2}
+          panSpeed={0.8}
+        />
+        
+        {/* Post-processing effects */}
+        <Effects />
+        
+        {/* Performance stats (if enabled) */}
+        {showStats && <Stats />}
+      </Canvas>
+    </div>
   )
 }
 
