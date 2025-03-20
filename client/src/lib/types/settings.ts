@@ -49,6 +49,20 @@ export interface LabelSettings {
   fadeDistance?: number;
 }
 
+// Icon settings
+export interface IconSettings {
+  enabled: boolean;
+  size: number;
+  opacity: number;
+}
+
+// Metrics display settings
+export interface MetricsSettings {
+  enabled: boolean;
+  refreshRate: number;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+}
+
 // Node appearance settings
 export interface NodeSettings {
   defaultSize: number;
@@ -105,10 +119,12 @@ export interface VisualizationSettings {
   camera?: CameraSettings;
   bloom?: BloomSettings;
   labels?: LabelSettings;
+  icons?: IconSettings;
   nodes?: NodeSettings;
   edges?: EdgeSettings;
   physics?: PhysicsSettings;
-  hologram?: HologramSettings;  // Added hologram settings
+  hologram?: HologramSettings;
+  metrics?: MetricsSettings;
   showStats?: boolean;
   showAxes?: boolean;
   showGrid?: boolean;

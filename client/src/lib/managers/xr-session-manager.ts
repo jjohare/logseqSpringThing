@@ -4,6 +4,7 @@ import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerM
 import { createLogger, createErrorMetadata } from '../utils/logger';
 import { debugState } from '../utils/debug-state';
 import { SceneManager } from './scene-manager';
+import { GestureRecognitionResult } from '../xr/HandInteractionSystem';
 import { Settings } from '../types/settings';
 
 const logger = createLogger('XRSessionManager');
@@ -15,6 +16,12 @@ export interface XRControllerEvent {
 }
 
 type XRControllerEventHandler = (event: XRControllerEvent) => void;
+
+// New event handler types for hand interactions
+type GestureEventHandler = (gesture: GestureRecognitionResult) => void;
+type HandVisibilityHandler = (visible: boolean) => void;
+type XRSessionStateHandler = (state: string) => void;
+type HandTrackingHandler = (enabled: boolean) => void;
 
 export class XRSessionManager {
   private static instance: XRSessionManager;
@@ -34,6 +41,11 @@ export class XRSessionManager {
   private selectEndHandlers: XRControllerEventHandler[] = [];
   private squeezeStartHandlers: XRControllerEventHandler[] = [];
   private squeezeEndHandlers: XRControllerEventHandler[] = [];
+  
+  // New event handlers for hand interactions
+  private gestureRecognizedHandlers: GestureEventHandler[] = [];
+  private handsVisibilityChangedHandlers: HandVisibilityHandler[] = [];
+  private handTrackingStateHandlers: HandTrackingHandler[] = [];
   
   private constructor(sceneManager: SceneManager) {
     this.sceneManager = sceneManager;
@@ -296,6 +308,43 @@ export class XRSessionManager {
       this.squeezeEndHandlers = this.squeezeEndHandlers.filter(h => h !== handler);
     };
   }
+
+  // New event subscription methods for hand interactions
+  public onGestureRecognized(handler: GestureEventHandler): () => void {
+    this.gestureRecognizedHandlers.push(handler);
+    return () => {
+      this.gestureRecognizedHandlers = this.gestureRecognizedHandlers.filter(h => h !== handler);
+    };
+  }
+  
+  public onHandsVisibilityChanged(handler: HandVisibilityHandler): () => void {
+    this.handsVisibilityChangedHandlers.push(handler);
+    return () => {
+      this.handsVisibilityChangedHandlers = this.handsVisibilityChangedHandlers.filter(h => h !== handler);
+    };
+  }
+  
+  // Method to notify gesture events
+  public notifyGestureRecognized(gesture: GestureRecognitionResult): void {
+    this.gestureRecognizedHandlers.forEach(handler => {
+      try {
+        handler(gesture);
+      } catch (error) {
+        logger.error('Error in gesture recognition handler:', createErrorMetadata(error));
+      }
+    });
+  }
+  
+  // Method to notify hand visibility changes
+  public notifyHandsVisibilityChanged(visible: boolean): void {
+    this.handsVisibilityChangedHandlers.forEach(handler => {
+      try {
+        handler(visible);
+      } catch (error) {
+        logger.error('Error in hand visibility handler:', createErrorMetadata(error));
+      }
+    });
+  }
   
   // XR state methods
   public isSessionActive(): boolean {
@@ -349,6 +398,9 @@ export class XRSessionManager {
     this.selectEndHandlers = [];
     this.squeezeStartHandlers = [];
     this.squeezeEndHandlers = [];
+    this.gestureRecognizedHandlers = [];
+    this.handsVisibilityChangedHandlers = [];
+    this.handTrackingStateHandlers = [];
     
     // Clear factory
     this.controllerModelFactory = null;

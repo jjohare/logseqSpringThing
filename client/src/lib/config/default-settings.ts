@@ -33,6 +33,16 @@ export const defaultSettings: Settings = {
       showDistance: 50,
       fadeDistance: 100
     },
+    icons: {
+      enabled: true,
+      size: 1.0,
+      opacity: 0.8
+    },
+    metrics: {
+      enabled: false,
+      refreshRate: 1000,
+      position: 'top-right'
+    },
     nodes: {
       defaultSize: 1.0,
       minSize: 0.5,

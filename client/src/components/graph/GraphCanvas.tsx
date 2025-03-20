@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { EffectComposer, RenderPass, UnrealBloomPass } from 'three-stdlib'
 import GraphManager from './GraphManager'
 import XRController from '../xr/XRController'
+import XRVisualizationConnector from '../XRVisualizationConnector'
 import { useSettingsStore } from '../../lib/settings-store'
 import { createLogger } from '../../lib/utils/logger'
 import { debugState } from '../../lib/utils/debug-state'
@@ -195,6 +196,9 @@ const GraphCanvas = () => {
         
         {/* XR support */}
         {xrEnabled && <XRController />}
+        
+        {/* Connect hand interaction with visualization */}
+        {xrEnabled && <XRVisualizationConnector />}
         
         {/* Camera controls */}
         <OrbitControls

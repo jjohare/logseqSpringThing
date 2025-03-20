@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useThree } from '@react-three/fiber'
 import { XRSessionManager } from '../../lib/managers/xr-session-manager'
 import { XRInitializer } from '../../lib/managers/xr-initializer'
 import { SceneManager } from '../../lib/managers/scene-manager'
 import { createLogger } from '../../lib/utils/logger'
+import HandInteractionSystem, { GestureRecognitionResult } from '../../lib/xr/HandInteractionSystem'
 import { debugState } from '../../lib/utils/debug-state'
 import { useSettingsStore } from '../../lib/settings-store'
 
@@ -18,6 +19,8 @@ const XRController: React.FC = () => {
   const [xrInitializer, setXRInitializer] = useState<XRInitializer | null>(null)
   const { scene, gl, camera } = useThree()
   const settings = useSettingsStore(state => state.settings)
+  const [handsVisible, setHandsVisible] = useState(false)
+  const [handTrackingEnabled, setHandTrackingEnabled] = useState(true)
   
   // Initialize XR session manager
   useEffect(() => {
@@ -87,9 +90,42 @@ const XRController: React.FC = () => {
       logger.error('Failed to apply XR settings:', error)
     }
   }, [settings, sessionManager, xrInitializer])
+
+  // Handle gesture recognition
+  const handleGestureRecognized = useCallback((gesture: GestureRecognitionResult) => {
+    if (debugState.isEnabled()) {
+      logger.info(`Gesture recognized: ${gesture.gesture} (${gesture.confidence.toFixed(2)}) with ${gesture.hand} hand`)
+    }
+    
+    // Forward gesture to session manager if needed
+    if (sessionManager) {
+      sessionManager.notifyGestureRecognized(gesture)
+    }
+  }, [sessionManager])
+
+  // Handle hand visibility changes
+  const handleHandsVisible = useCallback((visible: boolean) => {
+    setHandsVisible(visible)
+    
+    // Forward event to session manager if needed
+    if (sessionManager) {
+      sessionManager.notifyHandsVisibilityChanged(visible)
+    }
+  }, [sessionManager])
   
-  // This component doesn't render anything
-  return null
+  // Render HandInteractionSystem (invisible but functional)
+  return (
+    <>
+      {/* Render HandInteractionSystem with proper callbacks */}
+      <HandInteractionSystem 
+        enabled={handTrackingEnabled}
+        onGestureRecognized={handleGestureRecognized}
+        onHandsVisible={handleHandsVisible}
+      >
+        {/* Children content can be passed here if needed */}
+      </HandInteractionSystem>
+    </>
+  )
 }
 
 export default XRController
