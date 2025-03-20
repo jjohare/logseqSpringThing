@@ -15,7 +15,8 @@ export default function GraphCanvas() {
 
     const initializeScene = async () => {
       try {
-        logger.info('Initializing WebGL canvas')
+        logger.warn('========= IMPORTANT =========')
+        logger.info('This GraphCanvas component is deprecated - using React Three Fiber instead')
 
         // In a full implementation, this would:
         // 1. Initialize Three.js renderer, scene, camera
@@ -69,7 +70,8 @@ export default function GraphCanvas() {
   return (
     <div className="h-full w-full bg-background">
       <canvas
-        id="main-canvas"
+        // ID removed to prevent conflicts with React Three Fiber
+        id="legacy-canvas"
         ref={canvasRef}
         className="h-full w-full outline-none"
       />

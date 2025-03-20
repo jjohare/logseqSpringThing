@@ -17,22 +17,27 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
   useEffect(() => {
     const initApp = async () => {
       if (debugState.isEnabled()) {
-        logger.info('Starting application initialization...');
-      }
-
-      try {
-        // Initialize settings
-        const settings = await initialize();
-        
-        // Apply debug settings
-        if (settings.system?.debug) {
-          const debugSettings = settings.system.debug;
-          debugState.enableDebug(debugSettings.enabled);
-          if (debugSettings.enabled) {
-            debugState.enableDataDebug(debugSettings.showDataUpdates);
-            debugState.enablePerformanceDebug(debugSettings.showPerformance);
-          }
+        logger.warn('**************** IMPORTANT NOTICE ******************');
+          logger.info('Starting application initialization...');
+          logger.warn('React Three Fiber is in use - SceneManager is deprecated');
+        logger.warn('*****************************************************');
         }
+
+        try {
+        // Initialize settings
+          const settings = await initialize();
+  
+          // Apply debug settings (keeping this functionality)
+          if (settings.system?.debug) {
+            const debugSettings = settings.system.debug;
+            debugState.enableDebug(debugSettings.enabled);
+            if (debugSettings.enabled) {
+              debugState.enableDataDebug(debugSettings.showDataUpdates);
+              debugState.enablePerformanceDebug(debugSettings.showPerformance);
+            }
+          }
+          // SIMPLIFIED: We now use React Three Fiber for rendering
+          // The canvas and rendering are managed by React Three Fiber      
 
         // Initialize WebSocket
         await initializeWebSocket(settings);
