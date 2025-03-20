@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="WebXR Graph Visualization Application" />
+    
+    <!-- WebXR polyfill and feature detection -->
+    <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
+    <script>
+      if ('xr' in navigator) {
+        navigator.xr.isSessionSupported('immersive-vr')
+          .then(supported => {
+            if (supported) {
+              console.log('WebXR VR supported');
+              document.body.classList.add('webxr-supported');
+            }
+          });
+      }
+    </script>
+    
+    <title>LogSeq XR</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

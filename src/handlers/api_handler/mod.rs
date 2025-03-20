@@ -28,6 +28,13 @@ pub fn config(cfg: &mut web::ServiceConfig) {
             .configure(graph::config)
             .configure(visualization::config)
             .configure(crate::handlers::nostr_handler::config)
-            .configure(crate::handlers::settings_handler::config)
+            .service(
+                web::scope("/settings")
+                    .route("", web::get().to(crate::handlers::settings_handler::get_public_settings))
+                    .route("", web::post().to(crate::handlers::settings_handler::update_settings))
+                    .route("/sync", web::get().to(crate::handlers::settings_handler::get_user_settings))
+                    .route("/sync", web::post().to(crate::handlers::settings_handler::update_user_settings))
+                    .route("/clear-cache", web::post().to(crate::handlers::settings_handler::clear_user_settings_cache))
+            )
     );
 }

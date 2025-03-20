@@ -2,13 +2,17 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/components/*": ["components/*"],
+      "@/components/*": ["src/components/*"], 
       "@/lib/*": ["src/lib/*"]
     },
     "jsx": "react-jsx",
     "esModuleInterop": true,
-    "typeRoots": ["./node_modules/@types"],
-    "lib": ["es6", "dom", "es2015"],
-    "moduleResolution": "node"
+    "lib": ["es2020", "dom", "dom.iterable"],
+    "moduleResolution": "node", 
+    "skipLibCheck": true,
+    "target": "es2020",
+    "module": "es2020",
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true
   }
 }

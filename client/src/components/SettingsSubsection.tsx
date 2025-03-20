@@ -1,6 +1,6 @@
-import { useSettingsStore } from '@/lib/stores/settings-store'
+import { useSettingsStore } from '../lib/stores/settings-store'
 import { SettingsSubsectionProps } from './types'
-import { SettingControl } from '@/components/control-panel/types'
+import { SettingControl } from './types'
 import { formatSettingName } from './settings-config'
 import { SettingControlComponent } from './SettingControlComponent'
 

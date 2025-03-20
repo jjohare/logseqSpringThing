@@ -3,20 +3,42 @@ FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
 
-# Install pnpm
-RUN npm install -g pnpm@9.14.2
-
 # Copy package files and configuration
-COPY package.json pnpm-lock.yaml ./
-COPY tsconfig.json tsconfig.node.json vite.config.ts ./
-COPY client ./client
+COPY client/package.json client/package-lock.json ./
+COPY client/tsconfig.json client/vite.config.ts ./
+COPY client/src ./src
+COPY client/public ./public
+COPY client/index.html ./
 
 # Create data/public directory for build output
 RUN mkdir -p data/public
 
 # Install dependencies and build
-RUN pnpm install --frozen-lockfile && \
-    pnpm run build
+RUN npm ci
+
+# Install missing dependencies that were previously managed by pnpm
+RUN npm install --save-dev \
+    @radix-ui/react-slot \
+    @radix-ui/react-collapsible \
+    @radix-ui/react-label \
+    @radix-ui/react-select \
+    @radix-ui/react-slider \
+    @radix-ui/react-switch \
+    @radix-ui/react-toast \
+    @radix-ui/react-tooltip \
+    class-variance-authority \
+    lucide-react \
+    react-draggable \
+    clsx \
+    tailwind-merge \
+    @types/node
+
+# Clean any previous build artifacts and perform a fresh build
+RUN rm -rf dist && npm run build
+
+# Copy build output to the expected location
+RUN mkdir -p data/public/dist && \
+    cp -r dist/* data/public/dist/
 
 # Stage 2: Rust Dependencies Cache
 FROM nvidia/cuda:12.8.1-devel-ubuntu22.04 AS rust-deps-builder
@@ -34,7 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust with better error handling
-RUN curl --retry 5 --retry-delay 2 --retry-connrefused https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.82.0
+RUN curl --retry 5 --retry-delay 2 --retry-connrefused https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.84.0
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Configure cargo for better network resilience
@@ -60,21 +82,22 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 # Create dummy src directory and build dependencies
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
-    GIT_HASH=$(git rev-parse HEAD || echo "development") \
+    GIT_HASH=$(git rev-parse HEAD || echo "development") && \
     CARGO_NET_GIT_FETCH_WITH_CLI=true \
     CARGO_HTTP_TIMEOUT=120 \
     CARGO_HTTP_CHECK_REVOKE=false \
-    cargo build --release --features gpu --jobs $(nproc) || \
-    (sleep 2 && GIT_HASH=$(git rev-parse HEAD || echo "development") CARGO_HTTP_MULTIPLEXING=false cargo build --release --jobs $(nproc)) || \
-    (sleep 5 && GIT_HASH=$(git rev-parse HEAD || echo "development") CARGO_HTTP_MULTIPLEXING=false cargo build --release --jobs 1)
+    cargo update && \
+    (cargo build --release --features gpu --jobs $(nproc) --offline || \
+    (sleep 2 && cargo build --release --jobs $(nproc)) || \
+    (sleep 5 && cargo build --release --jobs 1))
 
 # Now copy the real source code and build
 COPY src ./src
 
-RUN GIT_HASH=$(git rev-parse HEAD || echo "development") \
-    cargo build --release --features gpu --jobs $(nproc) || \
-    (sleep 2 && GIT_HASH=$(git rev-parse HEAD || echo "development") cargo build --release --jobs $(nproc)) || \
-    (sleep 5 && GIT_HASH=$(git rev-parse HEAD || echo "development") cargo build --release --jobs 1)
+RUN GIT_HASH=$(git rev-parse HEAD || echo "development") && \
+    (cargo build --release --features gpu --jobs $(nproc) --offline || \
+    (sleep 2 && cargo build --release --jobs $(nproc)) || \
+    (sleep 5 && cargo build --release --jobs 1))
 
 # Stage 3: Final Runtime Image
 FROM nvidia/cuda:12.8.1-devel-ubuntu22.04

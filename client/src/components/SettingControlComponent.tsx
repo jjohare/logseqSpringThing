@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { SettingControlProps } from './types'
 import { SettingValue } from './types'
-import { Label } from '@/components/ui/label'
-import { Slider } from '@/components/ui/slider'
-import { Switch } from '@/components/ui/switch'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Label } from './ui/label'
+import { Slider } from './ui/slider'
+import { Switch } from './ui/switch'
+import { Input } from './ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 import { InfoIcon } from 'lucide-react'
 
 export function SettingControlComponent({ path, setting, value, onChange }: SettingControlProps) {

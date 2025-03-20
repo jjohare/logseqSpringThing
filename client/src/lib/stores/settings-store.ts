@@ -270,6 +270,6 @@ export const useSettingsStore = create<SettingsState>()(
 // Add to Window interface
 declare global {
   interface Window {
-    settingsSaveTimeout: number;
+    settingsSaveTimeout: ReturnType<typeof setTimeout>;
   }
 }

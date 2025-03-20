@@ -42,6 +42,8 @@ class GraphDataManager {
   private lastBinaryUpdateTime: number = 0;
   private retryTimeout: number | null = null;
   private nodePositionBuffer: Float32Array | null = null;
+  private nodeIdMap: Map<string, number> = new Map();
+  private reverseNodeIdMap: Map<number, string> = new Map();
 
   private constructor() {
     // Private constructor for singleton
@@ -88,6 +90,41 @@ class GraphDataManager {
     }
   }
 
+  // Set graph data and notify listeners
+  public setGraphData(data: GraphData): void {
+    this.data = data;
+    
+    // Reset ID maps
+    this.nodeIdMap.clear();
+    this.reverseNodeIdMap.clear();
+    
+    // Create mappings between string IDs and numeric IDs
+    this.data.nodes.forEach((node, index) => {
+      const numericId = parseInt(node.id, 10);
+      if (!isNaN(numericId)) {
+        // If the ID can be parsed as a number, use it directly
+        this.nodeIdMap.set(node.id, numericId);
+        this.reverseNodeIdMap.set(numericId, node.id);
+      } else {
+        // For non-numeric IDs, use the index + 1 as the numeric ID
+        // We add 1 to avoid using 0 as an ID
+        const mappedId = index + 1;
+        this.nodeIdMap.set(node.id, mappedId);
+        this.reverseNodeIdMap.set(mappedId, node.id);
+      }
+    });
+    
+    // Prepare buffer for binary updates
+    this.prepareNodePositionBuffer();
+    
+    // Notify listeners
+    this.notifyGraphDataListeners();
+    
+    if (debugState.isDataDebugEnabled()) {
+      logger.debug(`Graph data updated: ${data.nodes.length} nodes, ${data.edges.length} edges`);
+    }
+  }
+
   // Prepare the binary buffer for position updates
   private prepareNodePositionBuffer(): void {
     if (!this.data.nodes.length) {
@@ -101,14 +138,16 @@ class GraphDataManager {
     // Initialize buffer with current positions
     this.data.nodes.forEach((node, index) => {
       const baseIndex = index * 4;
-      this.nodePositionBuffer![baseIndex] = parseInt(node.id, 10); // Node ID as float
+      // Use the numeric ID from the map
+      const numericId = this.nodeIdMap.get(node.id) || index + 1;
+      this.nodePositionBuffer![baseIndex] = numericId;
       this.nodePositionBuffer![baseIndex + 1] = node.position.x;
       this.nodePositionBuffer![baseIndex + 2] = node.position.y;
       this.nodePositionBuffer![baseIndex + 3] = node.position.z;
     });
     
     if (debugState.isDataDebugEnabled()) {
-      logger.debug(`Prepared position buffer for ${this.data.nodes.length} nodes`);
+      logger.debug(`Prepared position buffer for ${this.data.nodes.length} nodes with ID mapping`);
     }
   }
 
@@ -154,21 +193,6 @@ class GraphDataManager {
     
     if (debugState.isEnabled()) {
       logger.info(`Binary updates ${enabled ? 'enabled' : 'disabled'}`);
-    }
-  }
-
-  // Set graph data and notify listeners
-  public setGraphData(data: GraphData): void {
-    this.data = data;
-    
-    // Prepare buffer for binary updates
-    this.prepareNodePositionBuffer();
-    
-    // Notify listeners
-    this.notifyGraphDataListeners();
-    
-    if (debugState.isDataDebugEnabled()) {
-      logger.debug(`Graph data updated: ${data.nodes.length} nodes, ${data.edges.length} edges`);
     }
   }
 
@@ -258,15 +282,20 @@ class GraphDataManager {
 
     // Process position data (4 values per node: id, x, y, z)
     for (let i = 0; i < positionData.length; i += 4) {
-      const nodeId = positionData[i].toString();
+      const numericId = positionData[i];
       const x = positionData[i + 1];
       const y = positionData[i + 2];
       const z = positionData[i + 3];
 
-      // Find and update the node
-      const nodeIndex = this.data.nodes.findIndex(node => node.id === nodeId);
-      if (nodeIndex >= 0) {
-        this.data.nodes[nodeIndex].position = { x, y, z };
+      // Convert numeric ID back to string ID using the reverse map
+      const nodeId = this.reverseNodeIdMap.get(numericId);
+      
+      if (nodeId) {
+        // Find and update the node
+        const nodeIndex = this.data.nodes.findIndex(node => node.id === nodeId);
+        if (nodeIndex >= 0) {
+          this.data.nodes[nodeIndex].position = { x, y, z };
+        }
       }
     }
 
@@ -287,7 +316,8 @@ class GraphDataManager {
     // Update the buffer with current positions
     this.data.nodes.forEach((node, index) => {
       const baseIndex = index * 4;
-      this.nodePositionBuffer![baseIndex] = parseInt(node.id, 10);
+      const numericId = this.nodeIdMap.get(node.id) || index + 1;
+      this.nodePositionBuffer![baseIndex] = numericId;
       this.nodePositionBuffer![baseIndex + 1] = node.position.x;
       this.nodePositionBuffer![baseIndex + 2] = node.position.y;
       this.nodePositionBuffer![baseIndex + 3] = node.position.z;
@@ -298,7 +328,7 @@ class GraphDataManager {
       this.webSocketService.send(this.nodePositionBuffer.buffer);
       
       if (debugState.isDataDebugEnabled()) {
-        logger.debug(`Sent positions for ${this.data.nodes.length} nodes`);
+        logger.debug(`Sent positions for ${this.data.nodes.length} nodes with ID mapping`);
       }
     } catch (error) {
       logger.error('Error sending node positions:', createErrorMetadata(error));

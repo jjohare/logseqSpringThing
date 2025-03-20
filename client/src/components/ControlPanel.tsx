@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
-import { useSettingsStore } from '../lib/settings-store'
+import { useSettingsStore } from '../lib/stores/settings-store'
 import { Settings } from '../lib/types/settings'
 import { createLogger } from '../lib/utils/logger'
 import NostrAuthSection from './NostrAuthSection'
-import SettingsSection from './SettingsSection'
+import { SettingsSection } from './SettingsSection'
 import { ChevronLeft, ChevronRight, Settings2 } from 'lucide-react'
 import { Button } from './ui/button'
+import { SettingControl } from './types'
 
 const logger = createLogger('ControlPanel')
 
@@ -158,10 +159,14 @@ const ControlPanel: React.FC = () => {
                   
                   {/* Settings for current section/subsection */}
                   <SettingsSection
-                    section={activeSection}
-                    subsection={activeSubsection}
-                    settings={settings}
-                    updateSettings={updateSettings}
+                    id={activeSection} 
+                    title={currentSection?.title || ''}
+                      settings={
+                        activeSubsection && 
+                      settings[activeSection] && 
+                        settings[activeSection][activeSubsection] ? 
+                          settings[activeSection][activeSubsection] as Record<string, SettingControl | Record<string, SettingControl>> : {}
+                      }
                   />
                 </>
               )}

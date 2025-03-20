@@ -1,5 +1,5 @@
 use actix_web::{HttpRequest, HttpResponse};
-use log::{warn, error};
+use log::warn;
 use crate::services::nostr_service::NostrService;
 
 pub enum AccessLevel {

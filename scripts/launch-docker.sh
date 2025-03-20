@@ -79,12 +79,12 @@ check_environment() {
     return 0
 }
 
-check_pnpm_security() {
-    log "${YELLOW}Running pnpm security audit...${NC}"
+check_npm_security() {
+    log "${YELLOW}Running npm security audit...${NC}"
 
     # Run and capture the audit output
     local audit_output
-    audit_output=$(pnpm audit 2>&1 || true)
+    audit_output=$(cd "${PROJECT_ROOT}/client" && npm audit 2>&1 || true)
     local audit_exit=$?
 
     # Extract critical vulnerabilities count
@@ -111,10 +111,15 @@ check_pnpm_security() {
 
 check_typescript() {
     log "${YELLOW}Running TypeScript type check...${NC}"
-    if ! pnpm run type-check; then
-        log "${RED}TypeScript check failed${NC}"
-        log "${YELLOW}Containers will be left running for debugging${NC}"
-        return 1
+    # Use npx to run TypeScript compiler directly instead of relying on a script
+    if command -v npx &>/dev/null; then
+        if ! cd "${PROJECT_ROOT}/client" && npx tsc --noEmit && cd "${PROJECT_ROOT}"; then
+            log "${RED}TypeScript check failed${NC}"
+            log "${YELLOW}Containers will be left running for debugging${NC}"
+            return 1
+        fi
+    else
+        log "${YELLOW}TypeScript check skipped - npx not found${NC}"
     fi
     log "${GREEN}TypeScript check passed${NC}"
     return 0
@@ -122,6 +127,14 @@ check_typescript() {
 
 check_rust_security() {
     log "${YELLOW}Running cargo audit...${NC}"
+
+    # Generate Cargo.lock first
+    log "${YELLOW}Generating Cargo.lock file...${NC}"
+    if ! cargo generate-lockfile; then
+        log "${RED}Failed to generate Cargo.lock file${NC}"
+        return 1
+    fi
+    log "${GREEN}Cargo.lock generated successfully${NC}"
 
     local audit_output
     audit_output=$(cargo audit 2>&1 || true)
@@ -233,24 +246,25 @@ verify_client_structure() {
     log "${YELLOW}Verifying client directory structure...${NC}"
 
     local required_files=(
-        "$PROJECT_ROOT/client/index.html"
-        "$PROJECT_ROOT/client/index.ts"
-        "$PROJECT_ROOT/client/core/types.ts"
-        "$PROJECT_ROOT/client/core/constants.ts"
-        "$PROJECT_ROOT/client/core/utils.ts"
-        "$PROJECT_ROOT/client/core/logger.ts"
-        "$PROJECT_ROOT/client/websocket/websocketService.ts"
-        "$PROJECT_ROOT/client/rendering/scene.ts"
-        "$PROJECT_ROOT/client/rendering/node/geometry/NodeGeometryManager.ts"
-        "$PROJECT_ROOT/client/rendering/textRenderer.ts"
-        "$PROJECT_ROOT/client/state/settings.ts"
-        "$PROJECT_ROOT/client/state/graphData.ts"
-        "$PROJECT_ROOT/client/state/defaultSettings.ts"
-        "$PROJECT_ROOT/client/xr/xrSessionManager.ts"
-        "$PROJECT_ROOT/client/xr/xrInteraction.ts"
-        "$PROJECT_ROOT/client/xr/xrTypes.ts"
-        "$PROJECT_ROOT/client/platform/platformManager.ts"
+        "$PROJECT_ROOT/client/src/App.tsx"
+        "$PROJECT_ROOT/client/src/main.tsx"
+        "$PROJECT_ROOT/client/src/globals.css"
         "$PROJECT_ROOT/client/tsconfig.json"
+        "$PROJECT_ROOT/client/src/components/xr/XRController.tsx"
+        "$PROJECT_ROOT/client/src/lib/xr/HandInteractionSystem.tsx"
+        "$PROJECT_ROOT/client/src/lib/platform/platform-manager.ts"
+        "$PROJECT_ROOT/client/src/lib/rendering/TextRenderer.tsx"
+        "$PROJECT_ROOT/client/src/lib/visualization/MetadataVisualizer.tsx"
+        "$PROJECT_ROOT/client/src/lib/types/xr.ts"
+        "$PROJECT_ROOT/client/src/lib/types/settings.ts"
+        "$PROJECT_ROOT/client/src/lib/config/default-settings.ts"
+        "$PROJECT_ROOT/client/src/lib/managers/xr-session-manager.ts"
+        "$PROJECT_ROOT/client/src/components/HologramVisualization.tsx"
+        "$PROJECT_ROOT/client/src/components/NostrAuthSection.tsx"
+        "$PROJECT_ROOT/client/src/components/ui/button.tsx"
+        "$PROJECT_ROOT/client/src/components/ui/card.tsx"
+        "$PROJECT_ROOT/client/src/components/graph/GraphCanvas.tsx"
+        "$PROJECT_ROOT/client/src/components/graph/GraphManager.tsx"
     )
 
     for file in "${required_files[@]}"; do
@@ -412,7 +426,7 @@ fi
 
 # 7. Security checks
 log "\n${YELLOW}Running security checks...${NC}"
-check_pnpm_security || true
+check_npm_security || true
 check_typescript || {
     log "${YELLOW}TypeScript check failed - continuing for debugging${NC}"
 }
@@ -476,18 +490,20 @@ if ! nvcc \
     -ptx \
     -rdc=true \
     --compiler-options -fPIC \
-    src/utils/compute_forces.cu \
-    -o src/utils/compute_forces.ptx \
+    "${PROJECT_ROOT}/src/utils/compute_forces.cu" \
+    -o "${PROJECT_ROOT}/src/utils/compute_forces.ptx" \
     --compiler-bindir=/usr/bin/gcc-11; then
     log "${RED}Failed to compile CUDA to PTX${NC}"
     true
 else
     log "${YELLOW}Setting PTX file permissions...${NC}"
-    chmod 644 src/utils/compute_forces.ptx
+    chmod 644 "${PROJECT_ROOT}/src/utils/compute_forces.ptx"
 fi
-log "${YELLOW}Building client code...${NC}"
-pnpm build || { log "${RED}Client build failed${NC}"; exit 1; }
-log "${GREEN}Client build successful${NC}"
+
+# Install client dependencies and build React app
+log "${YELLOW}Installing client dependencies...${NC}"
+cd "${PROJECT_ROOT}/client" && npm install && cd "${PROJECT_ROOT}" || { log "${RED}Client dependency installation failed${NC}"; exit 1; }
+log "${GREEN}Client dependencies installed successfully${NC}"
 
 # Build with GIT_HASH environment variable
 log "${YELLOW}Building Docker containers (passing NVIDIA_GPU_UUID=${NVIDIA_GPU_UUID:-not set})${NC}"

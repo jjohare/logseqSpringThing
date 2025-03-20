@@ -1,7 +1,11 @@
 pub mod audio_processor;
+pub mod auth;
 pub mod binary_protocol;
+pub mod case_conversion;
 pub mod edge_data;
 pub mod gpu_compute;
+pub mod gpu_diagnostics;
 pub mod logging;
 pub mod socket_flow_constants;
 pub mod socket_flow_messages;
+pub mod tests;

@@ -46,20 +46,23 @@ declare module '@react-three/xr' {
 // Extended WebXR types for advanced hand tracking
 interface XRHand extends Map<XRHandJoint, XRJointSpace> {
   // Additional methods and properties
-  get(joint: XRHandJoint): XRJointSpace;
+  get(joint: XRHandJoint): XRJointSpace | undefined;
   keys(): IterableIterator<XRHandJoint>;
   values(): IterableIterator<XRJointSpace>;
 }
 
 interface XRJointSpace extends XRSpace {
-  jointName?: XRHandJoint;
+  // Remove readonly modifier conflict
+  jointName: XRHandJoint;
   space: XRSpace;
-  radius: number;
+  // Remove readonly modifier conflict
+  radius: number | undefined;
   pose?: XRPose;
 }
 
 // WebXR Hand Joint types
-type XRHandJoint = 
+// Rename to avoid conflict with @types/webxr
+type XRHandJointType = 
   | 'wrist'
   | 'thumb-metacarpal'
   | 'thumb-phalanx-proximal'
@@ -88,20 +91,21 @@ type XRHandJoint =
 
 // Extended WebXR session 
 interface XRSession {
-  inputSources: XRInputSourceArray;
+  // Avoid readonly modifier conflict
   supportedModules?: string[];
-  updateTargetFrameRate?: (fps: number) => void;
+  // Match type signature from @types/webxr
+  // updateTargetFrameRate(rate: number): Promise<void>;
 }
 
 // Extended XRFrame
 interface XRFrame {
-  getJointPose?: (joint: XRJointSpace, referenceSpace: XRReferenceSpace) => XRJointPose | null;
+  // Match type signature from @types/webxr
+  // getJointPose(joint: XRJointSpace, baseSpace: XRSpace): XRJointPose | undefined;
 }
 
 // Extended XRInputSource
 interface XRInputSource {
-  hand?: XRHand;
-  handedness: XRHandedness;
+  // Avoid readonly modifier conflict
 }
 
 // Extended controller type
@@ -114,12 +118,11 @@ interface XRController {
 
 // Joint pose with radius
 interface XRJointPose extends XRPose {
-  radius: number;
+  // Avoid readonly modifier conflict
 }
 
 // Additional global interfaces for TS compatibility
 interface XRInputSourceArray {
   length: number;
   [Symbol.iterator](): IterableIterator<XRInputSource>;
-  [index: number]: XRInputSource;
 }

@@ -8,7 +8,7 @@ use log::{info, error, warn, debug};
 use std::time::Instant;
 
 // Add a new endpoint to clear the settings cache for a user
-async fn clear_user_settings_cache(
+pub async fn clear_user_settings_cache(
     req: HttpRequest,
     feature_access: web::Data<FeatureAccess>
 ) -> Result<HttpResponse, Error> {
@@ -37,7 +37,7 @@ async fn clear_user_settings_cache(
 }
 
 // Add a new endpoint for admin to clear all settings caches
-async fn clear_all_settings_cache(
+pub async fn clear_all_settings_cache(
     req: HttpRequest,
     feature_access: web::Data<FeatureAccess>
 ) -> Result<HttpResponse, Error> {
@@ -92,7 +92,7 @@ pub async fn get_public_settings(state: web::Data<AppState>) -> Result<HttpRespo
     Ok(HttpResponse::Ok().json(&ui_settings))
 }
 
-async fn get_user_settings(
+pub async fn get_user_settings(
     req: HttpRequest,
     state: web::Data<AppState>,
     feature_access: web::Data<FeatureAccess>
@@ -142,7 +142,7 @@ async fn get_user_settings(
     result
 }
 
-async fn update_user_settings(
+pub async fn update_user_settings(
     req: HttpRequest,
     state: web::Data<AppState>,
     feature_access: web::Data<FeatureAccess>,
@@ -219,7 +219,7 @@ async fn update_user_settings(
     result
 }
 
-async fn update_settings(
+pub async fn update_settings(
     req: HttpRequest,
     state: web::Data<AppState>,
     feature_access: web::Data<FeatureAccess>,

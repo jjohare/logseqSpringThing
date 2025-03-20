@@ -40,7 +40,7 @@ thiserror = "1.0"
 anyhow = "1.0"
 
 # GPU/Compute
-bytemuck = { version = "1.21", features = ["derive"] }
+bytemuck = { version = "=1.14.0", features = ["derive"] }  # Using derive feature with latest version
 pollster = "0.3"
 cudarc = { version = "0.11", features = ["driver", "cuda-12040"] }
 

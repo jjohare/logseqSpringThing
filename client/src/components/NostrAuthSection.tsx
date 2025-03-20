@@ -1,7 +1,7 @@
 import React from 'react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
-import { useAuth } from '../lib/hooks/useAuth'
+import useAuth from '../lib/hooks/useAuth'
 
 const NostrAuthSection: React.FC = () => {
   const { authenticated, user, authError, login, logout } = useAuth()

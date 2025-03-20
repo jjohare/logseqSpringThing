@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { ChevronDown, ChevronUp, Minimize, Maximize } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from './ui/button'
 import { SettingsSectionProps } from './types'
 import { SettingsSubsection } from './SettingsSubsection'
-import { useDrag } from 'react-draggable'
+// Fix the import for react-draggable (it doesn't export useDrag)
+import Draggable from 'react-draggable'
 import { useControlPanelContext } from './control-panel-context'
 
 export function SettingsSection({ id, title, settings, advanced = false }: SettingsSectionProps) {
