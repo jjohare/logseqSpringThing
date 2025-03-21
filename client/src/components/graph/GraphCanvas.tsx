@@ -6,7 +6,7 @@ import { EffectComposer, RenderPass, UnrealBloomPass } from 'three-stdlib'
 import GraphManager from './GraphManager'
 import XRController from '../xr/XRController'
 import XRVisualizationConnector from '../XRVisualizationConnector'
-import { useSettingsStore } from '../../lib/settings-store'
+import { useSettingsStore } from '../../lib/settings-store' 
 import { createLogger } from '../../lib/utils/logger'
 import { debugState } from '../../lib/utils/debug-state'
 

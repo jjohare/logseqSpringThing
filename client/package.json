@@ -20,6 +20,7 @@
     "@radix-ui/react-tooltip": "^1.1.8",
     "@react-three/drei": "^9.80.0",
     "@react-three/fiber": "^8.13.6",
+    "@react-three/xr": "^6.6.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^10.15.0",
@@ -37,6 +38,7 @@
     "zustand": "^4.3.9"
   },
   "devDependencies": {
+    "@types/node": "^22.13.11",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "@types/react-syntax-highlighter": "^15.5.7",

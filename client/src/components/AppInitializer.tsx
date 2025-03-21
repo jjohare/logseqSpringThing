@@ -2,8 +2,16 @@ import React, { useEffect } from 'react';
 import { createLogger, createErrorMetadata } from '../lib/utils/logger';
 import { debugState } from '../lib/utils/debug-state';
 import { useSettingsStore } from '../lib/settings-store';
-import WebSocketService from '../lib/services/websocket-service';
-import { graphDataManager } from '../lib/managers/graph-data-manager';
+// Import services safely with try/catch in the component
+let WebSocketService: any;
+let graphDataManager: any;
+
+try {
+  WebSocketService = require('../lib/services/websocket-service').default;
+  graphDataManager = require('../lib/managers/graph-data-manager').graphDataManager;
+} catch (error) {
+  console.error('Could not load required services:', error);
+}
 
 const logger = createLogger('AppInitializer');
 
@@ -24,50 +32,54 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
         }
 
         try {
-        // Initialize settings
+          // Initialize settings
           const settings = await initialize();
   
-          // Apply debug settings (keeping this functionality)
+          // Apply debug settings safely
           if (settings.system?.debug) {
-            const debugSettings = settings.system.debug;
-            debugState.enableDebug(debugSettings.enabled);
-            if (debugSettings.enabled) {
-              debugState.enableDataDebug(debugSettings.showDataUpdates);
-              debugState.enablePerformanceDebug(debugSettings.showPerformance);
+            try {
+              const debugSettings = settings.system.debug;
+              debugState.enableDebug(debugSettings.enabled);
+              if (debugSettings.enabled) {
+                debugState.enableDataDebug(debugSettings.showDataUpdates);
+                debugState.enablePerformanceDebug(debugSettings.showPerformance);
+              }
+            } catch (debugError) {
+              logger.warn('Error applying debug settings:', createErrorMetadata(debugError));
             }
           }
-          // SIMPLIFIED: We now use React Three Fiber for rendering
-          // The canvas and rendering are managed by React Three Fiber
-          
-          // Ensure we don't error due to missing main-canvas element
-          // This check is only needed during transition from old to new rendering system
-          if (!document.getElementById('main-canvas')) {
-            logger.warn('Main canvas element not found, application is using React Three Fiber instead');
-            // No need to throw an error - the fix-errors.js script should have created a fallback
-            // and the actual rendering is handled by React Three Fiber
-          }
 
-        // Initialize WebSocket
-        await initializeWebSocket(settings);
+          // Try to initialize WebSocket
+          if (WebSocketService && graphDataManager) {
+            try {
+              await initializeWebSocket(settings);
+            } catch (wsError) {
+              logger.error('WebSocket initialization failed, continuing with UI only:', createErrorMetadata(wsError));
+              // We'll proceed without WebSocket connectivity
+            }
+          } else {
+            logger.warn('WebSocket services not available, continuing with UI only');
+          }
+          
+          if (debugState.isEnabled()) {
+            logger.info('Application initialized successfully');
+          }
         
-        if (debugState.isEnabled()) {
-          logger.info('Application initialized successfully');
-        }
+          // Signal that initialization is complete
+          onInitialized();
         
-        // Signal that initialization is complete
-        onInitialized();
       } catch (error) {
-        logger.error('Failed to initialize application components:', createErrorMetadata(error));
-        // Even if initialization fails, try to signal completion to show UI
-        onInitialized();
+          logger.error('Failed to initialize application components:', createErrorMetadata(error));
+          // Even if initialization fails, try to signal completion to show UI
+          onInitialized();
       }
     };
 
     initApp();
   }, [initialize, onInitialized]);
 
-  // Initialize WebSocket and set up event handlers
-  const initializeWebSocket = async (settings: any) => {
+  // Initialize WebSocket and set up event handlers - now safer with more error handling
+  const initializeWebSocket = async (settings: any): Promise<void> => {
     try {
       const websocketService = WebSocketService.getInstance();
       
@@ -87,22 +99,26 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
         if (debugState.isEnabled()) {
           logger.info(`WebSocket connection status changed: ${connected}`);
         }
-        
+
         // Check if websocket is both connected AND ready (received 'connection_established' message)
         if (connected) {
-          if (websocketService.isReady()) {
-            // WebSocket is fully ready, now it's safe to enable binary updates
-            logger.info('WebSocket is connected and fully established - enabling binary updates');
-            graphDataManager.setBinaryUpdatesEnabled(true);
-            if (debugState.isDataDebugEnabled()) {
-              logger.debug('Binary updates enabled');
+          try {
+            if (websocketService.isReady()) {
+              // WebSocket is fully ready, now it's safe to enable binary updates
+              logger.info('WebSocket is connected and fully established - enabling binary updates');
+              graphDataManager.setBinaryUpdatesEnabled(true);
+              if (debugState.isDataDebugEnabled()) {
+                logger.debug('Binary updates enabled');
+              }
+            } else {
+              logger.info('WebSocket connected but not fully established yet - waiting for readiness');
+              
+              // We'll let graphDataManager handle the binary updates enablement
+              // through its retry mechanism that now checks for websocket readiness
+              graphDataManager.enableBinaryUpdates();
             }
-          } else {
-            logger.info('WebSocket connected but not fully established yet - waiting for readiness');
-            
-            // We'll let graphDataManager handle the binary updates enablement
-            // through its retry mechanism that now checks for websocket readiness
-            graphDataManager.enableBinaryUpdates();
+          } catch (connectionError) {
+            logger.error('Error during WebSocket status change handling:', createErrorMetadata(connectionError));
           }
         }
       });
@@ -118,9 +134,12 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
         graphDataManager.setWebSocketService(wsAdapter);
       }
       
-      // Connect WebSocket
-      await websocketService.connect();
-      
+      try {
+        // Connect WebSocket
+        await websocketService.connect();
+      } catch (connectError) {
+        logger.error('Failed to connect to WebSocket:', createErrorMetadata(connectError));
+      }
       // Fetch initial graph data from REST API before enabling binary updates
       logger.info('Fetching initial graph data via REST API');
       await graphDataManager.fetchInitialData();

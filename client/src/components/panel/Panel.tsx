@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, ReactNode } from 'react';
 import { Rnd, RndResizeCallback, RndDragCallback } from 'react-rnd';
 import { usePanel, Panel as PanelType, PanelPosition, DockPosition } from './PanelContext';
-import { X, Minimize, Maximize, ChevronDown, ChevronUp, Dock } from 'lucide-react';
+import { X, Minimize, Maximize, ChevronDown, ChevronUp, Anchor } from 'lucide-react';
 import { Button } from '../ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -196,7 +196,7 @@ const Panel: React.FC<PanelProps> = ({
                   aria-label="Dock to left"
                   title="Dock to left"
                 >
-                  <Dock className="h-3 w-3 transform rotate-90" />
+                  <Anchor className="h-3 w-3 transform rotate-90" />
                 </Button>
                 <Button
                   variant="ghost"
@@ -206,7 +206,7 @@ const Panel: React.FC<PanelProps> = ({
                   aria-label="Dock to right"
                   title="Dock to right"
                 >
-                  <Dock className="h-3 w-3 transform -rotate-90" />
+                  <Anchor className="h-3 w-3 transform -rotate-90" />
                 </Button>
               </div>
             )}

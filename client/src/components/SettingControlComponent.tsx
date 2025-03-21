@@ -7,7 +7,7 @@ import { Switch } from './ui/switch'
 import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Tooltip, TooltipProvider } from './ui/tooltip'
-import { InfoIcon } from 'lucide-react'
+import { Info } from 'lucide-react'
 
 export function SettingControlComponent({ path, setting, value, onChange }: SettingControlProps) {
   // Format array values for display in inputs
@@ -164,7 +164,7 @@ export function SettingControlComponent({ path, setting, value, onChange }: Sett
         {setting.tooltip && (
           <TooltipProvider>
             <Tooltip content={setting.tooltip}>
-              <InfoIcon className="h-3 w-3 text-muted-foreground" />
+              <Info className="h-3 w-3 text-muted-foreground" />
             </Tooltip>
           </TooltipProvider>
         )}

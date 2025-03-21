@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { defaultSettings } from '@/lib/config/default-settings'
-import { Settings, SettingsPath, PathValue } from '@/lib/types/settings'
-import { createLogger } from '@/lib/utils/logger'
+import { defaultSettings } from './config/default-settings'
+import { Settings, SettingsPath, PathValue } from './types/settings'
+import { createLogger } from './utils/logger'
 
 const logger = createLogger('SettingsStore')
 

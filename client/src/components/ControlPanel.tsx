@@ -1,13 +1,12 @@
 import React, { useState } from 'react'
 import { useSettingsStore } from '../lib/stores/settings-store'
-import { Settings } from '../lib/types/settings'
 import { createLogger } from '../lib/utils/logger'
 import NostrAuthSection from './NostrAuthSection'
-import { SettingsSection } from './SettingsSection'
 import { ControlPanelProvider } from './control-panel-context'
-import { SettingControl } from './types'
+import { SettingsSection } from './SettingsSection'
 import TabPanel from './panel/TabPanel'
 import Tabs from './panel/PanelTabs'
+import { X, ChevronDown, ChevronUp } from 'lucide-react'
 
 const logger = createLogger('ControlPanel')
 
@@ -99,7 +98,7 @@ const ControlPanel: React.FC = () => {
           settings={
             settings[activeSection] && 
             settings[activeSection][subsection.id] ? 
-              settings[activeSection][subsection.id] as Record<string, SettingControl | Record<string, SettingControl>> : 
+              settings[activeSection][subsection.id] as Record<string, any> : 
               {}
           }
         />

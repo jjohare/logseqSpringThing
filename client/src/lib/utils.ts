@@ -1,5 +1,5 @@
 import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { twMerge } from "tailwind-merge" // Already installed in package.json
 
 /**
  * Merges class names with Tailwind CSS classes
