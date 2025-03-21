@@ -42,6 +42,19 @@ pub struct GraphQuery {
 pub async fn get_graph_data(state: web::Data<AppState>) -> impl Responder {
     info!("Received request for graph data");
     
+    // Check if graph is empty before processing
+    {
+        let graph = state.graph_service.get_graph_data_mut().await;
+        if graph.nodes.is_empty() {
+            debug!("Graph is empty, returning empty response");
+            return HttpResponse::Ok().json(GraphResponse {
+                nodes: vec![],
+                edges: vec![],
+                metadata: HashMap::new(),
+            });
+        }
+    }
+    
     // Make sure the GPU layout is calculated before sending data
     if let Some(gpu_compute) = &state.graph_service.get_gpu_compute().await {
         let mut graph = state.graph_service.get_graph_data_mut().await;
@@ -84,19 +97,31 @@ pub async fn get_graph_data(state: web::Data<AppState>) -> impl Responder {
     
     let graph = state.graph_service.get_graph_data_mut().await;
     
+    // Ensure all nodes have valid position data
+    for node in &graph.nodes {
+        if node.data.position.x.is_nan() || node.data.position.y.is_nan() || node.data.position.z.is_nan() {
+            warn!("Node {} has invalid position data, returning empty response to prevent client errors", node.id);
+            return HttpResponse::Ok().json(GraphResponse {
+                nodes: vec![],
+                edges: vec![],
+                metadata: HashMap::new(),
+            });
+        }
+    }
+    
     // Log position data to debug zero positions
     if !graph.nodes.is_empty() {
         // Log a few nodes for debugging
         for (i, node) in graph.nodes.iter().take(5).enumerate() {
-            debug!("Node {}: id={}, label={}, pos=[{:.3},{:.3},{:.3}]", 
-                i, node.id, node.label, node.data.position[0], node.data.position[1], node.data.position[2]);
+            debug!("Node {}: id={}, label={}, pos=[{:.3},{:.3},{:.3}]",
+                i, node.id, node.label, node.data.position.x, node.data.position.y, node.data.position.z);
         }
     }
     
     // Log edge data
     if !graph.edges.is_empty() {
         for (i, edge) in graph.edges.iter().take(5).enumerate() {
-            debug!("Edge {}: source={}, target={}, weight={:.3}", 
+            debug!("Edge {}: source={}, target={}, weight={:.3}",
                 i, edge.source, edge.target, edge.weight);
         }
     }

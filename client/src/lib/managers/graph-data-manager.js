@@ -34,7 +34,7 @@ class GraphDataManager {
             if (debugState.isEnabled()) {
                 logger.info('Fetching initial graph data');
             }
-            const response = await fetch('/api/graph');
+            const response = await fetch('/api/graph/data');
             if (!response.ok) {
                 throw new Error(`API request failed with status ${response.status}`);
             }

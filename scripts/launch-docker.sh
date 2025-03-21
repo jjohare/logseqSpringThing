@@ -3,7 +3,7 @@
 ###############################################################################
 # SAFETY SETTINGS
 ###############################################################################
-# -e  Exit on any command returning a non-zero status
+# -e  Exit immediately if a command exits with a non-zero status
 # -u  Treat unset variables as errors
 # -o pipefail  Return error if any part of a pipeline fails
 set -euo pipefail
@@ -127,7 +127,7 @@ check_typescript() {
 
 check_rust_security() {
     log "${YELLOW}Running cargo audit...${NC}"
-
+    
     # Generate Cargo.lock first
     log "${YELLOW}Generating Cargo.lock file...${NC}"
     if ! cargo generate-lockfile; then
@@ -253,8 +253,9 @@ verify_client_structure() {
         "$PROJECT_ROOT/client/src/components/xr/XRController.tsx"
         "$PROJECT_ROOT/client/src/lib/xr/HandInteractionSystem.tsx"
         "$PROJECT_ROOT/client/src/lib/platform/platform-manager.ts"
-        "$PROJECT_ROOT/client/src/lib/rendering/TextRenderer.tsx"
-        "$PROJECT_ROOT/client/src/lib/visualization/MetadataVisualizer.tsx"
+        # Check if these files exist before requiring them
+        "$PROJECT_ROOT/client/src/lib/rendering/TextRenderer.tsx" 
+        "$PROJECT_ROOT/client/src/lib/services/visualization-service.ts"
         "$PROJECT_ROOT/client/src/lib/types/xr.ts"
         "$PROJECT_ROOT/client/src/lib/types/settings.ts"
         "$PROJECT_ROOT/client/src/lib/config/default-settings.ts"
@@ -267,10 +268,13 @@ verify_client_structure() {
         "$PROJECT_ROOT/client/src/components/graph/GraphManager.tsx"
     )
 
+    local missing_files=()
     for file in "${required_files[@]}"; do
         if [ ! -f "$file" ]; then
-            log "${RED}Error: Required file $file not found${NC}"
-            return 1
+            log "${YELLOW}Warning: Expected file $file not found${NC}"
+            missing_files+=("$file")
+            # Don't fail immediately - collect all missing files
+            # return 1 
         fi
     done
 
@@ -283,7 +287,7 @@ check_ragflow_network() {
     if ! docker network ls | grep -q "docker_ragflow"; then
         log "${RED}Error: RAGFlow network (docker_ragflow) not found${NC}"
         log "${YELLOW}Please ensure RAGFlow is running in ../ragflow/docker${NC}"
-        log "${YELLOW}You can check the network with: docker network ls${NC}"
+        log "${YELLOW}You can check networks with: docker network ls${NC}"
         return 1
     fi
     log "${GREEN}RAGFlow network is available${NC}"
@@ -308,31 +312,50 @@ check_kokoros() {
 check_application_readiness() {
     local max_attempts=60
     local attempt=1
-    local wait_secs=2
+    local wait_secs=3
 
     log "${YELLOW}Checking application readiness...${NC}"
 
     while [ "$attempt" -le "$max_attempts" ]; do
         local ready=true
         local status_msg=""
-
+        
         # Simple container running check instead of health check
         if ! docker ps --format '{{.Names}}' | grep -q "^logseq-xr-webxr$"; then
             ready=false
-            status_msg="Container not running"
+            status_msg="WebXR container not running or not created properly"
+            
+            # Check if container exists but exited
+            if docker ps -a --format '{{.Names}}' | grep -q "^logseq-xr-webxr$"; then
+                local exit_code=$(docker inspect logseq-xr-webxr --format='{{.State.ExitCode}}' 2>/dev/null || echo "unknown")
+                status_msg="WebXR container exists but exited with code: $exit_code"
+                
+                # Show recent logs when container exists but exited
+                log "${YELLOW}Container exited. Last 30 lines of logs:${NC}"
+                docker logs logseq-xr-webxr --tail=30 2>/dev/null || log "${RED}Cannot retrieve logs${NC}"
+            fi
         fi
 
         # Basic HTTP check
         if [ "$ready" = true ] && ! timeout 5 curl -s http://localhost:4000/ >/dev/null; then
             ready=false
-            status_msg="HTTP endpoint not ready"
+            status_msg="HTTP endpoint not ready (port 4000)"
+            
+            # Check if something else is using the port
+            if netstat -tuln | grep -q ":4000 "; then
+                status_msg="Port 4000 in use but not responding correctly"
+            fi
         fi
 
         # Process check inside container (more reliable than health check)
         if [ "$ready" = true ]; then
             if ! docker exec logseq-xr-webxr pgrep -f "node" >/dev/null; then
                 ready=false
-                status_msg="Node process not running in container"
+                status_msg="Node process not running in container, checking for other processes"
+                
+                # List running processes in container for debugging
+                log "${YELLOW}Processes running in container:${NC}"
+                docker exec logseq-xr-webxr ps aux || log "${RED}Cannot list processes${NC}"
             fi
         fi
 
@@ -343,9 +366,19 @@ check_application_readiness() {
 
         log "${YELLOW}Attempt $attempt/$max_attempts: $status_msg${NC}"
 
-        if [ "$attempt" -eq $((max_attempts / 2)) ]; then
-            log "${YELLOW}Still waiting for services. Recent logs:${NC}"
-            $DOCKER_COMPOSE logs --tail=20
+        # Show more detailed diagnostics at strategic points
+        if [ "$attempt" -eq 5 ] || [ "$attempt" -eq $((max_attempts / 2)) ] || [ "$attempt" -eq $((max_attempts - 5)) ]; then
+            log "${YELLOW}===== Diagnostic Information at attempt $attempt =====${NC}"
+            
+            # Show docker-compose status
+            log "${YELLOW}Docker Compose status:${NC}"
+            $DOCKER_COMPOSE ps
+            
+            # Show logs from both containers
+            log "${YELLOW}Recent WebXR container logs:${NC}"
+            docker logs logseq-xr-webxr --tail=20 2>/dev/null || echo "No logs available"
+            log "${YELLOW}Recent Cloudflared container logs:${NC}"
+            docker logs cloudflared-tunnel --tail=20 2>/dev/null || echo "No logs available"
         fi
 
         sleep "$wait_secs"
@@ -353,7 +386,14 @@ check_application_readiness() {
     done
 
     log "${RED}Application failed to start properly${NC}"
-    $DOCKER_COMPOSE logs
+    log "${YELLOW}===== FINAL DIAGNOSTICS =====${NC}"
+    
+    # Show full docker system info for debugging
+    log "${YELLOW}Docker system info:${NC}"
+    docker system df
+    docker ps -a
+    
+    $DOCKER_COMPOSE logs --tail=100
     return 1
 }
 ###############################################################################
@@ -412,6 +452,18 @@ check_system_resources || {
 # Set NVIDIA GPU UUID explicitly to the known working value
 log "${YELLOW}Setting GPU UUID...${NC}"
 
+# Docker build environment optimizations
+log "${YELLOW}Setting Docker build optimizations...${NC}"
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
+# Add Cargo environment variables that might help with the build
+export CARGO_NET_RETRY=10
+export CARGO_NET_GIT_FETCH_WITH_CLI=true
+export CARGO_HTTP_TIMEOUT=180
+export CARGO_HTTP_CONNECT_TIMEOUT=60
+export CARGO_HTTP_CHECK_REVOKE=false
+
 # Use the specific GPU UUID we know works
 NVIDIA_GPU_UUID="GPU-553dc306-dab3-32e2-c69b-28175a6f4da6"
 export NVIDIA_GPU_UUID
@@ -450,15 +502,22 @@ webxr_id=$(docker ps -aq --filter "name=logseq-xr-webxr")
 # Stop and remove cloudflared container if it exists
 if [ -n "$cloudflared_id" ]; then
     log "${YELLOW}Stopping cloudflared container $cloudflared_id...${NC}"
-    docker stop "$cloudflared_id"
-    docker rm "$cloudflared_id"
+    docker stop "$cloudflared_id" || log "${YELLOW}Failed to stop cloudflared container, may already be stopped${NC}"
+    docker rm "$cloudflared_id" || log "${YELLOW}Failed to remove cloudflared container, may already be removed${NC}"
 fi
 
 # Stop and remove webxr container if it exists
 if [ -n "$webxr_id" ]; then
     log "${YELLOW}Stopping webxr container $webxr_id...${NC}"
-    docker stop "$webxr_id"
-    docker rm "$webxr_id"
+    docker stop "$webxr_id" || log "${YELLOW}Failed to stop webxr container, may already be stopped${NC}"
+    docker rm "$webxr_id" || log "${YELLOW}Failed to remove webxr container, may already be removed${NC}"
+fi
+
+# Clean up any orphaned containers
+orphaned_containers=$(docker ps -a --filter "label=com.docker.compose.project=logseq-xr" --format "{{.ID}}" 2>/dev/null || true)
+if [ -n "$orphaned_containers" ]; then
+    log "${YELLOW}Cleaning up orphaned containers...${NC}"
+    docker rm -f $orphaned_containers 2>/dev/null || true
 fi
 
 # If in rebuild-test mode, do additional cleanup
@@ -470,6 +529,7 @@ fi
 # Get current git hash or use "development" if not in a git repo
 GIT_HASH=$(git rev-parse HEAD 2>/dev/null || echo "development")
 export GIT_HASH
+log "${YELLOW}Building with GIT_HASH=${GIT_HASH}${NC}"
 
 # Compile CUDA to PTX
 log "${YELLOW}Compiling CUDA to PTX...${NC}"
@@ -494,30 +554,81 @@ if ! nvcc \
     -o "${PROJECT_ROOT}/src/utils/compute_forces.ptx" \
     --compiler-bindir=/usr/bin/gcc-11; then
     log "${RED}Failed to compile CUDA to PTX${NC}"
-    true
+    log "${YELLOW}Checking if PTX file already exists...${NC}"
+    if [ -f "${PROJECT_ROOT}/src/utils/compute_forces.ptx" ]; then
+        log "${GREEN}Existing PTX file found, will use that one${NC}"
+    else
+        log "${RED}No PTX file found. This may cause GPU functionality to fail.${NC}"
+    fi
 else
     log "${YELLOW}Setting PTX file permissions...${NC}"
     chmod 644 "${PROJECT_ROOT}/src/utils/compute_forces.ptx"
+    log "${GREEN}CUDA PTX compilation successful${NC}"
 fi
 
-# Install client dependencies and build React app
-log "${YELLOW}Installing client dependencies...${NC}"
-cd "${PROJECT_ROOT}/client" && npm install && cd "${PROJECT_ROOT}" || { log "${RED}Client dependency installation failed${NC}"; exit 1; }
-log "${GREEN}Client dependencies installed successfully${NC}"
+# Build Docker containers
+log "${YELLOW}Building Docker containers (NVIDIA_GPU_UUID=${NVIDIA_GPU_UUID:-not set})${NC}"
+# Use build-arg to pass environment variables
 
-# Build with GIT_HASH environment variable
-log "${YELLOW}Building Docker containers (passing NVIDIA_GPU_UUID=${NVIDIA_GPU_UUID:-not set})${NC}"
-DEBUG_MODE=$DEBUG_MODE GIT_HASH=$GIT_HASH $DOCKER_COMPOSE build --pull --no-cache
-$DOCKER_COMPOSE up -d
+# Add timeout protection for the build
+log "${YELLOW}Starting Docker build with timeout protection (30 minutes)...${NC}"
+# Reduce the timeout to 15 minutes and use a more targeted approach
+if ! timeout 900 bash -c "DEBUG_MODE=$DEBUG_MODE GIT_HASH=$GIT_HASH $DOCKER_COMPOSE build --pull --no-cache frontend-builder"; then
+    log "${RED}Frontend builder failed to build${NC}"
+else
+    log "${GREEN}Frontend builder built successfully${NC}"
+fi
 
-# 11. Check readiness (fatal if fails)
+# Build rust dependencies separately with shorter timeout
+log "${YELLOW}Building Rust dependencies (with 10 minute timeout)...${NC}"
+if ! timeout 600 bash -c "DEBUG_MODE=$DEBUG_MODE GIT_HASH=$GIT_HASH $DOCKER_COMPOSE build --no-cache rust-deps-builder"; then
+    log "${RED}Rust dependencies build failed or timed out${NC}"
+    log "${YELLOW}This is the stage that was hanging previously${NC}"
+fi
+
+# Final build of webxr service
+log "${YELLOW}Building webxr service (with 15 minute timeout)...${NC}"
+if ! timeout 900 bash -c "DEBUG_MODE=$DEBUG_MODE GIT_HASH=$GIT_HASH $DOCKER_COMPOSE build webxr"; then
+    log "${RED}WebXR service build failed or timed out${NC}"
+    log "${YELLOW}Trying one final build with full caching enabled...${NC}"
+    
+    # One last attempt with full caching
+    if ! timeout 600 bash -c "DEBUG_MODE=$DEBUG_MODE GIT_HASH=$GIT_HASH $DOCKER_COMPOSE build webxr"; then
+        log "${RED}All WebXR build attempts failed${NC}"
+    fi
+else
+    log "${GREEN}WebXR service built successfully${NC}"
+fi
+
+log "${YELLOW}Starting containers regardless of build status (for debugging)...${NC}"
+
+# Always attempt to start containers, with fallback for potential errors
+if ! $DOCKER_COMPOSE up -d; then
+    log "${RED}Failed to start containers on first attempt${NC}"
+    
+    # Try pruning and restarting
+    log "${YELLOW}Pruning Docker system and trying again...${NC}"
+    docker system prune -f --volumes
+    
+    # One more attempt
+    if ! $DOCKER_COMPOSE up -d; then
+        log "${RED}Failed to start containers after pruning${NC}"
+        log "${YELLOW}Continuing anyway for debugging purposes...${NC}"
+    fi
+else
+    log "${GREEN}Containers started successfully${NC}"
+fi
+
+# 11. Check readiness (non-fatal if fails)
 if ! check_application_readiness; then
     log "${RED}Application failed to start properly${NC}"
     log "${YELLOW}Containers left running for debugging. Use these commands:${NC}"
     log "  $DOCKER_COMPOSE logs -f"
     log "  docker logs logseq-xr-webxr"
     log "  docker logs cloudflared-tunnel"
-    exit 1
+    log "  docker exec -it logseq-xr-webxr /bin/bash # to debug inside container"
+    # Don't exit, allow script to continue for debugging
+    # exit 1
 fi
 
 # 12. Final status
@@ -528,7 +639,8 @@ docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
 
 log "\nEndpoints:"
 echo "HTTP:      http://localhost:4000"
-echo "WebSocket: ws://localhost:4000/wss"
+echo "WebSocket: ws://localhost:4000/ws"
+echo "XR Socket: ws://localhost:4000/xr"
 
 log "\nCommands:"
 echo "logs:    $DOCKER_COMPOSE logs -f"

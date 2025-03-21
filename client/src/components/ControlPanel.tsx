@@ -4,10 +4,10 @@ import { Settings } from '../lib/types/settings'
 import { createLogger } from '../lib/utils/logger'
 import NostrAuthSection from './NostrAuthSection'
 import { SettingsSection } from './SettingsSection'
-import { ChevronLeft, ChevronRight, Settings2 } from 'lucide-react'
-import { Button } from './ui/button'
 import { ControlPanelProvider } from './control-panel-context'
 import { SettingControl } from './types'
+import TabPanel from './panel/TabPanel'
+import Tabs from './panel/PanelTabs'
 
 const logger = createLogger('ControlPanel')
 
@@ -16,7 +16,7 @@ const PANEL_SECTIONS = [
   {
     id: 'visualization',
     title: 'Visualization',
-    icon: <Settings2 className="h-4 w-4" />,
+    icon: '⚙️',
     subsections: [
       { id: 'rendering', title: 'Rendering' },
       { id: 'nodes', title: 'Nodes' },
@@ -28,7 +28,7 @@ const PANEL_SECTIONS = [
   {
     id: 'xr',
     title: 'VR/AR',
-    icon: <Settings2 className="h-4 w-4" />,
+    icon: '🥽',
     subsections: [
       { id: 'controls', title: 'Controls' },
       { id: 'environment', title: 'Environment' },
@@ -37,7 +37,7 @@ const PANEL_SECTIONS = [
   {
     id: 'system',
     title: 'System',
-    icon: <Settings2 className="h-4 w-4" />,
+    icon: '🖥️',
     subsections: [
       { id: 'websocket', title: 'WebSocket' },
       { id: 'debug', title: 'Debug' },
@@ -46,7 +46,7 @@ const PANEL_SECTIONS = [
   {
     id: 'auth',
     title: 'Authentication',
-    icon: <Settings2 className="h-4 w-4" />,
+    icon: '🔒',
     subsections: []
   }
 ]
@@ -56,16 +56,10 @@ const ControlPanel: React.FC = () => {
   const [activeSection, setActiveSection] = useState('visualization')
   const [activeSubsection, setActiveSubsection] = useState<string | null>('rendering')
   const settings = useSettingsStore(state => state.settings)
-  const setSettings = useSettingsStore(state => state.set)
   
   // Toggle panel open/closed
   const togglePanel = () => {
     setIsOpen(!isOpen)
-  }
-  
-  // Update settings
-  const updateSettings = <T extends unknown>(path: string, value: T) => {
-    setSettings(path, value)
   }
   
   // Handle section change
@@ -74,11 +68,43 @@ const ControlPanel: React.FC = () => {
     
     // Set first subsection as active if available
     const section = PANEL_SECTIONS.find(s => s.id === sectionId)
-    if (section && section.subsections.length > 0) {
-      setActiveSubsection(section.subsections[0].id)
+    
+    // For Authentication, we don't need subsections
+    if (sectionId === 'auth') {
+      setActiveSubsection(null)
+    } else if (section && section.subsections.length > 0) {
+      // Set the first subsection as active
+      const subsectionId = section.subsections[0].id
+      setActiveSubsection(subsectionId)
     } else {
       setActiveSubsection(null)
     }
+  }
+  
+  // Create tabs based on the current section's subsections
+  const createTabs = () => {
+    const section = PANEL_SECTIONS.find(s => s.id === activeSection)
+    
+    if (!section || section.subsections.length === 0) {
+      return []
+    }
+    
+    return section.subsections.map(subsection => ({
+      id: subsection.id,
+      title: subsection.title,
+      content: (
+        <SettingsSection
+          id={activeSection}
+          title={section.title}
+          settings={
+            settings[activeSection] && 
+            settings[activeSection][subsection.id] ? 
+              settings[activeSection][subsection.id] as Record<string, SettingControl | Record<string, SettingControl>> : 
+              {}
+          }
+        />
+      )
+    }))
   }
   
   // Handle subsection change
@@ -92,15 +118,13 @@ const ControlPanel: React.FC = () => {
   return (
     <div className={`fixed right-0 top-0 h-full transition-all duration-300 bg-background border-l border-border ${isOpen ? 'w-80' : 'w-12'}`}>
       {/* Toggle Button */}
-      <Button
-        variant="ghost"
-        size="icon"
+      <button
         className="absolute -left-10 top-4 bg-background border border-border rounded-l-md rounded-r-none h-10 w-10"
         onClick={togglePanel}
         aria-label={isOpen ? 'Close panel' : 'Open panel'}
       >
-        {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-      </Button>
+        {isOpen ? '→' : '←'}
+      </button>
       
       {isOpen && (
         <ControlPanelProvider>
@@ -125,7 +149,7 @@ const ControlPanel: React.FC = () => {
                       }`}
                       onClick={() => handleSectionChange(section.id)}
                     >
-                      {section.icon}
+                      <span>{section.icon}</span>
                       <span>{section.title}</span>
                     </button>
                   ))}
@@ -138,38 +162,22 @@ const ControlPanel: React.FC = () => {
                   <NostrAuthSection />
                 ) : (
                   <>
-                    {/* Subsection Tabs if available */}
-                    {currentSection && currentSection.subsections.length > 0 && (
-                      <div className="border-b border-border mb-4">
-                        <div className="flex space-x-2 overflow-x-auto">
-                          {currentSection.subsections.map(subsection => (
-                            <button
-                              key={subsection.id}
-                              className={`px-3 py-2 ${
-                                activeSubsection === subsection.id
-                                  ? 'border-b-2 border-primary font-medium'
-                                  : 'text-muted-foreground hover:text-foreground'
-                              }`}
-                              onClick={() => handleSubsectionChange(subsection.id)}
-                            >
-                              {subsection.title}
-                            </button>
-                          ))}
-                        </div>
+                    {/* Modern tab navigation for subsections */}
+                    {currentSection && currentSection.subsections.length > 0 ? (
+                      <div className="w-full h-full">
+                        <Tabs
+                          tabs={createTabs()}
+                          defaultTabId={activeSubsection || undefined}
+                          orientation="horizontal"
+                        />
                       </div>
+                    ) : (
+                      <SettingsSection 
+                        id={activeSection} 
+                        title={currentSection?.title || ''} 
+                        settings={settings[activeSection] as Record<string, any> || {}} 
+                      />
                     )}
-                    
-                    {/* Settings for current section/subsection */}
-                    <SettingsSection
-                      id={activeSection} 
-                      title={currentSection?.title || ''}
-                        settings={
-                          activeSubsection && 
-                        settings[activeSection] && 
-                          settings[activeSection][activeSubsection] ? 
-                            settings[activeSection][activeSubsection] as Record<string, SettingControl | Record<string, SettingControl>> : {}
-                        }
-                    />
                   </>
                 )}
               </div>

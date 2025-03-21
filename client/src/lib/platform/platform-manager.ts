@@ -39,6 +39,7 @@ interface PlatformState {
   userAgent: string;
   isXRMode: boolean;
   xrSessionState: XRSessionState;
+  isWebXRSupported: boolean;
   
   // Event listeners storage
   listeners: Map<PlatformEventType, Set<Function>>;
@@ -86,6 +87,7 @@ export const usePlatformStore = create<PlatformState>()((set, get) => ({
   userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
   isXRMode: false,
   xrSessionState: 'inactive',
+  isWebXRSupported: typeof navigator !== 'undefined' && !!navigator.xr,
   initialized: false,
   
   // Event listeners
@@ -109,6 +111,7 @@ export const usePlatformStore = create<PlatformState>()((set, get) => ({
           capabilities: {
             ...state.capabilities,
             xrSupported: vrSupported || arSupported,
+            
             vrSupported,
             arSupported
           }
@@ -144,7 +147,13 @@ export const usePlatformStore = create<PlatformState>()((set, get) => ({
       });
     }
     
-    set({ initialized: true });
+    // Update WebXR support
+    const isWebXRSupported = typeof navigator !== 'undefined' && !!navigator.xr;
+    
+    set({ 
+      initialized: true,
+      isWebXRSupported
+    });
     
     logger.info('Platform manager initialized', {
       platform: get().platform,
@@ -396,6 +405,10 @@ export class PlatformManager {
   
   public isDesktop(): boolean {
     return usePlatformStore.getState().isDesktop();
+  }
+
+  public isWebXRSupported(): boolean {
+    return usePlatformStore.getState().isWebXRSupported;
   }
   
   public isMobile(): boolean {

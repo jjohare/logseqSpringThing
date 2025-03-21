@@ -5,7 +5,7 @@ The REST API provides endpoints for graph data management, content operations, a
 
 ## Base URL
 ```
-https://api.webxr.dev/v1
+https://www.visionflow.info
 ```
 
 ## Authentication
@@ -73,7 +73,7 @@ DELETE /api/auth/nostr
 GET /api/graph/data
 ```
 
-Returns complete graph structure:
+Returns the complete graph structure:
 ```json
 {
   "nodes": [...],
@@ -84,7 +84,7 @@ Returns complete graph structure:
 
 ### Get Specific Node
 ```http
-GET /graph/nodes/{nodeId}
+GET /api/graph/nodes/{nodeId}
 ```
 
 **Response:**
@@ -155,7 +155,7 @@ GET /api/files/get_content/{filename}
 
 ### Upload Content
 ```http
-POST /content/upload
+POST /api/content/upload
 ```
 
 **Request Body:**
@@ -215,7 +215,7 @@ POST /api/perplexity
 
 ### Health Check
 ```http
-GET /health
+GET /api/health
 ```
 
 **Response:**

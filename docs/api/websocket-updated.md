@@ -2,7 +2,7 @@
 
 ## Connection
 
-Connect to: `wss://your-domain/wss`
+Connect to: `wss://www.visionflow.info/wss`
 
 ## Authentication
 

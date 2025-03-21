@@ -1,0 +1,13 @@
+api/websocket-updated.md
+api/rest.md
+api/websocket.md
+overview/architecture.md
+technical/decoupled-graph-architecture.md
+client/architecture.md
+client/components.md
+client/state.md
+client/websocket-readiness.md
+client/websocket.md
+server/architecture.md
+server/services.md
+server/utils.md

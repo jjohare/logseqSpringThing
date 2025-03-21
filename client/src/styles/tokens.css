@@ -1,0 +1,185 @@
+/**
+ * Design Tokens
+ * 
+ * This file contains the design tokens for the application.
+ * These variables provide a consistent visual language across the UI.
+ */
+
+:root {
+  /* Base Colors */
+  --color-primary: hsl(222.2, 47.4%, 11.2%);
+  --color-primary-foreground: hsl(210, 40%, 98%);
+  
+  --color-secondary: hsl(210, 40%, 96.1%);
+  --color-secondary-foreground: hsl(222.2, 47.4%, 11.2%);
+  
+  --color-accent: hsl(210, 40%, 90%);
+  --color-accent-foreground: hsl(222.2, 47.4%, 11.2%);
+  
+  --color-destructive: hsl(0, 84.2%, 60.2%);
+  --color-destructive-foreground: hsl(210, 40%, 98%);
+  
+  --color-muted: hsl(210, 40%, 96.1%);
+  --color-muted-foreground: hsl(215.4, 16.3%, 46.9%);
+  
+  --color-card: hsl(0, 0%, 100%);
+  --color-card-foreground: hsl(222.2, 47.4%, 11.2%);
+  
+  --color-popover: hsl(0, 0%, 100%);
+  --color-popover-foreground: hsl(222.2, 47.4%, 11.2%);
+  
+  --color-border: hsl(214.3, 31.8%, 91.4%);
+  --color-input: hsl(214.3, 31.8%, 91.4%);
+  
+  --color-background: hsl(0, 0%, 100%);
+  --color-foreground: hsl(222.2, 47.4%, 11.2%);
+  
+  /* Typography */
+  --font-family-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm: 0.875rem;   /* 14px */
+  --font-size-base: 1rem;     /* 16px */
+  --font-size-lg: 1.125rem;   /* 18px */
+  --font-size-xl: 1.25rem;    /* 20px */
+  --font-size-2xl: 1.5rem;    /* 24px */
+  --font-size-3xl: 1.875rem;  /* 30px */
+  --font-size-4xl: 2.25rem;   /* 36px */
+  
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-loose: 1.75;
+  
+  /* Spacing */
+  --space-1: 0.25rem;  /* 4px */
+  --space-2: 0.5rem;   /* 8px */
+  --space-3: 0.75rem;  /* 12px */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.25rem;  /* 20px */
+  --space-6: 1.5rem;   /* 24px */
+  --space-8: 2rem;     /* 32px */
+  --space-10: 2.5rem;  /* 40px */
+  --space-12: 3rem;    /* 48px */
+  --space-16: 4rem;    /* 64px */
+  --space-20: 5rem;    /* 80px */
+  --space-24: 6rem;    /* 96px */
+  
+  /* Layout */
+  --width-xs: 20rem;   /* 320px */
+  --width-sm: 24rem;   /* 384px */
+  --width-md: 28rem;   /* 448px */
+  --width-lg: 32rem;   /* 512px */
+  --width-xl: 36rem;   /* 576px */
+  --width-2xl: 42rem;  /* 672px */
+  --width-3xl: 48rem;  /* 768px */
+  --width-4xl: 56rem;  /* 896px */
+  --width-5xl: 64rem;  /* 1024px */
+  --width-6xl: 72rem;  /* 1152px */
+  --width-7xl: 80rem;  /* 1280px */
+  
+  /* Borders */
+  --radius-sm: 0.125rem;  /* 2px */
+  --radius-md: 0.25rem;   /* 4px */
+  --radius-lg: 0.5rem;    /* 8px */
+  --radius-xl: 0.75rem;   /* 12px */
+  --radius-2xl: 1rem;     /* 16px */
+  --radius-3xl: 1.5rem;   /* 24px */
+  --radius-full: 9999px;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+  
+  /* Z-index */
+  --z-0: 0;
+  --z-10: 10;
+  --z-20: 20;
+  --z-30: 30;
+  --z-40: 40;
+  --z-50: 50;
+  --z-tooltip: 100;
+  --z-fixed: 200;
+  --z-modal: 300;
+  
+  /* Transitions */
+  --transition-fast: 150ms;
+  --transition-normal: 250ms;
+  --transition-slow: 350ms;
+  --transition-very-slow: 500ms;
+  
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-linear: linear;
+}
+
+/* Dark Theme */
+.dark {
+  --color-primary: hsl(210, 40%, 98%);
+  --color-primary-foreground: hsl(222.2, 47.4%, 11.2%);
+  
+  --color-secondary: hsl(217.2, 32.6%, 17.5%);
+  --color-secondary-foreground: hsl(210, 40%, 98%);
+  
+  --color-accent: hsl(217.2, 32.6%, 17.5%);
+  --color-accent-foreground: hsl(210, 40%, 98%);
+  
+  --color-destructive: hsl(0, 62.8%, 30.6%);
+  --color-destructive-foreground: hsl(210, 40%, 98%);
+  
+  --color-muted: hsl(217.2, 32.6%, 17.5%);
+  --color-muted-foreground: hsl(215, 20.2%, 65.1%);
+  
+  --color-card: hsl(222.2, 84%, 4.9%);
+  --color-card-foreground: hsl(210, 40%, 98%);
+  
+  --color-popover: hsl(222.2, 84%, 4.9%);
+  --color-popover-foreground: hsl(210, 40%, 98%);
+  
+  --color-border: hsl(217.2, 32.6%, 17.5%);
+  --color-input: hsl(217.2, 32.6%, 17.5%);
+  
+  --color-background: hsl(222.2, 84%, 4.9%);
+  --color-foreground: hsl(210, 40%, 98%);
+}
+
+/* High Contrast Theme */
+.high-contrast {
+  --color-primary: hsl(0, 0%, 100%);
+  --color-primary-foreground: hsl(0, 0%, 0%);
+  
+  --color-secondary: hsl(0, 0%, 15%);
+  --color-secondary-foreground: hsl(0, 0%, 100%);
+  
+  --color-accent: hsl(0, 0%, 20%);
+  --color-accent-foreground: hsl(0, 0%, 100%);
+  
+  --color-destructive: hsl(0, 100%, 50%);
+  --color-destructive-foreground: hsl(0, 0%, 100%);
+  
+  --color-muted: hsl(0, 0%, 15%);
+  --color-muted-foreground: hsl(0, 0%, 80%);
+  
+  --color-card: hsl(0, 0%, 0%);
+  --color-card-foreground: hsl(0, 0%, 100%);
+  
+  --color-popover: hsl(0, 0%, 0%);
+  --color-popover-foreground: hsl(0, 0%, 100%);
+  
+  --color-border: hsl(0, 0%, 50%);
+  --color-input: hsl(0, 0%, 30%);
+  
+  --color-background: hsl(0, 0%, 0%);
+  --color-foreground: hsl(0, 0%, 100%);
+}

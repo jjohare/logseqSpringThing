@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+// ESM replacement for __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [react()],
@@ -8,12 +12,13 @@ export default defineConfig({
         outDir: 'dist',
         assetsDir: 'assets',
         sourcemap: true,
+        minify: false, // Disable minification for better debugging
     },
     resolve: {
         alias: {
-            '@': path.resolve(__dirname, './src'),
-            '@/components': path.resolve(__dirname, './src/components'),
-            '@/lib': path.resolve(__dirname, './src/lib'),
+            '@': resolve(__dirname, './src'),
+            '@/components': resolve(__dirname, './src/components'),
+            '@/lib': resolve(__dirname, './src/lib'),
         },
     },
     server: {

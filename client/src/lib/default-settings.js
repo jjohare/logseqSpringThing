@@ -73,6 +73,10 @@ export const defaultSettings = {
         },
         debug: {
             enabled: true,
+            enableDataDebug: false,
+            enableWebsocketDebug: false,
+            logBinaryHeaders: false,
+            logFullJson: false,
             showPerformance: false,
             showDataUpdates: false,
             logLevel: 'info',

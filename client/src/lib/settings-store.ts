@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { defaultSettings } from '@/lib/config/default-settings'
-import { Settings, SettingsPath } from '@/lib/types/settings'
+import { Settings, SettingsPath, PathValue } from '@/lib/types/settings'
 import { createLogger } from '@/lib/utils/logger'
 
 const logger = createLogger('SettingsStore')
@@ -21,9 +21,9 @@ type SettingsState = {
   subscribers: Map<string, Set<() => void>>
   initialize: () => Promise<Settings>
   get: <T>(path: SettingsPath) => T
-  set: <T>(path: SettingsPath, value: T) => void
-  subscribe: (path: SettingsPath, callback: () => void, immediate?: boolean) => () => void
-  unsubscribe: (path: SettingsPath, callback: () => void) => void
+  set: <P extends SettingsPath>(path: P, value: PathValue<Settings, P>) => void
+  subscribe: <P extends SettingsPath>(path: P, callback: () => void, immediate?: boolean) => () => void
+  unsubscribe: <P extends SettingsPath>(path: P, callback: () => void) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -70,9 +70,15 @@ export const useSettingsStore = create<SettingsState>()(
 
       get: <T>(path: SettingsPath): T => {
         const settings = get().settings;
+        
+        // Return full settings object if empty path
         if (path === '') {
           return settings as unknown as T;
         }
+        
+        // Navigate through nested properties to get the value
+        // This could be improved with a more type-safe implementation
+        // that leverages the PathValue type
         let value: any = settings;
         path.split('.').forEach(key => {
           value = value?.[key as keyof typeof value];
@@ -80,7 +86,7 @@ export const useSettingsStore = create<SettingsState>()(
         return value as T;
       },
 
-      set: <T>(path: SettingsPath, value: T) => {
+      set: <P extends SettingsPath>(path: P, value: PathValue<Settings, P>) => {
         set(state => {
           // Create a new settings object to ensure immutability
           const newSettings = { ...state.settings }
@@ -144,7 +150,7 @@ export const useSettingsStore = create<SettingsState>()(
         window.saveSettingsTimeout = setTimeout(saveToServer, 1000) as unknown as number
       },
 
-      subscribe: (path: SettingsPath, callback: () => void, immediate = true) => {
+      subscribe: <P extends SettingsPath>(path: P, callback: () => void, immediate = true) => {
         set(state => {
           const subscribers = state.subscribers
           const pathStr = path as string
@@ -167,7 +173,7 @@ export const useSettingsStore = create<SettingsState>()(
         return () => get().unsubscribe(path, callback)
       },
 
-      unsubscribe: (path: SettingsPath, callback: () => void) => {
+      unsubscribe: <P extends SettingsPath>(path: P, callback: () => void) => {
         set(state => {
           const subscribers = state.subscribers
           const pathStr = path as string

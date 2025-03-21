@@ -1,7 +1,40 @@
 // Type definitions for application settings
 
-// Allow using as an index key
+/**
+ * Type-safe path for accessing settings
+ * Examples: 
+ * - "visualization.nodes.color"
+ * - "system.debug.enabled"
+ */
 export type SettingsPath = string;
+
+/**
+ * Get the type at a specific path of an object type
+ * This provides type safety when accessing nested properties
+ */
+export type PathValue<T, P extends string> = 
+  P extends keyof T ? T[P] :
+  P extends `${infer K}.${infer R}` ? 
+    K extends keyof T ? 
+      PathValue<T[K], R> : 
+      never : 
+    never;
+
+/**
+ * Creates a dot-notation path string from a nested property access
+ * This provides type safety when creating paths
+ */
+export type DotNotation<T, P extends string = ''> = {
+  [K in keyof T & string]: 
+    P extends '' ? 
+      DotNotation<T[K], K> : 
+      DotNotation<T[K], `${P}.${K}`> 
+} & {
+  _path: P
+};
+
+// Type for color values in settings
+export type ColorValue = string;
 
 // Camera settings
 export interface CameraSettings {
@@ -22,13 +55,13 @@ export interface CameraSettings {
 
 // Rendering settings
 export interface RenderingSettings {
-  shadows?: boolean;
-  antialias?: boolean;
-  pixelRatio?: number;
-  enableBloom?: boolean;
-  bloomStrength?: number;
-  bloomThreshold?: number;
-  bloomRadius?: number;
+  shadows: boolean;
+  antialias: boolean;
+  pixelRatio: number;
+  enableBloom: boolean;
+  bloomStrength: number;
+  bloomThreshold: number;
+  bloomRadius: number;
 }
 
 // Bloom effect settings
@@ -43,10 +76,10 @@ export interface BloomSettings {
 export interface LabelSettings {
   enabled: boolean;
   size: number;
-  color: string;
-  backgroundColor?: string;
-  showDistance?: number;
-  fadeDistance?: number;
+  color: ColorValue;
+  backgroundColor: ColorValue;
+  showDistance: number;
+  fadeDistance: number;
 }
 
 // Icon settings
@@ -54,6 +87,7 @@ export interface IconSettings {
   enabled: boolean;
   size: number;
   opacity: number;
+  color: ColorValue;
 }
 
 // Metrics display settings
@@ -68,11 +102,11 @@ export interface NodeSettings {
   defaultSize: number;
   minSize: number;
   maxSize: number;
-  color: string;
-  highlightColor: string;
+  color: ColorValue;
+  highlightColor: ColorValue;
   outlineWidth: number;
-  outlineColor: string;
-  selectedColor: string;
+  outlineColor: ColorValue;
+  selectedColor: ColorValue;
 }
 
 // Edge appearance settings
@@ -83,8 +117,8 @@ export interface EdgeSettings {
   opacity: number;
   showLabels: boolean;
   arrowSize: number;
-  dashSize?: number;
-  gapSize?: number;
+  dashSize: number;
+  gapSize: number;
 }
 
 // Physics simulation settings
@@ -101,33 +135,33 @@ export interface PhysicsSettings {
 
 // Hologram effect settings
 export interface HologramSettings {
-  color: string | number;
-  opacity?: number;
-  ringOpacity?: number;
-  sphereSizes?: number[] | string;
-  enableTriangleSphere?: boolean;
-  triangleSphereSize?: number;
-  triangleSphereOpacity?: number;
-  ringRotationSpeed?: number;
-  globalRotationSpeed?: number;
+  color: ColorValue | number;
+  opacity: number;
+  ringOpacity: number;
+  sphereSizes: number[] | string;
+  enableTriangleSphere: boolean;
+  triangleSphereSize: number;
+  triangleSphereOpacity: number;
+  ringRotationSpeed: number;
+  globalRotationSpeed: number;
 }
 
 // Visualization settings
 export interface VisualizationSettings {
-  sceneBackground?: number;
-  rendering?: RenderingSettings;
-  camera?: CameraSettings;
-  bloom?: BloomSettings;
-  labels?: LabelSettings;
-  icons?: IconSettings;
-  nodes?: NodeSettings;
-  edges?: EdgeSettings;
-  physics?: PhysicsSettings;
-  hologram?: HologramSettings;
-  metrics?: MetricsSettings;
-  showStats?: boolean;
-  showAxes?: boolean;
-  showGrid?: boolean;
+  sceneBackground: number;
+  rendering: RenderingSettings;
+  camera: CameraSettings;
+  bloom: BloomSettings;
+  labels: LabelSettings;
+  icons: IconSettings;
+  nodes: NodeSettings;
+  edges: EdgeSettings;
+  physics: PhysicsSettings;
+  hologram: HologramSettings;
+  metrics: MetricsSettings;
+  showStats: boolean;
+  showAxes: boolean;
+  showGrid: boolean;
 }
 
 // WebSocket settings
@@ -141,16 +175,23 @@ export interface WebSocketSettings {
 // Debug settings
 export interface DebugSettings {
   enabled: boolean;
-  showPerformance: boolean;
-  showDataUpdates: boolean;
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
+  enableDataDebug: boolean;
+  enableWebsocketDebug: boolean;
+  logBinaryHeaders: boolean;
+  logFullJson: boolean;
+  logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error';
+  logFormat: 'json' | 'text';
+  
+  // Legacy fields for backward compatibility
+  showPerformance?: boolean;
+  showDataUpdates?: boolean;
 }
 
 // System settings
 export interface SystemSettings {
   websocket: WebSocketSettings;
   debug: DebugSettings;
-  apiEndpoint?: string;
+  apiEndpoint: string;
   persistSettings: boolean;
 }
 
@@ -170,13 +211,18 @@ export interface XRSettings {
   roomScale: boolean;
   showFloor: boolean;
   handInteraction: boolean;
+  interactionDistance: number;
+  grabThreshold: number;
+  controllerRayColor: ColorValue;
+  controllerPointerSize: number;
+  hapticFeedback: boolean;
 }
 
 // Top-level settings object
 export interface Settings {
-  visualization?: VisualizationSettings;
-  system?: SystemSettings;
-  auth?: AuthSettings;
-  xr?: XRSettings;
+  visualization: VisualizationSettings;
+  system: SystemSettings;
+  auth: AuthSettings;
+  xr: XRSettings;
   [key: string]: any; // Allow additional custom settings
 }

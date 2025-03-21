@@ -1,4 +1,5 @@
 // XR-related type definitions
+import * as THREE from 'three';
 
 // XR session state types
 export type XRSessionState = 'inactive' | 'active' | 'ending' | 'cooldown';
@@ -11,6 +12,17 @@ export type XRReferenceSpaceType = 'local' | 'local-floor' | 'bounded-floor' | '
 
 // XR interaction types
 export type XRInteractionType = 'select' | 'grab' | 'drag' | 'scale' | 'rotate' | 'pinch' | 'scroll';
+
+// XR controller/hand interaction mode
+export type XRInteractionMode = 'controllers-only' | 'hands-only' | 'both';
+
+// XR interactable object interface
+export interface InteractableObject {
+  object: THREE.Object3D;
+  id: string;
+  interactable: boolean;
+  handlers?: Record<string, (event: any) => void>;
+}
 
 // XR hand joint types (standard WebXR hand joints)
 export type XRHandJoint = 
@@ -72,4 +84,19 @@ export interface GestureState {
     point: boolean;
     thumbsUp: boolean;
   };
+}
+
+// XR controller state
+export interface XRControllerState {
+  isConnected: boolean;
+  isTriggerPressed: boolean;
+  isGripPressed: boolean;
+  isThumbstickPressed: boolean;
+  thumbstickX: number;
+  thumbstickY: number;
+  triggerValue: number;
+  gripValue: number;
+  position: THREE.Vector3;
+  rotation: THREE.Quaternion;
+  hapticActuator?: any;
 }

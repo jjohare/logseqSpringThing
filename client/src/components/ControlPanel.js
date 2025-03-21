@@ -6,6 +6,7 @@ import NostrAuthSection from './NostrAuthSection';
 import { SettingsSection } from './SettingsSection';
 import { ChevronLeft, ChevronRight, Settings2 } from 'lucide-react';
 import { Button } from './ui/button';
+import { ControlPanelProvider } from './control-panel-context';
 const logger = createLogger('ControlPanel');
 // Settings categories for the control panel
 const PANEL_SECTIONS = [
@@ -78,13 +79,13 @@ const ControlPanel = () => {
     };
     // Get current active section
     const currentSection = PANEL_SECTIONS.find(s => s.id === activeSection);
-    return (_jsxs("div", { className: `fixed right-0 top-0 h-full transition-all duration-300 bg-background border-l border-border ${isOpen ? 'w-80' : 'w-12'}`, children: [_jsx(Button, { variant: "ghost", size: "icon", className: "absolute -left-10 top-4 bg-background border border-border rounded-l-md rounded-r-none h-10 w-10", onClick: togglePanel, "aria-label": isOpen ? 'Close panel' : 'Open panel', children: isOpen ? _jsx(ChevronRight, { className: "h-4 w-4" }) : _jsx(ChevronLeft, { className: "h-4 w-4" }) }), isOpen && (_jsxs("div", { className: "flex flex-col h-full overflow-hidden", children: [_jsx("div", { className: "border-b border-border p-4", children: _jsx("h2", { className: "text-lg font-semibold", children: "Settings" }) }), _jsxs("div", { className: "flex flex-col md:flex-row h-full overflow-hidden", children: [_jsx("div", { className: "w-full md:w-1/3 border-r border-border p-2 overflow-y-auto", children: _jsx("nav", { className: "space-y-1", children: PANEL_SECTIONS.map(section => (_jsxs("button", { className: `w-full text-left px-3 py-2 rounded-md flex items-center space-x-2 ${activeSection === section.id
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'hover:bg-accent'}`, onClick: () => handleSectionChange(section.id), children: [section.icon, _jsx("span", { children: section.title })] }, section.id))) }) }), _jsx("div", { className: "flex-1 overflow-y-auto p-4", children: activeSection === 'auth' ? (_jsx(NostrAuthSection, {})) : (_jsxs(_Fragment, { children: [currentSection && currentSection.subsections.length > 0 && (_jsx("div", { className: "border-b border-border mb-4", children: _jsx("div", { className: "flex space-x-2 overflow-x-auto", children: currentSection.subsections.map(subsection => (_jsx("button", { className: `px-3 py-2 ${activeSubsection === subsection.id
-                                                        ? 'border-b-2 border-primary font-medium'
-                                                        : 'text-muted-foreground hover:text-foreground'}`, onClick: () => handleSubsectionChange(subsection.id), children: subsection.title }, subsection.id))) }) })), _jsx(SettingsSection, { id: activeSection, title: currentSection?.title || '', settings: activeSubsection &&
-                                                settings[activeSection] &&
-                                                settings[activeSection][activeSubsection] ?
-                                                settings[activeSection][activeSubsection] : {} })] })) })] })] }))] }));
+    return (_jsxs("div", { className: `fixed right-0 top-0 h-full transition-all duration-300 bg-background border-l border-border ${isOpen ? 'w-80' : 'w-12'}`, children: [_jsx(Button, { variant: "ghost", size: "icon", className: "absolute -left-10 top-4 bg-background border border-border rounded-l-md rounded-r-none h-10 w-10", onClick: togglePanel, "aria-label": isOpen ? 'Close panel' : 'Open panel', children: isOpen ? _jsx(ChevronRight, { className: "h-4 w-4" }) : _jsx(ChevronLeft, { className: "h-4 w-4" }) }), isOpen && (_jsx(ControlPanelProvider, { children: _jsxs("div", { className: "flex flex-col h-full overflow-hidden", children: [_jsx("div", { className: "border-b border-border p-4", children: _jsx("h2", { className: "text-lg font-semibold", children: "Settings" }) }), _jsxs("div", { className: "flex flex-col md:flex-row h-full overflow-hidden", children: [_jsx("div", { className: "w-full md:w-1/3 border-r border-border p-2 overflow-y-auto", children: _jsx("nav", { className: "space-y-1", children: PANEL_SECTIONS.map(section => (_jsxs("button", { className: `w-full text-left px-3 py-2 rounded-md flex items-center space-x-2 ${activeSection === section.id
+                                                ? 'bg-primary text-primary-foreground'
+                                                : 'hover:bg-accent'}`, onClick: () => handleSectionChange(section.id), children: [section.icon, _jsx("span", { children: section.title })] }, section.id))) }) }), _jsx("div", { className: "flex-1 overflow-y-auto p-4", children: activeSection === 'auth' ? (_jsx(NostrAuthSection, {})) : (_jsxs(_Fragment, { children: [currentSection && currentSection.subsections.length > 0 && (_jsx("div", { className: "border-b border-border mb-4", children: _jsx("div", { className: "flex space-x-2 overflow-x-auto", children: currentSection.subsections.map(subsection => (_jsx("button", { className: `px-3 py-2 ${activeSubsection === subsection.id
+                                                            ? 'border-b-2 border-primary font-medium'
+                                                            : 'text-muted-foreground hover:text-foreground'}`, onClick: () => handleSubsectionChange(subsection.id), children: subsection.title }, subsection.id))) }) })), _jsx(SettingsSection, { id: activeSection, title: currentSection?.title || '', settings: activeSubsection &&
+                                                    settings[activeSection] &&
+                                                    settings[activeSection][activeSubsection] ?
+                                                    settings[activeSection][activeSubsection] : {} })] })) })] })] }) }))] }));
 };
 export default ControlPanel;

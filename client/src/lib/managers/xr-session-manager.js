@@ -5,7 +5,7 @@ import { createLogger, createErrorMetadata } from '../utils/logger';
 import { debugState } from '../utils/debug-state';
 const logger = createLogger('XRSessionManager');
 export class XRSessionManager {
-    constructor(sceneManager) {
+    constructor(sceneManager, externalRenderer) {
         this.renderer = null;
         this.camera = null;
         this.scene = null;
@@ -25,18 +25,45 @@ export class XRSessionManager {
         this.handsVisibilityChangedHandlers = [];
         this.handTrackingStateHandlers = [];
         this.sceneManager = sceneManager;
-        this.renderer = sceneManager.getRenderer();
-        this.camera = sceneManager.getCamera();
-        this.scene = sceneManager.getScene();
-        if (!this.renderer) {
-            throw new Error('XRSessionManager requires a renderer from SceneManager');
+        // Allow using an external renderer (from React Three Fiber) or try to get one from SceneManager
+        this.renderer = externalRenderer || sceneManager.getRenderer();
+        // Get camera and ensure it's a PerspectiveCamera
+        const camera = sceneManager.getCamera();
+        if (!camera || !(camera instanceof THREE.PerspectiveCamera)) {
+            logger.warn('PerspectiveCamera not available from SceneManager, creating default camera');
+            this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            this.camera.position.z = 5;
         }
-        // Initialize controller model factory
-        this.controllerModelFactory = new XRControllerModelFactory();
+        else {
+            this.camera = camera;
+        }
+        // Get scene
+        this.scene = sceneManager.getScene();
+        if (!this.scene) {
+            logger.warn('Scene not found in SceneManager, creating default scene');
+            this.scene = new THREE.Scene();
+        }
+        // Log warning instead of throwing error so application can continue
+        if (!this.renderer) {
+            logger.warn('XRSessionManager: No renderer provided. XR functionality will be limited.');
+        }
+        try {
+            // Initialize controller model factory
+            this.controllerModelFactory = new XRControllerModelFactory();
+        }
+        catch (error) {
+            logger.error('Failed to create XRControllerModelFactory:', createErrorMetadata(error));
+            this.controllerModelFactory = null;
+        }
     }
-    static getInstance(sceneManager) {
+    static getInstance(sceneManager, externalRenderer) {
         if (!XRSessionManager.instance) {
-            XRSessionManager.instance = new XRSessionManager(sceneManager);
+            XRSessionManager.instance = new XRSessionManager(sceneManager, externalRenderer);
+        }
+        else if (externalRenderer && !XRSessionManager.instance.renderer) {
+            // If instance exists but has no renderer, we can update it with the external renderer
+            XRSessionManager.instance.renderer = externalRenderer;
+            logger.info('Updated XRSessionManager with external renderer');
         }
         return XRSessionManager.instance;
     }
@@ -48,11 +75,15 @@ export class XRSessionManager {
         this.settings = settings;
         try {
             // Check if WebXR is supported
-            if ('xr' in navigator) {
+            if ('xr' in navigator && this.renderer) {
                 // Set up renderer for XR
                 this.renderer.xr.enabled = true;
                 // Set reference space type based on settings
-                this.renderer.xr.setReferenceSpaceType(settings.xr?.roomScale ? 'local-floor' : 'local');
+                const refSpace = settings.xr?.roomScale ? 'local-floor' : 'local';
+                this.renderer.xr.setReferenceSpaceType(refSpace);
+                if (debugState.isEnabled()) {
+                    logger.info(`Set XR reference space to ${refSpace}`);
+                }
                 // Create VR button
                 this.createVRButton();
                 // Create controllers
@@ -61,7 +92,7 @@ export class XRSessionManager {
                     logger.info('XR session manager initialized successfully');
                 }
             }
-            else {
+            else if (debugState.isEnabled()) {
                 logger.warn('WebXR not supported in this browser');
             }
         }

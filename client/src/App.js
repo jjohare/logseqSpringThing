@@ -1,4 +1,4 @@
-import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useEffect, useState } from 'react';
 import AppInitializer from './components/AppInitializer';
 import { ThemeProvider } from './components/ui/theme-provider';
@@ -23,6 +23,6 @@ function App() {
     const handleInitialized = () => {
         setIsLoading(false);
     };
-    return (_jsxs(ThemeProvider, { defaultTheme: "dark", children: [_jsxs("main", { className: "relative h-screen w-screen overflow-hidden bg-background text-foreground", children: [isLoading ? (_jsx("div", { className: "flex h-full w-full items-center justify-center", children: _jsxs("div", { className: "flex flex-col items-center space-y-4", children: [_jsx("div", { className: "text-2xl", children: "Loading Graph Visualization" }), _jsx("div", { className: "h-2 w-48 overflow-hidden rounded-full bg-gray-700", children: _jsx("div", { className: "animate-pulse h-full bg-primary" }) })] }) })) : (_jsxs(_Fragment, { children: [_jsx(GraphCanvas, {}), _jsx(ControlPanel, {})] })), _jsx(AppInitializer, { onInitialized: handleInitialized })] }), _jsx(Toaster, {})] }));
+    return (_jsxs(ThemeProvider, { defaultTheme: "dark", children: [_jsxs("main", { className: "relative h-screen w-screen overflow-hidden bg-background text-foreground", children: [_jsxs("div", { className: "h-full w-full bg-background", children: [_jsx(GraphCanvas, {}), isLoading && (_jsx("div", { className: "absolute inset-0 flex items-center justify-center bg-background/80 z-10", children: _jsxs("div", { className: "flex flex-col items-center space-y-4", children: [_jsx("div", { className: "text-2xl", children: "Loading Graph Visualization" }), _jsx("div", { className: "h-2 w-48 overflow-hidden rounded-full bg-gray-700", children: _jsx("div", { className: "animate-pulse h-full bg-primary" }) })] }) }))] }), !isLoading && (_jsx("div", { className: "z-20 relative", children: _jsx(ControlPanel, {}) })), _jsx(AppInitializer, { onInitialized: handleInitialized })] }), _jsx(Toaster, {})] }));
 }
 export default App;

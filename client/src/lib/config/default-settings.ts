@@ -93,9 +93,15 @@ export const defaultSettings: Settings = {
     },
     debug: {
       enabled: false,
+      enableDataDebug: false,
+      enableWebsocketDebug: false,
+      logBinaryHeaders: false,
+      logFullJson: false,
+      logLevel: 'info',
+      logFormat: 'text',
+      // Legacy fields for backward compatibility
       showPerformance: false,
-      showDataUpdates: false,
-      logLevel: 'info'
+      showDataUpdates: false
     },
     apiEndpoint: '/api',
     persistSettings: true

@@ -4,17 +4,20 @@ FROM node:20-slim AS frontend-builder
 WORKDIR /app
 
 # Copy package files and configuration
-COPY client/package.json client/package-lock.json ./
+# Only copy package.json first (not package-lock.json which might not exist)
+COPY client/package.json ./
 COPY client/tsconfig.json client/vite.config.ts ./
-COPY client/src ./src
-COPY client/public ./public
-COPY client/index.html ./
 
 # Create data/public directory for build output
 RUN mkdir -p data/public
 
-# Install dependencies and build
-RUN npm ci
+# Copy source files
+COPY client/src ./src
+COPY client/public ./public
+COPY client/index.html ./
+
+# Install dependencies with npm install (not npm ci) since package-lock.json might not exist
+RUN npm install 
 
 # Install missing dependencies that were previously managed by pnpm
 RUN npm install --save-dev \
@@ -84,29 +87,35 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs
 
-# Set environment variables for Cargo
-ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
-    CARGO_HTTP_TIMEOUT=180 \
+# Set timeout for cargo commands
+ENV CARGO_HTTP_TIMEOUT=180 \
     CARGO_HTTP_CONNECT_TIMEOUT=60 \
     CARGO_HTTP_CHECK_REVOKE=false \
     CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
     CARGO_REGISTRY_DEFAULT=crates-io
 
+# Set environment variables for Cargo
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+
 # Build dependencies
-RUN GIT_HASH=$(git rev-parse HEAD || echo "development") && \
-    cargo update && \
-    (cargo build --release --features gpu --jobs $(nproc) --offline || \
-    (sleep 2 && RUST_BACKTRACE=1 cargo build --release --jobs $(nproc)) || \
-    (sleep 5 && RUST_BACKTRACE=1 cargo build --release --jobs 1))
+# Use a more reliable approach with timeout protection
+RUN export GIT_HASH="development" && \
+    # First update dependencies with a timeout
+    timeout 300 cargo update && \
+    # Then build with multiple fallback strategies and timeouts
+    (timeout 600 cargo build --release --features gpu --jobs $(nproc) || \
+     timeout 600 RUST_BACKTRACE=1 cargo build --release --jobs $(nproc) || \
+     timeout 600 RUST_BACKTRACE=1 cargo build --release --jobs 1)
 
 # Now copy the real source code and build
 COPY src ./src
 
 # Build the actual application
-RUN GIT_HASH=$(git rev-parse HEAD || echo "development") && \
-    (cargo build --release --features gpu --jobs $(nproc) --offline || \
-    (sleep 2 && RUST_BACKTRACE=1 cargo build --release --jobs $(nproc)) || \
-    (sleep 5 && RUST_BACKTRACE=1 cargo build --release --jobs 1))
+# Apply the same reliable approach with timeout
+RUN export GIT_HASH="development" && \
+    (timeout 600 cargo build --release --features gpu --jobs $(nproc) || \
+     timeout 600 RUST_BACKTRACE=1 cargo build --release --jobs $(nproc) || \
+     timeout 600 RUST_BACKTRACE=1 cargo build --release --jobs 1)
 
 # Stage 3: Final Runtime Image
 FROM nvidia/cuda:12.8.1-devel-ubuntu22.04

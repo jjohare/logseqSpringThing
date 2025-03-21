@@ -13,7 +13,8 @@ export default function GraphCanvas() {
             return;
         const initializeScene = async () => {
             try {
-                logger.info('Initializing WebGL canvas');
+                logger.warn('========= IMPORTANT =========');
+                logger.info('This GraphCanvas component is deprecated - using React Three Fiber instead');
                 // In a full implementation, this would:
                 // 1. Initialize Three.js renderer, scene, camera
                 // 2. Set up node and edge managers
@@ -56,5 +57,7 @@ export default function GraphCanvas() {
         // In a full implementation, this would update the visualization based on settings
         logger.debug('Applying visualization settings');
     }, [settings, isInitialized]);
-    return (_jsxs("div", { className: "h-full w-full bg-background", children: [_jsx("canvas", { id: "main-canvas", ref: canvasRef, className: "h-full w-full outline-none" }), !isInitialized && (_jsx("div", { className: "absolute inset-0 flex items-center justify-center bg-background/80", children: _jsxs("div", { className: "text-center", children: [_jsx("div", { className: "mb-2 text-lg font-medium", children: "Initializing Graph Visualization..." }), _jsx("div", { id: "loading-message", className: "text-sm text-muted-foreground", children: "Loading Three.js scene" })] }) }))] }));
+    return (_jsxs("div", { className: "h-full w-full bg-background", children: [_jsx("canvas", { 
+                // ID removed to prevent conflicts with React Three Fiber
+                id: "legacy-canvas", ref: canvasRef, className: "h-full w-full outline-none" }), !isInitialized && (_jsx("div", { className: "absolute inset-0 flex items-center justify-center bg-background/80", children: _jsxs("div", { className: "text-center", children: [_jsx("div", { className: "mb-2 text-lg font-medium", children: "Initializing Graph Visualization..." }), _jsx("div", { id: "loading-message", className: "text-sm text-muted-foreground", children: "Loading Three.js scene" })] }) }))] }));
 }

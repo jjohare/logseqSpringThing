@@ -5,7 +5,9 @@ import { SettingControlComponent } from './SettingControlComponent';
 export function SettingsSubsection({ title, settings, path }) {
     const settingsStore = useSettingsStore();
     // Check if this is a single setting or a group of settings
-    const isSingleSetting = 'type' in settings;
+    // Fix: Check if settings is an object before using 'in' operator
+    const isObject = settings !== null && typeof settings === 'object';
+    const isSingleSetting = isObject && 'type' in settings;
     // Format the title for display
     const formattedTitle = formatSettingName(title);
     return (_jsxs("div", { className: "settings-subsection", children: [_jsx("h3", { className: "mb-2 text-sm font-medium text-muted-foreground", children: formattedTitle }), _jsx("div", { className: "space-y-2", children: isSingleSetting ? (

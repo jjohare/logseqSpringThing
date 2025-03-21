@@ -48,23 +48,33 @@ const Effects = () => {
 // Initialize WebXR in the scene
 const InitializeXR = () => {
     const { gl } = useThree();
-    const settings = useSettingsStore(state => state.settings);
-    const xrEnabled = settings?.xr?.enabled !== false;
+    const settings = useSettingsStore(state => state.settings?.xr);
+    const xrEnabled = settings?.enabled !== false;
     useEffect(() => {
-        if (xrEnabled) {
-            gl.xr.enabled = true;
-            // Set reference space type based on settings
-            if (settings?.xr?.roomScale) {
-                gl.xr.setReferenceSpaceType('local-floor');
-            }
-            else {
-                gl.xr.setReferenceSpaceType('local');
-            }
-            if (debugState.isEnabled()) {
-                logger.info('WebXR enabled on renderer');
+        try {
+            if (xrEnabled) {
+                // Enable XR on the renderer
+                gl.xr.enabled = true;
+                // Set reference space type based on settings
+                if (settings?.roomScale) {
+                    gl.xr.setReferenceSpaceType('local-floor');
+                }
+                else {
+                    gl.xr.setReferenceSpaceType('local');
+                }
+                if (debugState.isEnabled()) {
+                    logger.info('WebXR enabled on renderer');
+                }
             }
         }
-    }, [gl, xrEnabled, settings?.xr?.roomScale]);
+        catch (error) {
+            logger.error('Failed to initialize WebXR:', error);
+            // Don't throw error - we want to continue even if XR fails
+            if (debugState.isEnabled()) {
+                logger.warn('WebXR initialization failed, continuing with standard rendering');
+            }
+        }
+    }, [gl, xrEnabled, settings?.roomScale]);
     return null;
 };
 // Scene setup with lighting and background
@@ -130,18 +140,29 @@ const CameraSetup = () => {
 // Main GraphCanvas component
 const GraphCanvas = () => {
     const canvasRef = useRef(null);
-    const settings = useSettingsStore(state => state.settings);
-    const showStats = settings?.visualization?.showStats || false;
+    const { settings } = useSettingsStore();
+    const showStats = settings?.visualization?.showStats ?? false;
     const xrEnabled = settings?.xr?.enabled !== false;
+    const antialias = settings?.visualization?.rendering?.antialias !== false;
     return (_jsx("div", { className: "absolute inset-0 overflow-hidden", children: _jsxs(Canvas, { ref: canvasRef, gl: {
-                antialias: settings?.visualization?.rendering?.antialias !== false,
+                antialias,
                 alpha: true,
-                powerPreference: 'high-performance'
+                powerPreference: 'high-performance',
+                // Add failIfMajorPerformanceCaveat to prevent rendering on devices with poor WebGL
+                failIfMajorPerformanceCaveat: false
             }, camera: {
                 fov: 75,
                 near: 0.1,
-                far: 2000,
+                far: settings?.visualization?.camera?.far || 2000,
                 position: [0, 10, 50]
-            }, id: "main-canvas", children: [_jsx(InitializeXR, {}), _jsx(SceneSetup, {}), _jsx(CameraSetup, {}), _jsx(GraphManager, {}), xrEnabled && _jsx(XRController, {}), xrEnabled && _jsx(XRVisualizationConnector, {}), _jsx(OrbitControls, { enableDamping: true, dampingFactor: 0.1, screenSpacePanning: true, minDistance: 1, maxDistance: 2000, enableRotate: true, enableZoom: true, enablePan: true, rotateSpeed: 1.0, zoomSpeed: 1.2, panSpeed: 0.8 }), _jsx(Effects, {}), showStats && _jsx(Stats, {})] }) }));
+            }, 
+            // Important: Use a specific className and do NOT use id="main-canvas"
+            className: "r3f-canvas", onCreated: ({ gl }) => {
+                // Set renderer properties that can't be set via props
+                gl.setClearColor(new THREE.Color(settings?.visualization?.sceneBackground || 0x000000));
+                if (debugState.isEnabled()) {
+                    logger.info('React Three Fiber canvas created successfully');
+                }
+            }, children: [_jsx(InitializeXR, {}), _jsx(SceneSetup, {}), _jsx(CameraSetup, {}), _jsx(GraphManager, {}), xrEnabled && _jsx(XRController, {}), xrEnabled && _jsx(XRVisualizationConnector, {}), _jsx(OrbitControls, { enableDamping: true, dampingFactor: 0.1, screenSpacePanning: true, minDistance: 1, maxDistance: 2000, enableRotate: true, enableZoom: true, enablePan: true, rotateSpeed: 1.0, zoomSpeed: 1.2, panSpeed: 0.8 }), _jsx(Effects, {}), showStats && _jsx(Stats, {})] }) }));
 };
 export default GraphCanvas;

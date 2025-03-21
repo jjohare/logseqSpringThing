@@ -1,0 +1,264 @@
+/**
+ * Layout Styles
+ *
+ * This file defines the main layout structure for the application,
+ * including the viewport container and docking zones.
+ */
+
+/* Base layout container */
+.app-container {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
+/* Main layout area (between optional header and footer) */
+.main-layout {
+  display: flex;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Viewport container */
+.viewport-container {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Dock zones */
+.dock-zone {
+  position: relative;
+  background-color: var(--color-background);
+  border-color: var(--color-border);
+  transition: width var(--transition-normal) var(--ease-out),
+              height var(--transition-normal) var(--ease-out);
+  overflow: hidden;
+}
+
+/* Left dock */
+.dock-zone[data-dock-zone="left"] {
+  border-right-width: 1px;
+  width: 0; /* Default to collapsed */
+}
+.dock-zone[data-dock-zone="left"].active {
+  width: var(--dock-width, 300px);
+}
+
+/* Right dock */
+.dock-zone[data-dock-zone="right"] {
+  border-left-width: 1px;
+  width: 0; /* Default to collapsed */
+}
+.dock-zone[data-dock-zone="right"].active {
+  width: var(--dock-width, 300px);
+}
+
+/* Top dock */
+.dock-zone[data-dock-zone="top"] {
+  border-bottom-width: 1px;
+  height: 0; /* Default to collapsed */
+}
+.dock-zone[data-dock-zone="top"].active {
+  height: var(--dock-height, 200px);
+}
+
+/* Bottom dock */
+.dock-zone[data-dock-zone="bottom"] {
+  border-top-width: 1px;
+  height: 0; /* Default to collapsed */
+}
+.dock-zone[data-dock-zone="bottom"].active {
+  height: var(--dock-height, 200px);
+}
+
+/* Draggable resize handles */
+.dock-resizer {
+  position: absolute;
+  z-index: 10;
+  background-color: transparent;
+  transition: background-color var(--transition-fast) var(--ease-out);
+}
+.dock-resizer:hover,
+.dock-resizer.resizing {
+  background-color: var(--color-accent);
+}
+
+/* Horizontal resizer (for top/bottom docks) */
+.dock-resizer.horizontal {
+  width: 100%;
+  height: 4px;
+  cursor: ns-resize;
+}
+
+/* Vertical resizer (for left/right docks) */
+.dock-resizer.vertical {
+  height: 100%;
+  width: 4px;
+  cursor: ew-resize;
+}
+
+/* Resizer positions */
+.dock-zone[data-dock-zone="left"] .dock-resizer {
+  right: -2px;
+  top: 0;
+}
+.dock-zone[data-dock-zone="right"] .dock-resizer {
+  left: -2px;
+  top: 0;
+}
+.dock-zone[data-dock-zone="top"] .dock-resizer {
+  bottom: -2px;
+  left: 0;
+}
+.dock-zone[data-dock-zone="bottom"] .dock-resizer {
+  top: -2px;
+  left: 0;
+}
+
+/* Floating panels container */
+.floating-panels-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* Allow clicking through to underlying content */
+  z-index: var(--z-floating-panels, 30);
+}
+
+/* Individual panels within the container should accept pointer events */
+.floating-panels-container > * {
+  pointer-events: auto;
+}
+
+/* Panel Groups */
+.panel-group {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.panel-group-tabs {
+  display: flex;
+  background-color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.panel-group-tab {
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--font-size-sm);
+  color: var(--color-muted-foreground);
+  transition: background-color var(--transition-fast) var(--ease-out);
+}
+
+.panel-group-tab:hover {
+  background-color: var(--color-accent);
+  color: var(--color-accent-foreground);
+}
+
+.panel-group-tab.active {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-weight: var(--font-weight-medium);
+  border-bottom: 2px solid var(--color-primary);
+  margin-bottom: -1px;
+}
+
+.panel-group-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* XR Mode specific styles */
+.xr-mode .dock-zone {
+  display: none;
+}
+
+.xr-mode .viewport-container {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-0);
+}
+
+.xr-mode .floating-panels-container {
+  display: none;
+}
+
+/* Mobile Mode specific styles */
+@media (max-width: 768px) {
+  .dock-zone[data-dock-zone="left"],
+  .dock-zone[data-dock-zone="right"] {
+    position: absolute;
+    z-index: var(--z-modal);
+    box-shadow: var(--shadow-lg);
+    height: 100%;
+  }
+  
+  .dock-zone[data-dock-zone="left"].active {
+    left: 0;
+  }
+  
+  .dock-zone[data-dock-zone="right"].active {
+    right: 0;
+  }
+  
+  .dock-zone-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: calc(var(--z-modal) - 1);
+  }
+  
+  .dock-zone-backdrop.active {
+    display: block;
+  }
+}
+
+/* Animations */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-in-top {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slide-in-bottom {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right var(--transition-normal) var(--ease-out);
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left var(--transition-normal) var(--ease-out);
+}
+
+.animate-slide-in-top {
+  animation: slide-in-top var(--transition-normal) var(--ease-out);
+}
+
+.animate-slide-in-bottom {
+  animation: slide-in-bottom var(--transition-normal) var(--ease-out);
+}

@@ -47,9 +47,10 @@ export class XRSessionManager {
   private handsVisibilityChangedHandlers: HandVisibilityHandler[] = [];
   private handTrackingStateHandlers: HandTrackingHandler[] = [];
   
-  private constructor(sceneManager: SceneManager) {
-    this.sceneManager = sceneManager;
-    this.renderer = sceneManager.getRenderer();
+  private constructor(sceneManager: SceneManager, externalRenderer?: THREE.WebGLRenderer) {
+    this.sceneManager = sceneManager;    
+    // Allow using an external renderer (from React Three Fiber) or try to get one from SceneManager
+    this.renderer = externalRenderer || sceneManager.getRenderer();
     
     // Get camera and ensure it's a PerspectiveCamera
     const camera = sceneManager.getCamera();
@@ -68,8 +69,9 @@ export class XRSessionManager {
       this.scene = new THREE.Scene();
     }
     
+    // Log warning instead of throwing error so application can continue
     if (!this.renderer) {
-      throw new Error('XRSessionManager requires a renderer from SceneManager');
+      logger.warn('XRSessionManager: No renderer provided. XR functionality will be limited.');
     }
     
     try {
@@ -81,9 +83,13 @@ export class XRSessionManager {
     }
   }
   
-  public static getInstance(sceneManager: SceneManager): XRSessionManager {
+  public static getInstance(sceneManager: SceneManager, externalRenderer?: THREE.WebGLRenderer): XRSessionManager {
     if (!XRSessionManager.instance) {
-      XRSessionManager.instance = new XRSessionManager(sceneManager);
+      XRSessionManager.instance = new XRSessionManager(sceneManager, externalRenderer);
+    } else if (externalRenderer && !XRSessionManager.instance.renderer) {
+      // If instance exists but has no renderer, we can update it with the external renderer
+      XRSessionManager.instance.renderer = externalRenderer;
+      logger.info('Updated XRSessionManager with external renderer');
     }
     return XRSessionManager.instance;
   }

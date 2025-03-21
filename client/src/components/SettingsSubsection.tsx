@@ -6,9 +6,11 @@ import { SettingControlComponent } from './SettingControlComponent'
 
 export function SettingsSubsection({ title, settings, path }: SettingsSubsectionProps) {
   const settingsStore = useSettingsStore()
-  
+
   // Check if this is a single setting or a group of settings
-  const isSingleSetting = 'type' in settings;
+  // Fix: Check if settings is an object before using 'in' operator
+  const isObject = settings !== null && typeof settings === 'object';
+  const isSingleSetting = isObject && 'type' in settings;
   
   // Format the title for display
   const formattedTitle = formatSettingName(title);

@@ -1,255 +1,117 @@
-import * as THREE from 'three';
+// Stub implementation of SceneManager to prevent conflicts with React Three Fiber
 import { createLogger, createErrorMetadata } from '../utils/logger';
 import { debugState } from '../utils/debug-state';
+import * as THREE from 'three';
 const logger = createLogger('SceneManager');
+/**
+ * IMPORTANT: This is a stub implementation of SceneManager
+ * The application has been migrated to use React Three Fiber
+ * This stub exists only to satisfy imports and prevent runtime errors
+ */
 export class SceneManager {
     constructor() {
+        this.scene = {};
+        this.camera = null;
         this.renderer = null;
-        this.canvas = null;
-        this.animationFrameId = null;
         this.running = false;
         this.renderCallbacks = [];
         this.resizeCallbacks = [];
         this.disposeCallbacks = [];
-        this.render = () => {
-            if (!this.running || !this.renderer) {
-                return;
-            }
-            // Call all render callbacks
-            this.renderCallbacks.forEach(callback => {
-                try {
-                    callback();
-                }
-                catch (error) {
-                    logger.error('Error in render callback:', createErrorMetadata(error));
-                }
-            });
-            // Render the scene
-            this.renderer.render(this.scene, this.camera);
-            // Schedule next frame
-            this.animationFrameId = requestAnimationFrame(this.render);
-        };
-        // Create scene
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x000000); // Black background
-        // Create camera with default parameters
-        this.camera = new THREE.PerspectiveCamera(75, // FOV
-        window.innerWidth / window.innerHeight, // Aspect ratio
-        0.1, // Near plane
-        2000 // Far plane
-        );
-        this.camera.position.set(0, 10, 50);
-        this.camera.lookAt(0, 0, 0);
+        this.render = () => { };
+        this.getCamera = () => this.camera;
+        this.getRenderer = () => this.renderer;
+        logger.info('Using React Three Fiber for rendering - SceneManager is in compatibility mode');
+        // Create minimal THREE.js objects to prevent errors
+        try {
+            this.scene = new THREE.Scene();
+            // Create perspective camera specifically since XR systems need it
+            this.camera = new THREE.PerspectiveCamera(75, // FOV
+            window.innerWidth / window.innerHeight, // Aspect ratio
+            0.1, // Near plane
+            1000 // Far plane
+            );
+            this.camera.position.z = 5;
+        }
+        catch (error) {
+            logger.error('Error creating THREE.js objects:', createErrorMetadata(error));
+            // Fall back to mock objects if THREE.js fails to initialize
+        }
     }
     static getInstance(canvas) {
         if (!SceneManager.instance) {
             SceneManager.instance = new SceneManager();
         }
-        // Initialize renderer if canvas is provided and renderer not created yet
-        if (canvas && !SceneManager.instance.renderer) {
-            SceneManager.instance.initRenderer(canvas);
-        }
         return SceneManager.instance;
     }
     static cleanup() {
         if (SceneManager.instance) {
-            SceneManager.instance.dispose();
-            SceneManager.instance = null;
+            logger.info('SceneManager cleanup called');
         }
     }
+    // Stub methods that do nothing
     initRenderer(canvas) {
-        if (this.renderer) {
-            logger.warn('Renderer already initialized');
+        // Only try to initialize if we don't already have a renderer
+        if (this.renderer)
             return;
-        }
-        this.canvas = canvas;
         try {
-            // Create WebGL renderer
+            logger.info('Attempting to create WebGLRenderer (compatibility mode)');
+            // Verify that the canvas is valid
+            if (!canvas || !canvas.getContext) {
+                throw new Error('Invalid canvas element or getContext is not a function');
+            }
+            // Try to create a renderer with minimal settings
             this.renderer = new THREE.WebGLRenderer({
                 canvas,
-                antialias: true,
                 alpha: true,
-                powerPreference: 'high-performance'
+                antialias: true,
+                powerPreference: 'default'
             });
-            // Configure renderer
             this.renderer.setSize(window.innerWidth, window.innerHeight);
-            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit for performance
-            this.renderer.shadowMap.enabled = true;
-            this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            // Set up window resize handler
-            this.setupResizeHandler();
-            if (debugState.isEnabled()) {
-                logger.info('Renderer initialized successfully');
-            }
+            this.renderer.setPixelRatio(window.devicePixelRatio);
         }
         catch (error) {
             logger.error('Failed to initialize renderer:', createErrorMetadata(error));
-            throw error;
+            // Create a mock renderer to prevent further errors
+            this.renderer = {
+                domElement: canvas,
+                setSize: () => { },
+                render: () => { },
+                dispose: () => { }
+            };
         }
     }
-    setupResizeHandler() {
-        const handleResize = () => {
-            if (!this.renderer || !this.canvas)
-                return;
-            // Update camera
-            this.camera.aspect = window.innerWidth / window.innerHeight;
-            this.camera.updateProjectionMatrix();
-            // Update renderer
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
-            // Call resize callbacks
-            this.resizeCallbacks.forEach(callback => {
-                try {
-                    callback();
-                }
-                catch (error) {
-                    logger.error('Error in resize callback:', createErrorMetadata(error));
-                }
-            });
-            if (debugState.isDataDebugEnabled()) {
-                logger.debug('Scene resized');
-            }
-        };
-        window.addEventListener('resize', handleResize);
-        // Store cleanup function in dispose callbacks
-        this.disposeCallbacks.push(() => {
-            window.removeEventListener('resize', handleResize);
-        });
-        // Initial resize
-        handleResize();
-    }
+    setupResizeHandler() { }
     handleSettingsUpdate(settings) {
-        if (!settings.visualization)
-            return;
-        // Update renderer settings
-        if (this.renderer && settings.visualization.rendering) {
-            const renderSettings = settings.visualization.rendering;
-            // Update shadow settings
-            if (renderSettings.shadows !== undefined) {
-                this.renderer.shadowMap.enabled = renderSettings.shadows;
-            }
-            // Update antialias settings
-            if (renderSettings.antialias !== undefined && this.canvas) {
-                // Antialias requires recreating the renderer
-                const oldRenderer = this.renderer;
-                this.renderer = new THREE.WebGLRenderer({
-                    canvas: this.canvas,
-                    antialias: renderSettings.antialias,
-                    alpha: true,
-                    powerPreference: 'high-performance'
-                });
-                this.renderer.setSize(window.innerWidth, window.innerHeight);
-                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                this.renderer.shadowMap.enabled = oldRenderer.shadowMap.enabled;
-                this.renderer.shadowMap.type = oldRenderer.shadowMap.type;
-                // Dispose old renderer
-                oldRenderer.dispose();
-            }
-            // Update pixel ratio
-            if (renderSettings.pixelRatio !== undefined) {
-                const ratio = Math.max(1, Math.min(renderSettings.pixelRatio, window.devicePixelRatio));
-                this.renderer.setPixelRatio(ratio);
-            }
-        }
-        // Update scene settings
-        if (settings.visualization.sceneBackground) {
-            this.scene.background = new THREE.Color(settings.visualization.sceneBackground);
-        }
-        // Update camera settings
-        if (settings.visualization.camera) {
-            const cameraSettings = settings.visualization.camera;
-            if (cameraSettings.fov !== undefined) {
-                this.camera.fov = cameraSettings.fov;
-            }
-            if (cameraSettings.near !== undefined) {
-                this.camera.near = cameraSettings.near;
-            }
-            if (cameraSettings.far !== undefined) {
-                this.camera.far = cameraSettings.far;
-            }
-            if (cameraSettings.position) {
-                this.camera.position.set(cameraSettings.position.x, cameraSettings.position.y, cameraSettings.position.z);
-            }
-            if (cameraSettings.lookAt) {
-                this.camera.lookAt(cameraSettings.lookAt.x, cameraSettings.lookAt.y, cameraSettings.lookAt.z);
-            }
-            this.camera.updateProjectionMatrix();
-        }
         if (debugState.isEnabled()) {
-            logger.info('Scene settings updated');
+            logger.info('SceneManager.start() called but using React Three Fiber instead');
         }
     }
-    start() {
-        if (this.running) {
-            logger.warn('Scene manager already running');
-            return;
-        }
-        this.running = true;
-        this.render();
-        if (debugState.isEnabled()) {
-            logger.info('Scene manager started');
-        }
-    }
-    stop() {
-        if (!this.running) {
-            return;
-        }
-        this.running = false;
-        if (this.animationFrameId !== null) {
-            cancelAnimationFrame(this.animationFrameId);
-            this.animationFrameId = null;
-        }
-        if (debugState.isEnabled()) {
-            logger.info('Scene manager stopped');
-        }
-    }
+    stop() { }
     addRenderCallback(callback) {
-        this.renderCallbacks.push(callback);
-        return () => {
-            this.renderCallbacks = this.renderCallbacks.filter(cb => cb !== callback);
-        };
+        return () => { };
     }
     addResizeCallback(callback) {
+        // Store callback in array but don't actually use it
         this.resizeCallbacks.push(callback);
+        // Return remove function
         return () => {
-            this.resizeCallbacks = this.resizeCallbacks.filter(cb => cb !== callback);
+            const index = this.resizeCallbacks.indexOf(callback);
+            if (index !== -1) {
+                this.resizeCallbacks.splice(index, 1);
+            }
         };
     }
+    start() {
+        logger.info('SceneManager.start() called (compatibility mode - no action taken)');
+        this.running = true;
+    }
     dispose() {
-        // Stop rendering
-        this.stop();
-        // Run all dispose callbacks
-        this.disposeCallbacks.forEach(callback => {
-            try {
-                callback();
-            }
-            catch (error) {
-                logger.error('Error in dispose callback:', createErrorMetadata(error));
-            }
-        });
-        // Clear all callbacks
-        this.renderCallbacks = [];
-        this.resizeCallbacks = [];
-        this.disposeCallbacks = [];
-        // Dispose renderer
-        if (this.renderer) {
-            this.renderer.dispose();
-            this.renderer = null;
-        }
-        // Clear canvas reference
-        this.canvas = null;
-        if (debugState.isEnabled()) {
-            logger.info('Scene manager disposed');
-        }
+        logger.info('SceneManager.dispose() called (compatibility mode)');
+        this.running = false;
     }
     // Getters
     getScene() {
         return this.scene;
-    }
-    getCamera() {
-        return this.camera;
-    }
-    getRenderer() {
-        return this.renderer;
     }
     isRunning() {
         return this.running;

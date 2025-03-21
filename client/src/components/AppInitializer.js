@@ -4,19 +4,21 @@ import { debugState } from '../lib/utils/debug-state';
 import { useSettingsStore } from '../lib/settings-store';
 import WebSocketService from '../lib/services/websocket-service';
 import { graphDataManager } from '../lib/managers/graph-data-manager';
-import { SceneManager } from '../lib/managers/scene-manager';
 const logger = createLogger('AppInitializer');
 const AppInitializer = ({ onInitialized }) => {
     const { settings, initialize } = useSettingsStore();
     useEffect(() => {
         const initApp = async () => {
             if (debugState.isEnabled()) {
+                logger.warn('***************** IMPORTANT NOTICE *******************');
                 logger.info('Starting application initialization...');
+                logger.warn('React Three Fiber is in use - SceneManager is deprecated');
+                logger.warn('********************************************************');
             }
             try {
                 // Initialize settings
                 const settings = await initialize();
-                // Apply debug settings
+                // Apply debug settings (keeping this functionality)
                 if (settings.system?.debug) {
                     const debugSettings = settings.system.debug;
                     debugState.enableDebug(debugSettings.enabled);
@@ -25,15 +27,15 @@ const AppInitializer = ({ onInitialized }) => {
                         debugState.enablePerformanceDebug(debugSettings.showPerformance);
                     }
                 }
-                // Get canvas for Three.js rendering
-                const canvas = document.getElementById('main-canvas');
-                if (!canvas) {
-                    throw new Error('Could not find #main-canvas element');
+                // SIMPLIFIED: We now use React Three Fiber for rendering
+                // The canvas and rendering are managed by React Three Fiber
+                // Ensure we don't error due to missing main-canvas element
+                // This check is only needed during transition from old to new rendering system
+                if (!document.getElementById('main-canvas')) {
+                    logger.warn('Main canvas element not found, application is using React Three Fiber instead');
+                    // No need to throw an error - the fix-errors.js script should have created a fallback
+                    // and the actual rendering is handled by React Three Fiber
                 }
-                // Initialize scene manager
-                const sceneManager = SceneManager.getInstance(canvas);
-                sceneManager.handleSettingsUpdate(settings);
-                sceneManager.start();
                 // Initialize WebSocket
                 await initializeWebSocket(settings);
                 if (debugState.isEnabled()) {
@@ -111,21 +113,6 @@ const AppInitializer = ({ onInitialized }) => {
             throw error;
         }
     };
-    // Create a subscription to settings changes
-    useEffect(() => {
-        if (!settings)
-            return;
-        // Get the scene manager
-        const canvas = document.getElementById('main-canvas');
-        if (!canvas)
-            return;
-        const sceneManager = SceneManager.getInstance(canvas);
-        // Update scene with latest settings
-        sceneManager.handleSettingsUpdate(settings);
-        if (debugState.isEnabled()) {
-            logger.debug('Settings updated in AppInitializer');
-        }
-    }, [settings]);
     return null; // This component doesn't render anything directly
 };
 export default AppInitializer;
