@@ -37,7 +37,18 @@ export class XRInitializer {
     this.xrSessionManager = xrSessionManager;
     this.sceneManager = SceneManager.getInstance();
     this.scene = this.sceneManager.getScene();
-    this.camera = this.sceneManager.getCamera();
+    
+    // Get camera and ensure it's a PerspectiveCamera
+    const camera = this.sceneManager.getCamera();
+    
+    if (!camera || !(camera instanceof THREE.PerspectiveCamera)) {
+      logger.warn('PerspectiveCamera not available from SceneManager, creating default camera');
+      this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      this.camera.position.z = 5;
+    } else {
+      // We have a valid PerspectiveCamera
+      this.camera = camera as THREE.PerspectiveCamera;
+    }
     
     // Setup XR interactions
     this.setupXRInteractions();

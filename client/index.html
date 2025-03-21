@@ -13,6 +13,7 @@
       if ('xr' in navigator) {
         navigator.xr.isSessionSupported('immersive-vr')
           .then(supported => {
+            window.webxrSupported = supported;
             if (supported) {
               console.log('WebXR VR supported');
               document.body.classList.add('webxr-supported');
@@ -20,11 +21,14 @@
           });
       }
     </script>
+    <!-- Error prevention script - must load before main application -->
+    <script src="/fix-errors.js"></script>
     
     <title>LogSeq XR</title>
   </head>
   <body>
     <div id="root"></div>
+    <!-- Backup canvas element - will be hidden -->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

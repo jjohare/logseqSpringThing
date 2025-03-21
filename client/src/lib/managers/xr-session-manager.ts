@@ -50,15 +50,35 @@ export class XRSessionManager {
   private constructor(sceneManager: SceneManager) {
     this.sceneManager = sceneManager;
     this.renderer = sceneManager.getRenderer();
-    this.camera = sceneManager.getCamera();
+    
+    // Get camera and ensure it's a PerspectiveCamera
+    const camera = sceneManager.getCamera();
+    if (!camera || !(camera instanceof THREE.PerspectiveCamera)) {
+      logger.warn('PerspectiveCamera not available from SceneManager, creating default camera');
+      this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      this.camera.position.z = 5;
+    } else {
+      this.camera = camera as THREE.PerspectiveCamera;
+    }
+    
+    // Get scene
     this.scene = sceneManager.getScene();
+    if (!this.scene) {
+      logger.warn('Scene not found in SceneManager, creating default scene');
+      this.scene = new THREE.Scene();
+    }
     
     if (!this.renderer) {
       throw new Error('XRSessionManager requires a renderer from SceneManager');
     }
     
-    // Initialize controller model factory
-    this.controllerModelFactory = new XRControllerModelFactory();
+    try {
+      // Initialize controller model factory
+      this.controllerModelFactory = new XRControllerModelFactory();
+    } catch (error) {
+      logger.error('Failed to create XRControllerModelFactory:', createErrorMetadata(error));
+      this.controllerModelFactory = null;
+    }
   }
   
   public static getInstance(sceneManager: SceneManager): XRSessionManager {
@@ -78,14 +98,17 @@ export class XRSessionManager {
     
     try {
       // Check if WebXR is supported
-      if ('xr' in navigator) {
+      if ('xr' in navigator && this.renderer) {
         // Set up renderer for XR
         this.renderer.xr.enabled = true;
         
         // Set reference space type based on settings
-        this.renderer.xr.setReferenceSpaceType(
-          settings.xr?.roomScale ? 'local-floor' : 'local'
-        );
+        const refSpace = settings.xr?.roomScale ? 'local-floor' : 'local';
+        this.renderer.xr.setReferenceSpaceType(refSpace);
+        
+        if (debugState.isEnabled()) {
+          logger.info(`Set XR reference space to ${refSpace}`);
+        }
         
         // Create VR button
         this.createVRButton();
@@ -96,7 +119,7 @@ export class XRSessionManager {
         if (debugState.isEnabled()) {
           logger.info('XR session manager initialized successfully');
         }
-      } else {
+      } else if (debugState.isEnabled()) {
         logger.warn('WebXR not supported in this browser');
       }
     } catch (error) {

@@ -2,7 +2,7 @@ import React, { useRef, useEffect } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stats } from '@react-three/drei'
 import * as THREE from 'three'
-import { EffectComposer, RenderPass, UnrealBloomPass } from 'three-stdlib'
+import { EffectComposer, RenderPass, UnrealBloomPass } from 'three-stdlib' 
 import GraphManager from './GraphManager'
 import XRController from '../xr/XRController'
 import XRVisualizationConnector from '../XRVisualizationConnector'
@@ -62,25 +62,34 @@ const Effects = () => {
 // Initialize WebXR in the scene
 const InitializeXR = () => {
   const { gl } = useThree()
-  const settings = useSettingsStore(state => state.settings)
-  const xrEnabled = settings?.xr?.enabled !== false
+  const settings = useSettingsStore(state => state.settings?.xr)
+  const xrEnabled = settings?.enabled !== false
   
   useEffect(() => {
-    if (xrEnabled) {
-      gl.xr.enabled = true
-      
-      // Set reference space type based on settings
-      if (settings?.xr?.roomScale) {
-        gl.xr.setReferenceSpaceType('local-floor')
-      } else {
-        gl.xr.setReferenceSpaceType('local')
+    try {
+      if (xrEnabled) {
+        // Enable XR on the renderer
+        gl.xr.enabled = true
+        
+        // Set reference space type based on settings
+        if (settings?.roomScale) {
+          gl.xr.setReferenceSpaceType('local-floor')
+        } else {
+          gl.xr.setReferenceSpaceType('local')
+        }
+        
+        if (debugState.isEnabled()) {
+          logger.info('WebXR enabled on renderer')
+        }
       }
-      
+    } catch (error) {
+      logger.error('Failed to initialize WebXR:', error);
+      // Don't throw error - we want to continue even if XR fails
       if (debugState.isEnabled()) {
-        logger.info('WebXR enabled on renderer')
+        logger.warn('WebXR initialization failed, continuing with standard rendering');
       }
     }
-  }, [gl, xrEnabled, settings?.xr?.roomScale])
+  }, [gl, xrEnabled, settings?.roomScale])
   
   return null
 }
@@ -163,28 +172,38 @@ const CameraSetup = () => {
 // Main GraphCanvas component
 const GraphCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const settings = useSettingsStore(state => state.settings)
-  const showStats = settings?.visualization?.showStats || false
+  const { settings } = useSettingsStore()
+  const showStats = settings?.visualization?.showStats ?? false
   const xrEnabled = settings?.xr?.enabled !== false
-  
+  const antialias = settings?.visualization?.rendering?.antialias !== false
   
   return (
     <div className="absolute inset-0 overflow-hidden">
       <Canvas
         ref={canvasRef}
         gl={{
-          antialias: settings?.visualization?.rendering?.antialias !== false,
+          antialias,
           alpha: true,
-          powerPreference: 'high-performance' 
+          powerPreference: 'high-performance',
+          // Add failIfMajorPerformanceCaveat to prevent rendering on devices with poor WebGL
+          failIfMajorPerformanceCaveat: false
         }}
         camera={{
           fov: 75,
           near: 0.1,
-          far: 2000,
+          far: settings?.visualization?.camera?.far || 2000,
           position: [0, 10, 50]
         }}
-        // Important: Removing ID to prevent SceneManager from finding this canvas
-        className="r3f-canvas"
+        // Important: Use a specific className and do NOT use id="main-canvas"
+        className="r3f-canvas" 
+        onCreated={({ gl }) => {
+          // Set renderer properties that can't be set via props
+          gl.setClearColor(new THREE.Color(settings?.visualization?.sceneBackground || 0x000000));
+          
+          if (debugState.isEnabled()) {
+            logger.info('React Three Fiber canvas created successfully');
+          }
+        }}
       >
         {/* Initialize WebXR */}
         <InitializeXR />

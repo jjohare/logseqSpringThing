@@ -17,10 +17,10 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
   useEffect(() => {
     const initApp = async () => {
       if (debugState.isEnabled()) {
-        logger.warn('**************** IMPORTANT NOTICE ******************');
+        logger.warn('***************** IMPORTANT NOTICE *******************');
           logger.info('Starting application initialization...');
           logger.warn('React Three Fiber is in use - SceneManager is deprecated');
-        logger.warn('*****************************************************');
+        logger.warn('********************************************************');
         }
 
         try {
@@ -37,7 +37,15 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
             }
           }
           // SIMPLIFIED: We now use React Three Fiber for rendering
-          // The canvas and rendering are managed by React Three Fiber      
+          // The canvas and rendering are managed by React Three Fiber
+          
+          // Ensure we don't error due to missing main-canvas element
+          // This check is only needed during transition from old to new rendering system
+          if (!document.getElementById('main-canvas')) {
+            logger.warn('Main canvas element not found, application is using React Three Fiber instead');
+            // No need to throw an error - the fix-errors.js script should have created a fallback
+            // and the actual rendering is handled by React Three Fiber
+          }
 
         // Initialize WebSocket
         await initializeWebSocket(settings);
