@@ -1,18 +1,18 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, RefObject, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonVariants } from '../ui/button';
 
-// Define the tab interface
+// Define the Tab interface
 export interface Tab {
   id: string;
   title: string;
-  icon?: React.ReactNode;
-  content: React.ReactNode;
+  content: ReactNode;
+  icon?: ReactNode;
   disabled?: boolean;
 }
 
-// Define the tab context for managing tab state
-interface TabContextProps {
+// Define the TabContext interface
+interface TabContextType {
   activeTab: string;
   tabs: Tab[];
   addTab: (tab: Tab) => void;
@@ -20,10 +20,11 @@ interface TabContextProps {
   setActiveTab: (tabId: string) => void;
 }
 
-const TabContext = createContext<TabContextProps | undefined>(undefined);
+// Create the context with undefined as default value
+const TabContext = createContext<TabContextType | undefined>(undefined);
 
 // Hook for accessing tab context
-export const useTabContext = () => {
+export const useTabContext = (): TabContextType => {
   const context = useContext(TabContext);
   if (!context) {
     throw new Error('useTabContext must be used within a TabProvider');
@@ -31,17 +32,16 @@ export const useTabContext = () => {
   return context;
 };
 
-// Provider component for tab context
 interface TabProviderProps {
-  children: React.ReactNode;
+  children: ReactNode;
   defaultTabId?: string;
   initialTabs?: Tab[];
 }
 
-export const TabProvider: React.FC<TabProviderProps> = ({
-  children,
-  defaultTabId,
-  initialTabs = []
+export const TabProvider: React.FC<TabProviderProps> = ({ 
+  children, 
+  defaultTabId, 
+  initialTabs = [] 
 }) => {
   const [tabs, setTabs] = useState<Tab[]>(initialTabs);
   const [activeTab, setActiveTab] = useState<string>(
@@ -69,18 +69,16 @@ export const TabProvider: React.FC<TabProviderProps> = ({
   const removeTab = useCallback((tabId: string) => {
     setTabs(prevTabs => {
       const newTabs = prevTabs.filter(tab => tab.id !== tabId);
-      
       // If we're removing the active tab, set a new active tab
       if (activeTab === tabId && newTabs.length > 0) {
         setActiveTab(newTabs[0].id);
       }
-      
       return newTabs;
     });
   }, [activeTab]);
 
   return (
-    <TabContext.Provider
+    <TabContext.Provider 
       value={{
         activeTab,
         tabs,
@@ -94,55 +92,50 @@ export const TabProvider: React.FC<TabProviderProps> = ({
   );
 };
 
-// Tab List component for displaying tab headers
 interface TabListProps {
   orientation?: 'horizontal' | 'vertical';
   className?: string;
 }
 
-export const TabList: React.FC<TabListProps> = ({
-  orientation = 'horizontal',
-  className = ''
+export const TabList: React.FC<TabListProps> = ({ 
+  orientation = 'horizontal', 
+  className = '' 
 }) => {
   const { tabs, activeTab, setActiveTab } = useTabContext();
-  const [scrollPosition, setScrollPosition] = useState(0);
-  const [showScrollButtons, setShowScrollButtons] = useState(false);
-  const tabListRef = React.useRef<HTMLDivElement>(null);
+  const [scrollPosition, setScrollPosition] = useState<number>(0);
+  const [showScrollButtons, setShowScrollButtons] = useState<boolean>(false);
+  const tabListRef = useRef<HTMLDivElement>(null);
 
   // Check if we need scroll buttons
-  React.useEffect(() => {
-    const checkScroll = () => {
+  useEffect(() => {
+    const checkScroll = (): void => {
       if (tabListRef.current) {
         const { scrollWidth, clientWidth } = tabListRef.current;
         setShowScrollButtons(scrollWidth > clientWidth);
       }
     };
-
     checkScroll();
     window.addEventListener('resize', checkScroll);
     return () => window.removeEventListener('resize', checkScroll);
   }, [tabs]);
 
   // Handle scroll buttons
-  const handleScroll = (direction: 'left' | 'right') => {
+  const handleScroll = (direction: 'left' | 'right'): void => {
     if (tabListRef.current) {
       const { scrollLeft, clientWidth } = tabListRef.current;
-      const newPosition = direction === 'left' 
-        ? Math.max(0, scrollLeft - 100) 
+      const newPosition = direction === 'left'
+        ? Math.max(0, scrollLeft - 100)
         : scrollLeft + 100;
-      
       tabListRef.current.scrollTo({
         left: newPosition,
         behavior: 'smooth'
       });
-      
       setScrollPosition(newPosition);
     }
   };
 
   return (
     <div className={`relative flex items-center ${className}`}>
-      {/* Left scroll button */}
       {showScrollButtons && orientation === 'horizontal' && (
         <button
           type="button"
@@ -156,15 +149,11 @@ export const TabList: React.FC<TabListProps> = ({
           ←
         </button>
       )}
-
-      {/* Tab list */}
       <div
         ref={tabListRef}
-        className={`flex ${
-          orientation === 'horizontal'
-            ? 'flex-row overflow-x-auto scrollbar-hide'
-            : 'flex-col overflow-y-auto'
-        } gap-1 px-1`}
+        className={`flex ${orientation === 'horizontal'
+          ? 'flex-row overflow-x-auto scrollbar-hide'
+          : 'flex-col overflow-y-auto'} gap-1 px-1`}
         role="tablist"
       >
         {tabs.map(tab => (
@@ -175,11 +164,9 @@ export const TabList: React.FC<TabListProps> = ({
             aria-controls={`tab-panel-${tab.id}`}
             id={`tab-${tab.id}`}
             disabled={tab.disabled}
-            className={`flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-              activeTab === tab.id
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-muted'
-            } ${tab.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+            className={`flex items-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${activeTab === tab.id
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'text-muted-foreground hover:bg-muted'} ${tab.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             onClick={() => !tab.disabled && setActiveTab(tab.id)}
           >
             {tab.icon && <span className="mr-2">{tab.icon}</span>}
@@ -187,8 +174,6 @@ export const TabList: React.FC<TabListProps> = ({
           </button>
         ))}
       </div>
-
-      {/* Right scroll button */}
       {showScrollButtons && orientation === 'horizontal' && (
         <button
           type="button"
@@ -197,10 +182,8 @@ export const TabList: React.FC<TabListProps> = ({
             size: 'icon',
           })}`}
           onClick={() => handleScroll('right')}
-          disabled={
-            tabListRef.current &&
-            scrollPosition >= tabListRef.current.scrollWidth - tabListRef.current.clientWidth - 10
-          }
+          disabled={tabListRef.current &&
+            scrollPosition >= tabListRef.current.scrollWidth - tabListRef.current.clientWidth - 10}
         >
           →
         </button>
@@ -209,10 +192,14 @@ export const TabList: React.FC<TabListProps> = ({
   );
 };
 
+interface TabPanelsProps {
+  className?: string;
+}
+
 // Tab panels container
-export const TabPanels: React.FC<{ className?: string }> = ({ className = '' }) => {
+export const TabPanels: React.FC<TabPanelsProps> = ({ className = '' }) => {
   const { tabs, activeTab } = useTabContext();
-  
+
   return (
     <div className={`mt-2 ${className}`}>
       <AnimatePresence mode="wait">
@@ -241,7 +228,6 @@ export const TabPanels: React.FC<{ className?: string }> = ({ className = '' }) 
   );
 };
 
-// Combined tab component for easier use
 interface TabsProps {
   tabs: Tab[];
   defaultTabId?: string;
@@ -249,11 +235,11 @@ interface TabsProps {
   className?: string;
 }
 
-export const Tabs: React.FC<TabsProps> = ({
-  tabs,
-  defaultTabId,
-  orientation = 'horizontal',
-  className = ''
+export const Tabs: React.FC<TabsProps> = ({ 
+  tabs, 
+  defaultTabId, 
+  orientation = 'horizontal', 
+  className = '' 
 }) => {
   return (
     <TabProvider initialTabs={tabs} defaultTabId={defaultTabId}>

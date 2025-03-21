@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ReactNode } from 'react';
 import Panel from './Panel';
 import { Tabs, Tab } from './PanelTabs';
 import { usePanel } from './PanelContext';
@@ -33,11 +33,12 @@ const TabPanel: React.FC<TabPanelProps> = ({
   className = '',
 }) => {
   const { panels, updatePanelTitle } = usePanel();
-  const [activeTabId, setActiveTabId] = useState<string>(defaultTabId || (tabs.length > 0 ? tabs[0].id : ''));
-  
-  // If no tabs provided, render a message
+  const [activeTabId, setActiveTabId] = useState<string>(
+    defaultTabId || (tabs.length > 0 ? tabs[0].id : '')
+  );
+
   // Handle tab change
-  const handleTabChange = (tabId: string) => {
+  const handleTabChange = (tabId: string): void => {
     setActiveTabId(tabId);
     if (onTabChange) {
       onTabChange(tabId);
@@ -54,23 +55,22 @@ const TabPanel: React.FC<TabPanelProps> = ({
         updatePanelTitle(id, newTitle);
       }
     }
-  }, [activeTabId, id, tabs, title]);
+  }, [activeTabId, id, tabs, title, updatePanelTitle]);
 
   return (
-    <Panel
-      id={id}
-      initialWidth={initialWidth}
-      initialHeight={initialHeight}
-      minWidth={minWidth}
+    <Panel 
+      id={id} 
+      initialWidth={initialWidth} 
+      initialHeight={initialHeight} 
+      minWidth={minWidth} 
       minHeight={minHeight}
     >
       <div className={`flex flex-col h-full ${className}`}>
-        {/* Tabs component for navigation */}
-        <Tabs
-          tabs={tabs}
-          defaultTabId={activeTabId}
-          orientation="horizontal"
-          className="flex-none"
+        <Tabs 
+          tabs={tabs} 
+          defaultTabId={activeTabId} 
+          orientation="horizontal" 
+          className="flex-none" 
         />
       </div>
     </Panel>

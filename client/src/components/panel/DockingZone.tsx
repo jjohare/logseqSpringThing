@@ -1,37 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { usePanel } from './PanelContext';
+import React, { useEffect, useState, ReactNode } from 'react';
+import { usePanel, DockPosition } from './PanelContext';
 import { createLogger } from '../../lib/utils/logger';
 
 const logger = createLogger('DockingZone');
 
-export type DockPosition = 'left' | 'right' | 'top' | 'bottom';
-
 interface DockingZoneProps {
-  /**
-   * Position of this docking zone
-   */
   position: DockPosition;
-  
-  /**
-   * Custom class names to apply to the docking zone
-   */
   className?: string;
-  
-  /**
-   * Children to render inside the docking zone (typically Panel components)
-   */
   children?: ReactNode;
-  
-  /**
-   * Whether the docking zone should adjust its size based on panel content
-   * @default true
-   */
   autoSize?: boolean;
-  
-  /**
-   * Default size of the docking zone (width for left/right, height for top/bottom)
-   * @default 300
-   */
   defaultSize?: number;
 }
 
@@ -39,38 +16,36 @@ interface DockingZoneProps {
  * DockingZone manages panels that are docked to specific edges of the viewport.
  * It handles resizing and proper stacking of docked panels.
  */
-const DockingZone = ({
-  position,
-  className = '',
-  children,
-  autoSize = true,
-  defaultSize = 300
-}: DockingZoneProps) => {
+const DockingZone: React.FC<DockingZoneProps> = ({ 
+  position, 
+  className = '', 
+  children, 
+  autoSize = true, 
+  defaultSize = 300 
+}) => {
   const { panels } = usePanel();
-  const [size, setSize] = useState(defaultSize);
-  const [isDragResizing, setIsDragResizing] = useState(false);
+  const [size, setSize] = useState<number>(defaultSize);
+  const [isDragResizing, setIsDragResizing] = useState<boolean>(false);
   const [dockedPanelIds, setDockedPanelIds] = useState<string[]>([]);
 
   // Track which panels are docked to this zone
   useEffect(() => {
     const dockedIds = Object.keys(panels).filter(id => 
-      panels[id].isDocked && 
+      panels[id].isDocked &&
       panels[id].dockPosition === position &&
       panels[id].isOpen
     );
-    
     setDockedPanelIds(dockedIds);
-    
+
     // If auto-sizing is enabled, calculate the optimal size for this docking zone
     if (autoSize && dockedIds.length > 0) {
       // For each docking direction, use the largest panel size as the zone size
       const dockedPanelsSizes = dockedIds.map(id => {
         const panel = panels[id];
-        return position === 'left' || position === 'right' 
+        return position === 'left' || position === 'right'
           ? panel.size?.width || defaultSize
           : panel.size?.height || defaultSize;
       });
-      
       const maxSize = Math.max(...dockedPanelsSizes);
       if (maxSize > 0 && maxSize !== size) {
         setSize(maxSize);
@@ -79,29 +54,28 @@ const DockingZone = ({
   }, [panels, position, autoSize, defaultSize, size]);
 
   // Handling resize dragging
-  const handleResizeStart = () => {
+  const handleResizeStart = (): void => {
     setIsDragResizing(true);
   };
-  
-  const handleResizeEnd = () => {
+
+  const handleResizeEnd = (): void => {
     setIsDragResizing(false);
   };
 
   // Determine if the docking zone has visible panels
   const hasVisiblePanels = dockedPanelIds.length > 0;
-  
+
   // Set up styles based on docking position
-  const getPositionStyles = () => {
+  const getPositionStyles = (): React.CSSProperties => {
     const isHorizontal = position === 'top' || position === 'bottom';
-    const dimensionStyle = isHorizontal 
-      ? { height: hasVisiblePanels ? `${size}px` : '0px' } 
+    const dimensionStyle = isHorizontal
+      ? { height: hasVisiblePanels ? `${size}px` : '0px' }
       : { width: hasVisiblePanels ? `${size}px` : '0px' };
-    
     return dimensionStyle;
   };
-  
+
   // Set up classes based on docking position
-  const getPositionClasses = () => {
+  const getPositionClasses = (): string => {
     switch (position) {
       case 'left':
         return 'border-r';
@@ -115,12 +89,12 @@ const DockingZone = ({
         return '';
     }
   };
-  
+
   // Only show the resizer when there are docked panels
   const showResizer = hasVisiblePanels;
-  
+
   // Determine resizer position and styling
-  const getResizerClasses = () => {
+  const getResizerClasses = (): string => {
     switch (position) {
       case 'left':
         return 'right-0 top-0 h-full w-1 cursor-ew-resize';
@@ -136,19 +110,16 @@ const DockingZone = ({
   };
 
   return (
-    <div 
+    <div
       className={`docking-zone relative bg-background ${getPositionClasses()} ${hasVisiblePanels ? '' : 'hidden'} transition-all duration-200 ${className}`}
       style={getPositionStyles()}
       data-docking-position={position}
     >
-      {/* Docked panels will be rendered here by parent component */}
       <div className="h-full w-full overflow-auto">
         {children}
       </div>
-      
-      {/* Resizer element */}
       {showResizer && (
-        <div 
+        <div
           className={`absolute bg-transparent hover:bg-primary/20 ${getResizerClasses()} ${isDragResizing ? 'bg-primary/20' : ''}`}
           onMouseDown={handleResizeStart}
           onMouseUp={handleResizeEnd}

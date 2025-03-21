@@ -6,7 +6,7 @@ import { Slider } from './ui/slider'
 import { Switch } from './ui/switch'
 import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
+import { Tooltip, TooltipProvider } from './ui/tooltip'
 import { InfoIcon } from 'lucide-react'
 
 export function SettingControlComponent({ path, setting, value, onChange }: SettingControlProps) {
@@ -163,13 +163,8 @@ export function SettingControlComponent({ path, setting, value, onChange }: Sett
         
         {setting.tooltip && (
           <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <InfoIcon className="h-3 w-3 text-muted-foreground" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="max-w-xs text-xs">{setting.tooltip}</p>
-              </TooltipContent>
+            <Tooltip content={setting.tooltip}>
+              <InfoIcon className="h-3 w-3 text-muted-foreground" />
             </Tooltip>
           </TooltipProvider>
         )}

@@ -34,7 +34,8 @@ export const defaultSettings = {
         icons: {
             enabled: true,
             size: 1.0,
-            opacity: 0.8
+            opacity: 0.8,
+            color: '#ffffff'
         },
         metrics: {
             enabled: false,
@@ -57,7 +58,9 @@ export const defaultSettings = {
             highlightColor: '#ffff00',
             opacity: 0.8,
             showLabels: false,
-            arrowSize: 0.5
+            arrowSize: 0.5,
+            dashSize: 3.0,
+            gapSize: 1.0
         },
         physics: {
             enabled: true,
@@ -116,6 +119,11 @@ export const defaultSettings = {
         teleportEnabled: true,
         roomScale: true,
         showFloor: true,
-        handInteraction: true
+        handInteraction: true,
+        interactionDistance: 1.5,
+        grabThreshold: 0.1,
+        controllerRayColor: '#ffffff',
+        controllerPointerSize: 0.01,
+        hapticFeedback: true
     }
 };

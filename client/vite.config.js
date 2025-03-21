@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 // https://vitejs.dev/config/
 export default defineConfig({
-    plugins: [react()],
+    plugins: [react()], // Keep the array syntax
     build: {
         outDir: 'dist',
         assetsDir: 'assets',
@@ -35,4 +35,13 @@ export default defineConfig({
             },
         },
     },
+    // Force use of esbuild for TypeScript compilation
+    esbuild: {
+        logOverride: { 'this-is-undefined-in-esm': 'silent' }
+    },
+    optimizeDeps: {
+        esbuildOptions: {
+            target: 'es2020'
+        }
+    }
 });

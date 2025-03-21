@@ -55,6 +55,14 @@ export const defaultSettings: Settings = {
       radius: 0.8,
       threshold: 0.4,
     },
+    sceneBackground: 0x000000, // Using hex number format instead of string
+    camera: {
+      fov: 75,
+      near: 0.1,
+      far: 10000,
+      position: { x: 0, y: 0, z: 500 },
+      lookAt: { x: 0, y: 0, z: 0 },
+    },
     hologram: {
       color: '#3e82f7',
       opacity: 0.7,
@@ -66,6 +74,21 @@ export const defaultSettings: Settings = {
       ringRotationSpeed: 0.5,
       globalRotationSpeed: 0.5,
     },
+    icons: {
+      enabled: true,
+      color: '#ffffff',
+      size: 1.0,
+      opacity: 0.8,
+    },
+    metrics: {
+      enabled: false,
+      refreshRate: 1000,
+      position: 'top-right',
+    },
+    showStats: false,
+    showAxes: false,
+    showGrid: false,
+    
   },
   system: {
     websocket: {
@@ -82,8 +105,15 @@ export const defaultSettings: Settings = {
       showPerformance: false,
       showDataUpdates: false,
       logLevel: 'info',
+      logFormat: 'json',
     },
     persistSettings: true,
+    apiEndpoint: '/api',
+  },
+  auth: {
+    enabled: true,
+    provider: 'nostr',
+    required: false,
   },
   xr: {
     enabled: false,
@@ -93,5 +123,10 @@ export const defaultSettings: Settings = {
     teleportEnabled: true,
     roomScale: true,
     showFloor: true,
+    interactionDistance: 1.5,
+    grabThreshold: 0.1,
+    controllerRayColor: '#ffffff',
+    controllerPointerSize: 0.01,
+    hapticFeedback: true
   }
 }

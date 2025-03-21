@@ -21,6 +21,7 @@ export const usePlatformStore = create()((set, get) => ({
     userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
     isXRMode: false,
     xrSessionState: 'inactive',
+    isWebXRSupported: typeof navigator !== 'undefined' && !!navigator.xr,
     initialized: false,
     // Event listeners
     listeners: new Map(),
@@ -71,7 +72,12 @@ export const usePlatformStore = create()((set, get) => ({
                 get().detectPlatform();
             });
         }
-        set({ initialized: true });
+        // Update WebXR support
+        const isWebXRSupported = typeof navigator !== 'undefined' && !!navigator.xr;
+        set({
+            initialized: true,
+            isWebXRSupported
+        });
         logger.info('Platform manager initialized', {
             platform: get().platform,
             xrDeviceType: get().xrDeviceType,
@@ -291,6 +297,9 @@ export class PlatformManager {
     }
     isDesktop() {
         return usePlatformStore.getState().isDesktop();
+    }
+    isWebXRSupported() {
+        return usePlatformStore.getState().isWebXRSupported;
     }
     isMobile() {
         return usePlatformStore.getState().isMobile();

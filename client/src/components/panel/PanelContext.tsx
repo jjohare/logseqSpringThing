@@ -1,7 +1,71 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+
+// Define the types for our panels
+export interface PanelPosition {
+  x: number;
+  y: number;
+}
+
+export interface PanelSize {
+  width: number;
+  height: number;
+}
+
+export type DockPosition = 'left' | 'right' | 'top' | 'bottom' | null;
+
+export interface Panel {
+  id: string;
+  title: string;
+  position: PanelPosition;
+  size: PanelSize;
+  isOpen: boolean;
+  isCollapsed: boolean;
+  isDocked: boolean;
+  dockPosition: DockPosition;
+  zIndex: number;
+  groupId?: string;
+  activeInGroup: boolean;
+}
+
+export interface PanelConfig {
+  title?: string;
+  position?: PanelPosition;
+  size?: PanelSize;
+  isDocked?: boolean;
+  dockPosition?: DockPosition;
+  groupId?: string;
+  [key: string]: any;
+}
+
+export interface LayoutPreset {
+  [panelId: string]: {
+    position?: PanelPosition;
+    size?: PanelSize;
+    isOpen?: boolean;
+    isDocked?: boolean;
+    dockPosition?: DockPosition;
+    [key: string]: any;
+  };
+}
+
+export interface PanelContextValue {
+  panels: Record<string, Panel>;
+  updatePanelPosition: (id: string, position: PanelPosition) => void;
+  updatePanelSize: (id: string, size: PanelSize) => void;
+  togglePanelOpen: (id: string) => void;
+  updatePanelTitle: (id: string, title: string) => void;
+  togglePanelCollapsed: (id: string) => void;
+  dockPanel: (id: string, position: DockPosition) => void;
+  bringToFront: (id: string) => void;
+  resetPanels: () => void;
+  activatePanelInGroup: (id: string) => void;
+  applyLayout: (layoutName: string) => void;
+  createPanel: (id: string, config: PanelConfig) => void;
+  layoutPresets: Record<string, LayoutPreset>;
+}
 
 // Define layout presets for different screen sizes and use cases
-const layoutPresets = {
+const layoutPresets: Record<string, LayoutPreset> = {
   default: {
     settings: {
       position: { x: window.innerWidth - 320, y: 20 },
@@ -41,7 +105,7 @@ const layoutPresets = {
 };
 
 // Define the default panel positions and states
-const defaultPanels = {
+const defaultPanels: Record<string, Panel> = {
   settings: {
     id: 'settings',
     title: 'Settings',
@@ -71,11 +135,15 @@ const defaultPanels = {
   // Add more default panels as needed
 };
 
-const PanelContext = createContext();
+interface PanelProviderProps {
+  children: ReactNode;
+}
 
-export const PanelProvider = ({ children }) => {
+const PanelContext = createContext<PanelContextValue | null>(null);
+
+export const PanelProvider: React.FC<PanelProviderProps> = ({ children }) => {
   // Initialize panels from localStorage or use defaults
-  const [panels, setPanels] = useState(() => {
+  const [panels, setPanels] = useState<Record<string, Panel>>(() => {
     const savedPanels = localStorage.getItem('panels');
     return savedPanels ? JSON.parse(savedPanels) : defaultPanels;
   });
@@ -86,7 +154,7 @@ export const PanelProvider = ({ children }) => {
   }, [panels]);
 
   // Update panel position
-  const updatePanelPosition = (id, position) => {
+  const updatePanelPosition = (id: string, position: PanelPosition) => {
     setPanels((prev) => ({
       ...prev,
       [id]: {
@@ -98,7 +166,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Update panel size
-  const updatePanelSize = (id, size) => {
+  const updatePanelSize = (id: string, size: PanelSize) => {
     setPanels((prev) => ({
       ...prev,
       [id]: {
@@ -109,7 +177,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Update panel title
-  const updatePanelTitle = (id, title) => {
+  const updatePanelTitle = (id: string, title: string) => {
     setPanels((prev) => ({
       ...prev,
       [id]: {
@@ -120,7 +188,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Toggle panel open/closed state
-  const togglePanelOpen = (id) => {
+  const togglePanelOpen = (id: string) => {
     setPanels((prev) => {
       const panel = prev[id];
       if (!panel) return prev;
@@ -161,7 +229,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Toggle panel collapsed state
-  const togglePanelCollapsed = (id) => {
+  const togglePanelCollapsed = (id: string) => {
     setPanels((prev) => ({
       ...prev,
       [id]: {
@@ -172,7 +240,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Dock panel to a specific position
-  const dockPanel = (id, position) => {
+  const dockPanel = (id: string, position: DockPosition) => {
     setPanels((prev) => ({
       ...prev,
       [id]: {
@@ -186,7 +254,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Helper function to calculate position based on dock position
-  const calculateDockedPosition = (dockPosition, size) => {
+  const calculateDockedPosition = (dockPosition: DockPosition, size?: PanelSize): PanelPosition => {
     switch (dockPosition) {
       case 'left':
         return { x: 0, y: 20 };
@@ -202,7 +270,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Bring panel to front
-  const bringToFront = (id) => {
+  const bringToFront = (id: string) => {
     const highestZ = Math.max(...Object.values(panels).map(panel => panel.zIndex || 0));
     setPanels((prev) => ({
       ...prev,
@@ -219,7 +287,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Activate a panel in its group
-  const activatePanelInGroup = (id) => {
+  const activatePanelInGroup = (id: string) => {
     setPanels((prev) => {
       const panel = prev[id];
       if (!panel || !panel.groupId) return prev;
@@ -248,7 +316,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Apply a layout preset
-  const applyLayout = (layoutName) => {
+  const applyLayout = (layoutName: string) => {
     const layout = layoutPresets[layoutName];
     if (!layout) return;
     
@@ -269,7 +337,7 @@ export const PanelProvider = ({ children }) => {
   };
 
   // Create a new panel
-  const createPanel = (id, config) => {
+  const createPanel = (id: string, config: PanelConfig) => {
     if (panels[id]) {
       console.warn(`Panel with id ${id} already exists`);
       return;
@@ -285,9 +353,11 @@ export const PanelProvider = ({ children }) => {
         isOpen: true,
         isCollapsed: false,
         isDocked: false,
+        dockPosition: null,
         zIndex: Math.max(...Object.values(prev).map(panel => panel.zIndex || 0)) + 1,
+        activeInGroup: false,
         ...config
-      }
+      } as Panel
     }));
   };
 
@@ -308,13 +378,11 @@ export const PanelProvider = ({ children }) => {
         createPanel,
         layoutPresets
       }}
-    >
-      {children}
-    </PanelContext.Provider>
+    >{children}</PanelContext.Provider>
   );
 };
 
-export const usePanel = () => {
+export const usePanel = (): PanelContextValue => {
   const context = useContext(PanelContext);
   if (!context) {
     throw new Error('usePanel must be used within a PanelProvider');

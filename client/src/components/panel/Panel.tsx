@@ -1,11 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Rnd } from 'react-rnd';
-import { usePanel } from './PanelContext';
+import React, { useState, useEffect, useRef, ReactNode } from 'react';
+import { Rnd, RndResizeCallback, RndDragCallback } from 'react-rnd';
+import { usePanel, Panel as PanelType, PanelPosition, DockPosition } from './PanelContext';
 import { X, Minimize, Maximize, ChevronDown, ChevronUp, Dock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const Panel = ({ id, children, initialWidth = 300, initialHeight = 400, minWidth = 200, minHeight = 200 }) => {
+interface PanelProps {
+  id: string;
+  children: ReactNode;
+  initialWidth?: number;
+  initialHeight?: number;
+  minWidth?: number;
+  minHeight?: number;
+}
+
+const Panel: React.FC<PanelProps> = ({ 
+  id, 
+  children, 
+  initialWidth = 300, 
+  initialHeight = 400, 
+  minWidth = 200, 
+  minHeight = 200 
+}) => {
   const {
     panels,
     updatePanelPosition,
@@ -18,11 +34,11 @@ const Panel = ({ id, children, initialWidth = 300, initialHeight = 400, minWidth
   } = usePanel();
 
   const panel = panels[id];
-  const panelRef = useRef(null);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState<boolean>(window.innerWidth < 768);
   
   useEffect(() => {
-    const handleResize = () => {
+    const handleResize = (): void => {
       setIsMobile(window.innerWidth < 768);
     };
     
@@ -35,7 +51,7 @@ const Panel = ({ id, children, initialWidth = 300, initialHeight = 400, minWidth
   }
 
   // Panel snapping logic
-  const getSnappedPosition = (x, y, width, height) => {
+  const getSnappedPosition = (x: number, y: number, width: number, height: number): PanelPosition => {
     const snapThreshold = 20;
     let snappedX = x;
     let snappedY = y;
@@ -57,13 +73,13 @@ const Panel = ({ id, children, initialWidth = 300, initialHeight = 400, minWidth
     return { x: snappedX, y: snappedY };
   };
 
-  const handleDragStop = (e, d) => {
+  const handleDragStop: RndDragCallback = (e, d) => {
     const { x, y } = d;
     const snappedPosition = getSnappedPosition(x, y, width, height);
     updatePanelPosition(id, snappedPosition);
   };
 
-  const handleResizeStop = (e, direction, ref, delta, position) => {
+  const handleResizeStop: RndResizeCallback = (e, direction, ref, delta, position) => {
     const newWidth = ref.offsetWidth;
     const newHeight = ref.offsetHeight;
     
@@ -82,15 +98,15 @@ const Panel = ({ id, children, initialWidth = 300, initialHeight = 400, minWidth
     updatePanelPosition(id, snappedPosition);
   };
 
-  const handleClose = () => {
+  const handleClose = (): void => {
     togglePanelOpen(id);
   };
 
-  const handleCollapse = () => {
+  const handleCollapse = (): void => {
     togglePanelCollapsed(id);
   };
 
-  const handleMouseDown = () => {
+  const handleMouseDown = (): void => {
     bringToFront(id);
     
     // If panel is in a group, activate it
@@ -99,7 +115,7 @@ const Panel = ({ id, children, initialWidth = 300, initialHeight = 400, minWidth
     }
   };
   
-  const handleTouchStart = () => {
+  const handleTouchStart = (): void => {
     bringToFront(id);
     
     // If panel is in a group, activate it
@@ -108,7 +124,7 @@ const Panel = ({ id, children, initialWidth = 300, initialHeight = 400, minWidth
     }
   };
   
-  const handleDock = (position) => {
+  const handleDock = (position: DockPosition): void => {
     dockPanel(id, position);
   };
 
@@ -125,7 +141,7 @@ const Panel = ({ id, children, initialWidth = 300, initialHeight = 400, minWidth
 
   return (
     <Rnd
-      ref={panelRef}
+      ref={panelRef as any} // Rnd has a ref type issue with React.RefObject<HTMLDivElement>
       default={{
         x: panel.position?.x || 0,
         y: panel.position?.y || 0,

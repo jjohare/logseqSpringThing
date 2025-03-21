@@ -4,6 +4,7 @@ import Panel from '../../panel/Panel';
 import PanelToolbar from '../../panel/PanelToolbar';
 import { formatSettingLabel } from '../../../lib/types/settings-schema';
 import { FormGroup, FormGroupControl } from '../../ui/form-group';
+import { UISetting, isUISetting } from '../../../lib/types/ui-setting';
 import { createLogger } from '../../../lib/utils/logger';
 
 const logger = createLogger('SystemPanel');
@@ -33,10 +34,10 @@ const SystemPanel = ({
   const setSettings = useSettingsStore(state => state.set);
   
   // Get system settings for the active subsection
-  const systemSettings = 
+  const systemSettings: Record<string, UISetting> = 
     settings.system && 
     settings.system[activeSubsection] ? 
-    settings.system[activeSubsection] : {};
+    settings.system[activeSubsection] as Record<string, UISetting> : {};
   
   // Update a specific setting
   const updateSetting = (path: string, value: any) => {
@@ -97,7 +98,7 @@ const SystemPanel = ({
                   return null;
                 }
                 
-                if (!('type' in setting)) {
+                if (!isUISetting(setting)) {
                   return null;
                 }
                 

@@ -211,9 +211,10 @@ export function usePerformanceAwareAnimation(
     
     // Detect low performance devices (simple heuristic)
     if (
-      navigator.hardwareConcurrency <= 2 || // CPU cores
-      navigator.deviceMemory <= 2 // RAM in GB, not available in all browsers
+      navigator.hardwareConcurrency <= 2 || // CPU cores      
+      ('deviceMemory' in navigator && (navigator as any).deviceMemory <= 2) // RAM in GB, not available in all browsers
     ) {
+      // Set low performance mode to reduce animations and effects
       setLowPerformance(true);
     }
     

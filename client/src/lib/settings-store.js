@@ -39,9 +39,13 @@ export const useSettingsStore = create()(persist((set, get) => ({
     },
     get: (path) => {
         const settings = get().settings;
+        // Return full settings object if empty path
         if (path === '') {
             return settings;
         }
+        // Navigate through nested properties to get the value
+        // This could be improved with a more type-safe implementation
+        // that leverages the PathValue type
         let value = settings;
         path.split('.').forEach(key => {
             value = value?.[key];

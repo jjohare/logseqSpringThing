@@ -3,6 +3,7 @@ import { useSettingsStore } from '../../../lib/stores/settings-store';
 import Panel from '../../panel/Panel';
 import PanelToolbar from '../../panel/PanelToolbar';
 import { formatSettingLabel } from '../../../lib/types/settings-schema';
+import { UISetting, isUISetting } from '../../../lib/types/ui-setting';
 import { createLogger } from '../../../lib/utils/logger';
 import { Eye, CircleDashed, Circle, BrushIcon, MoveHorizontal } from 'lucide-react';
 
@@ -37,10 +38,10 @@ const VisualizationPanel = ({
   const setSettings = useSettingsStore(state => state.set);
   
   // Get visualization settings for the active subsection
-  const visualizationSettings = 
+  const visualizationSettings: Record<string, UISetting> = 
     settings.visualization && 
     settings.visualization[activeSubsection] ? 
-    settings.visualization[activeSubsection] : {};
+    settings.visualization[activeSubsection] as Record<string, UISetting> : {};
   
   // Update a specific setting
   const updateSetting = (path: string, value: any) => {

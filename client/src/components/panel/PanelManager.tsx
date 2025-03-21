@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { PanelProvider } from './PanelContext';
+import React, { useState, useEffect, useRef, ReactNode } from 'react';
+import { PanelProvider, usePanel } from './PanelContext';
 import Panel from './Panel';
 import { Button } from '../ui/button';
 import {
@@ -12,11 +12,10 @@ import {
   Minimize,
   MonitorSmartphone
 } from 'lucide-react';
-import { usePanel } from './PanelContext';
 import { Tooltip } from '../ui/tooltip';
 
 // Panel toggle buttons component
-const PanelControls = () => {
+const PanelControls: React.FC = () => {
   const {
     panels,
     togglePanelOpen,
@@ -26,11 +25,11 @@ const PanelControls = () => {
     layoutPresets
   } = usePanel();
   
-  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(window.innerWidth < 768);
   
   useEffect(() => {
-    const handleResize = () => {
+    const handleResize = (): void => {
       setIsMobile(window.innerWidth < 768);
     };
     
@@ -38,11 +37,11 @@ const PanelControls = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const toggleLayoutMenu = () => {
+  const toggleLayoutMenu = (): void => {
     setLayoutMenuOpen(!layoutMenuOpen);
   };
   
-  const handleOpenConsole = () => {
+  const handleOpenConsole = (): void => {
     // If console panel doesn't exist in panels, create it
     if (!panels.console) {
       createPanel('console', {
@@ -174,12 +173,21 @@ const PanelControls = () => {
   );
 };
 
+// Define the type for the custom properties added to DOM elements
+interface PanelContextElement extends HTMLDivElement {
+  __panelContext: ReturnType<typeof usePanel>;
+}
+
+interface PanelManagerProps {
+  children: ReactNode;
+}
+
 // Main panel manager component
-const PanelManager = ({ children }) => {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+const PanelManager: React.FC<PanelManagerProps> = ({ children }) => {
+  const [isMobile, setIsMobile] = useState<boolean>(window.innerWidth < 768);
   
   useEffect(() => {
-    const handleResize = () => {
+    const handleResize = (): void => {
       setIsMobile(window.innerWidth < 768);
     };
     
@@ -189,9 +197,9 @@ const PanelManager = ({ children }) => {
   
   // Add keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
       // Get panel context inside the effect to ensure we have the latest state
-      const panelContext = document.querySelector('[data-panel-context="true"]');
+      const panelContext = document.querySelector('[data-panel-context="true"]') as PanelContextElement | null;
       if (!panelContext) return;
       
       const {
@@ -239,10 +247,10 @@ const PanelManager = ({ children }) => {
     <PanelProvider>
       <div
         data-panel-context="true"
-        ref={el => {
+        ref={(el: HTMLDivElement | null) => {
           if (el) {
             // Store panel context on the DOM element for keyboard shortcuts
-            el.__panelContext = usePanel();
+            (el as PanelContextElement).__panelContext = usePanel();
           }
         }}
         className="relative w-full h-full"

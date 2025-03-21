@@ -4,6 +4,7 @@ import Panel from '../../panel/Panel';
 import PanelToolbar from '../../panel/PanelToolbar';
 import { formatSettingLabel } from '../../../lib/types/settings-schema';
 import { createLogger } from '../../../lib/utils/logger';
+import { UISetting, isUISetting } from '../../../lib/types/ui-setting';
 import { FormGroup, FormGroupControl } from '../../ui/form-group';
 
 const logger = createLogger('XRPanel');
@@ -33,10 +34,10 @@ const XRPanel = ({
   const setSettings = useSettingsStore(state => state.set);
   
   // Get XR settings for the active subsection
-  const xrSettings = 
+  const xrSettings: Record<string, UISetting> = 
     settings.xr && 
     settings.xr[activeSubsection] ? 
-    settings.xr[activeSubsection] : {};
+    settings.xr[activeSubsection] as Record<string, UISetting> : {};
   
   // Update a specific setting
   const updateSetting = (path: string, value: any) => {
