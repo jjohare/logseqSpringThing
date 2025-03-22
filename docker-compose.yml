@@ -44,7 +44,7 @@ services:
       - ./data/metadata:/app/data/metadata  # Added metadata volume mount
       - ./data/user_settings:/app/user_settings  # Added user settings volume mount
       - type: bind
-        source: ${PWD}/settings.yaml
+        source: ${PWD}/data/settings.yaml
         target: /app/settings.yaml
         read_only: false
       - type: tmpfs

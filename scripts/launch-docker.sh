@@ -160,7 +160,7 @@ check_rust_security() {
 
 read_settings() {
     # Read domain & port from settings.yaml using yq
-    local settings_file="$PROJECT_ROOT/settings.yaml"
+    local settings_file="$PROJECT_ROOT/data/settings.yaml"
 
     if [ ! -f "$settings_file" ]; then
         log "${RED}Error: settings.yaml not found${NC}"
