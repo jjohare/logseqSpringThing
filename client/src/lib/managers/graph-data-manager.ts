@@ -76,14 +76,30 @@ class GraphDataManager {
         throw new Error(`API request failed with status ${response.status}`);
       }
 
-      const data = await response.json();
-      this.setGraphData(data);
-      
-      if (debugState.isEnabled()) {
-        logger.info(`Loaded initial graph data: ${this.data.nodes.length} nodes, ${this.data.edges.length} edges`);
+      try {
+        const data = await response.json();
+        
+        // Validate that the response has the expected structure
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid graph data format: data is not an object');
+        }
+        
+        // Ensure nodes and edges exist, even if empty
+        const validatedData = {
+          nodes: Array.isArray(data.nodes) ? data.nodes : [],
+          edges: Array.isArray(data.edges) ? data.edges : []
+        };
+        
+        this.setGraphData(validatedData);
+        
+        if (debugState.isEnabled()) {
+          logger.info(`Loaded initial graph data: ${this.data.nodes.length} nodes, ${this.data.edges.length} edges`);
+        }
+        
+        return this.data;
+      } catch (parseError) {
+        throw new Error(`Failed to parse graph data: ${parseError}`);
       }
-      
-      return this.data;
     } catch (error) {
       logger.error('Failed to fetch initial graph data:', createErrorMetadata(error));
       throw error;
@@ -92,7 +108,17 @@ class GraphDataManager {
 
   // Set graph data and notify listeners
   public setGraphData(data: GraphData): void {
-    this.data = data;
+    // Ensure all nodes have valid positions before setting the data
+    if (data && data.nodes) {
+      const validatedNodes = data.nodes.map(node => this.ensureNodeHasValidPosition(node));
+      this.data = {
+        ...data,
+        nodes: validatedNodes
+      };
+    } else {
+      // Initialize with empty arrays if data is invalid
+      this.data = { nodes: [], edges: data?.edges || [] };
+    }
     
     // Reset ID maps
     this.nodeIdMap.clear();
@@ -127,7 +153,7 @@ class GraphDataManager {
 
   // Prepare the binary buffer for position updates
   private prepareNodePositionBuffer(): void {
-    if (!this.data.nodes.length) {
+    if (!this.data.nodes || !this.data.nodes.length) {
       return;
     }
     
@@ -137,13 +163,34 @@ class GraphDataManager {
     
     // Initialize buffer with current positions
     this.data.nodes.forEach((node, index) => {
+      if (!node) {
+        logger.warn(`Null or undefined node found at index ${index}, skipping`);
+        return;
+      }
+      
+      // Skip nodes without valid IDs
+      if (!node.id) {
+        logger.warn(`Node at index ${index} has no ID, skipping`);
+        return;
+      }
+      
+      // Ensure node has a valid position
+      if (!node.position) {
+        node.position = { x: 0, y: 0, z: 0 };
+      }
+      
+      // Skip nodes without valid position data
+      node.position.x = typeof node.position.x === 'number' ? node.position.x : 0;
+      node.position.y = typeof node.position.y === 'number' ? node.position.y : 0;
+      node.position.z = typeof node.position.z === 'number' ? node.position.z : 0;
+
       const baseIndex = index * 4;
       // Use the numeric ID from the map
       const numericId = this.nodeIdMap.get(node.id) || index + 1;
       this.nodePositionBuffer![baseIndex] = numericId;
-      this.nodePositionBuffer![baseIndex + 1] = node.position.x;
-      this.nodePositionBuffer![baseIndex + 2] = node.position.y;
-      this.nodePositionBuffer![baseIndex + 3] = node.position.z;
+      this.nodePositionBuffer![baseIndex + 1] = node.position.x || 0;
+      this.nodePositionBuffer![baseIndex + 2] = node.position.y || 0;
+      this.nodePositionBuffer![baseIndex + 3] = node.position.z || 0;
     });
     
     if (debugState.isDataDebugEnabled()) {
@@ -314,13 +361,27 @@ class GraphDataManager {
     }
 
     // Update the buffer with current positions
-    this.data.nodes.forEach((node, index) => {
+    this.data.nodes.forEach((node, index) => {     
+      if (!node) {
+        logger.warn(`Null or undefined node found at index ${index}, skipping`);
+        return;
+      }
+      
+      // Skip nodes without valid IDs
+      if (!node.id) {
+        logger.warn(`Node at index ${index} has no ID, skipping`);
+        return;
+      }
+      
+      // Ensure node has a valid position
+      this.ensureNodeHasValidPosition(node);
+
       const baseIndex = index * 4;
       const numericId = this.nodeIdMap.get(node.id) || index + 1;
       this.nodePositionBuffer![baseIndex] = numericId;
-      this.nodePositionBuffer![baseIndex + 1] = node.position.x;
-      this.nodePositionBuffer![baseIndex + 2] = node.position.y;
-      this.nodePositionBuffer![baseIndex + 3] = node.position.z;
+      this.nodePositionBuffer![baseIndex + 1] = node.position.x || 0;
+      this.nodePositionBuffer![baseIndex + 2] = node.position.y || 0;
+      this.nodePositionBuffer![baseIndex + 3] = node.position.z || 0;
     });
 
     try {
@@ -378,6 +439,25 @@ class GraphDataManager {
         logger.error('Error in position update listener:', createErrorMetadata(error));
       }
     });
+  }
+
+  // Initialize a node with default position if needed
+  public ensureNodeHasValidPosition(node: Node): Node {
+    if (!node.position) {
+      // Provide a default position if none exists
+      return {
+        ...node,
+        position: { x: 0, y: 0, z: 0 }
+      };
+    } else if (typeof node.position.x !== 'number' || 
+               typeof node.position.y !== 'number' || 
+               typeof node.position.z !== 'number') {
+      // Fix any NaN or undefined coordinates
+      node.position.x = typeof node.position.x === 'number' ? node.position.x : 0;
+      node.position.y = typeof node.position.y === 'number' ? node.position.y : 0;
+      node.position.z = typeof node.position.z === 'number' ? node.position.z : 0;
+    }
+    return node;
   }
 
   // Clean up resources

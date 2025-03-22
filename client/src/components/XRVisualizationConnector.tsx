@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useXR } from '@react-three/xr';
+import { useSafeXR, withSafeXR } from '../lib/xr/safeXRHooks';
 import { MetadataVisualizer, useTextLabelManager } from '../lib/visualization/MetadataVisualizer';
 import { useHandTracking } from '../lib/xr/HandInteractionSystem';
 import { useSettingsStore } from '../lib/stores/settings-store';
@@ -12,9 +12,10 @@ const logger = createLogger('XRVisualizationConnector');
  * with the visualization system and platform manager.
  * 
  * This component acts as the dependency injector between these systems.
+ * It is wrapped with the XR context safety check to prevent errors.
  */
-const XRVisualizationConnector: React.FC = () => {
-  const { isPresenting: isXRMode } = useXR();
+const XRVisualizationConnectorInner: React.FC = () => {
+  const { isPresenting: isXRMode } = useSafeXR();
   const settings = useSettingsStore(state => state.settings);
   const handTracking = useHandTracking();
   const labelManager = useTextLabelManager();
@@ -59,4 +60,6 @@ const XRVisualizationConnector: React.FC = () => {
   );
 };
 
+// Wrap with XR context safety check to prevent outside-XR-context errors
+const XRVisualizationConnector = withSafeXR(XRVisualizationConnectorInner, 'XRVisualizationConnector');
 export default XRVisualizationConnector;

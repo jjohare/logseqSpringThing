@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useXR, Interactive } from '@react-three/xr';
+import { Interactive } from '@react-three/xr';
 import { usePlatform } from '../platform/platform-manager';
 import { useSettingsStore } from '../stores/settings-store';
 import { createLogger } from '../utils/logger';
@@ -49,7 +49,7 @@ export const HandInteractionSystem: React.FC<HandInteractionSystemProps> = ({
   hapticFeedback = true
 }) => {
   const { scene, gl, camera } = useThree();
-  const { isPresenting, session, controllers, player } = useXR();
+  const { isPresenting, session, controllers, player } = useSafeXR();
   const platform = usePlatform();
   const settings = useSettingsStore(state => state.settings.xr);
   const handTrackingEnabled = settings.handInteraction && enabled;
@@ -391,6 +391,8 @@ export const HandInteractionSystem: React.FC<HandInteractionSystemProps> = ({
 
 // Hook for hand tracking in components
 export const useHandTracking = () => {
+  const { isPresenting } = useSafeXR();
+  
   const [pinchState, setPinchState] = useState<{left: boolean, right: boolean}>({
     left: false,
     right: false
@@ -413,6 +415,10 @@ export const useHandTracking = () => {
   
   // Update hand positions and gestures state from the system
   useFrame(() => {
+    // If we're not in XR mode, don't try to update anything
+    if (!isPresenting) {
+      return;
+    }
     // This would be implemented to sync with the hand tracking system 
     // and update the hook's state based on the HandInteractionSystem
   });
@@ -493,4 +499,11 @@ export const HandInteractable: React.FC<{
  * 5. Performance optimizations for XR
  */
 
-export default HandInteractionSystem;
+// Import the safe XR hooks to prevent errors outside XR context
+import { useSafeXR, withSafeXR } from './safeXRHooks';
+
+// Export the wrapped version as the default, which is safe to use anywhere
+const SafeHandInteractionSystem = withSafeXR(HandInteractionSystem, 'HandInteractionSystem');
+
+// Default export is now the safe version
+export default SafeHandInteractionSystem;

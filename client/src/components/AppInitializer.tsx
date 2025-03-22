@@ -150,15 +150,32 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
       } catch (connectError) {
         logger.error('Failed to connect to WebSocket:', createErrorMetadata(connectError));
       }
-      // Fetch initial graph data from REST API before enabling binary updates
-      logger.info('Fetching initial graph data via REST API');
-      await graphDataManager.fetchInitialData();
-      
-      if (debugState.isDataDebugEnabled()) {
-        logger.debug('WebSocket connected and waiting for server readiness confirmation');
+
+      try {
+        // Fetch initial graph data from REST API before enabling binary updates
+        logger.info('Fetching initial graph data via REST API');
+        await graphDataManager.fetchInitialData();
+        
+        if (debugState.isDataDebugEnabled()) {
+          logger.debug('WebSocket connected and waiting for server readiness confirmation');
+        }
+      } catch (fetchError) {
+        // If fetching initial data fails, initialize with empty data
+        logger.error('Failed to fetch initial graph data, initializing with empty data:', createErrorMetadata(fetchError));
+        
+        // Initialize with empty graph data as fallback
+        graphDataManager.setGraphData({
+          nodes: [],
+          edges: []
+        });
+        
+        // We'll still continue with the WebSocket connection
+        if (debugState.isEnabled()) {
+          logger.info('Continuing with empty graph data');
+        }
       }
     } catch (error) {
-      logger.error('Failed to initialize WebSocket:', createErrorMetadata(error));
+      logger.error('Failed during WebSocket/data initialization:', createErrorMetadata(error));
       throw error;
     }
   };

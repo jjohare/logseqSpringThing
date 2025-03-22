@@ -6,6 +6,7 @@ import { Toaster } from './components/ui/toaster'
 import { TooltipProvider } from './components/ui/tooltip'
 import GraphCanvas from './components/graph/GraphCanvas'
 import ViewportContainer from './components/layout/ViewportContainer'
+import SafeXRProvider from './lib/xr/SafeXRProvider'
 import MainLayout from './components/layout/MainLayout'
 import DockingZone from './components/panel/DockingZone'
 import ViewportControls from './components/viewport/ViewportControls'
@@ -29,7 +30,12 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode, fallbac
   }
   
   componentDidCatch(error: any, errorInfo: any) {
-    logger.error('React error boundary caught error:', createErrorMetadata(error));
+    logger.error('React error boundary caught error:', {
+      ...createErrorMetadata(error),
+      component: errorInfo?.componentStack 
+        ? errorInfo.componentStack.split('\n')[1]?.trim() 
+        : 'Unknown component'
+    });
     this.setState({ errorInfo });
   }
   
@@ -111,7 +117,8 @@ function App() {
         <ApplicationModeProvider>
           <PanelProvider>
             <TooltipProvider>
-              <div className="app-container">
+              <SafeXRProvider>
+                <div className="app-container">
                 <MainLayout
                   viewportContent={
                     <ViewportContainer>
@@ -172,7 +179,8 @@ function App() {
                   }
                 />
                 <AppInitializer onInitialized={handleInitialized} />
-              </div>
+                </div>
+              </SafeXRProvider>
             </TooltipProvider>
           </PanelProvider>
         </ApplicationModeProvider>

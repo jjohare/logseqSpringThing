@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react'
-import { useXR } from '@react-three/xr'
+import { useSafeXR, withSafeXR } from '../../lib/xr/safeXRHooks'
 import HandInteractionSystem, { GestureRecognitionResult } from '../../lib/xr/HandInteractionSystem'
 import { debugState } from '../../lib/utils/debug-state'
 import { useSettingsStore } from '../../lib/settings-store'
@@ -8,11 +8,12 @@ import { createLogger } from '../../lib/utils/logger'
 const logger = createLogger('XRController')
 
 /**
+ * XRControllerInner component handles WebXR functionality through react-three/xr.
  * XRController component manages WebXR functionality through react-three/xr.
  * This version is simplified to avoid integration conflicts.
  */
 const XRController: React.FC = () => {
-  const { isPresenting, controllers } = useXR()
+  const { isPresenting, controllers } = useSafeXR()
   const settings = useSettingsStore(state => state.settings)
   const [handsVisible, setHandsVisible] = useState(false)
   const [handTrackingEnabled, setHandTrackingEnabled] = useState(settings?.xr?.handInteraction !== false)
@@ -70,4 +71,6 @@ const XRController: React.FC = () => {
   )
 }
 
-export default XRController
+// Wrap with XR context safety check to prevent outside-XR-context errors
+const SafeXRController = withSafeXR(XRController, 'XRController');
+export default SafeXRController
