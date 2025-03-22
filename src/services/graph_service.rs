@@ -482,6 +482,8 @@ impl GraphService {
         let mut graph = GraphData::new();
         let mut edge_map = HashMap::new();
         let mut node_map = HashMap::new();
+        // Create a clone of metadata for updating node IDs
+        let mut updated_metadata = metadata.clone();
 
         // First pass: Create nodes from files in metadata
         let mut valid_nodes = HashSet::new();
@@ -547,6 +549,14 @@ impl GraphService {
                 
                 // Ensure flags is set to 1 (default active state)
                 node.data.flags = 1;
+
+                // Update metadata store with the node ID to ensure persistence
+                if let Some(updated_entry) = updated_metadata.get_mut(&format!("{}.md", node_id)) {
+                    if updated_entry.node_id == "0" || updated_entry.node_id.is_empty() {
+                        debug!("Updating metadata node_id for {} to {}", node_id, node.id);
+                        updated_entry.node_id = node.id.clone();
+                    }
+                }
             }
 
             let node_clone = node.clone();
@@ -557,7 +567,7 @@ impl GraphService {
 
         // Store metadata in graph
         debug!("Storing {} metadata entries in graph", metadata.len());
-        graph.metadata = metadata.clone();
+        graph.metadata = updated_metadata.clone();
         debug!("Created {} nodes in graph", graph.nodes.len());
         // Second pass: Create edges from topic counts
         for (source_file, metadata) in metadata.iter() {
@@ -611,6 +621,13 @@ impl GraphService {
 
         // Initialize random positions
         Self::initialize_random_positions(&mut graph);
+
+        // Save the updated metadata to disk to ensure node IDs persist
+        if let Err(e) = crate::services::file_service::FileService::save_metadata(&updated_metadata) {
+            warn!("Failed to save updated metadata with node IDs: {}", e);
+        } else {
+            info!("Successfully saved updated metadata with node IDs");
+        }
 
         info!("Built graph with {} nodes and {} edges", graph.nodes.len(), graph.edges.len());
         debug!("Completed graph build: {} nodes, {} edges", graph.nodes.len(), graph.edges.len());

@@ -49,10 +49,13 @@ impl Node {
         let id = match provided_id {
             Some(id) if !id.is_empty() && id != "0" && id.parse::<u32>().is_ok() => {
                 // Use the provided ID only if it's a valid numeric ID
+                debug!("Using provided ID {} for node {}", id, metadata_id);
                 id
             },
             _ => {
-                NEXT_NODE_ID.fetch_add(1, Ordering::SeqCst).to_string()
+                let new_id = NEXT_NODE_ID.fetch_add(1, Ordering::SeqCst).to_string();
+                debug!("Generated new ID {} for node {}", new_id, metadata_id);
+                new_id
             }
         };
         

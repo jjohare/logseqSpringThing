@@ -99,7 +99,7 @@ impl FileService {
         // Create metadata for the uploaded file
         let file_size = content.len();
         let node_size = Self::calculate_node_size(file_size);
-        let file_metadata = Metadata {
+        let mut file_metadata = Metadata {
             file_name: temp_filename.clone(),
             file_size,
             node_size,
@@ -113,7 +113,7 @@ impl FileService {
         };
 
         // Assign a unique node ID
-        let mut file_metadata = file_metadata;
+        // Only assign a new ID if one doesn't exist or is the default "0"
         file_metadata.node_id = self.get_next_node_id().to_string();
 
         // Update graph data
@@ -158,22 +158,39 @@ impl FileService {
         // Update or create metadata for the file
         let file_size = content.len();
         let node_size = Self::calculate_node_size(file_size);
-        let file_metadata = Metadata {
-            file_name: filename.to_string(),
-            file_size,
-            node_size,
-            node_id: "0".to_string(),
-            hyperlink_count: Self::count_hyperlinks(&content),
-            sha1: Self::calculate_sha1(&content),
-            last_modified: Utc::now(),
-            perplexity_link: String::new(),
-            last_perplexity_process: None,
-            topic_counts,
+        
+        // Check if we already have metadata for this file to preserve the node ID
+        let mut file_metadata = if let Some(existing_metadata) = metadata.get(filename) {
+            let mut updated = existing_metadata.clone();
+            // Update the fields that might have changed
+            updated.file_size = file_size;
+            updated.node_size = node_size;
+            updated.hyperlink_count = Self::count_hyperlinks(&content);
+            updated.sha1 = Self::calculate_sha1(&content);
+            updated.last_modified = Utc::now();
+            updated.topic_counts = topic_counts;
+            
+            // Preserve the existing node ID
+            updated
+        } else {
+            // Create new metadata with a fresh node ID
+            let mut new_metadata = Metadata {
+                file_name: filename.to_string(),
+                file_size,
+                node_size,
+                node_id: "0".to_string(),
+                hyperlink_count: Self::count_hyperlinks(&content),
+                sha1: Self::calculate_sha1(&content),
+                last_modified: Utc::now(),
+                perplexity_link: String::new(),
+                last_perplexity_process: None,
+                topic_counts,
+            };
+            
+            // Assign a unique node ID only for new files
+            new_metadata.node_id = self.get_next_node_id().to_string();
+            new_metadata
         };
-
-        // Assign a unique node ID
-        let mut file_metadata = file_metadata;
-        file_metadata.node_id = self.get_next_node_id().to_string();
 
         // Update graph data
         graph_data.metadata.insert(filename.to_string(), file_metadata);
@@ -346,7 +363,7 @@ impl FileService {
                             file_name: file_meta.name.clone(),
                             file_size,
                             node_size,
-                            node_id: "0".to_string(), // Will be assigned properly later
+                            node_id: "0".to_string(), // Will be assigned when graph is built
                             hyperlink_count: Self::count_hyperlinks(&content),
                             sha1: Self::calculate_sha1(&content),
                             last_modified: file_meta.last_modified.unwrap_or_else(|| Utc::now()),
@@ -369,6 +386,16 @@ impl FileService {
 
         // Update topic counts after all files are processed
         Self::update_topic_counts(&mut metadata_store)?;
+
+        // Ensure all metadata entries have node IDs
+        for metadata in metadata_store.values_mut() {
+            if metadata.node_id == "0" || metadata.node_id.is_empty() {
+                // Assign a sequential ID - this is just provisional
+                // The proper ID will be assigned during graph building
+                static TEMP_ID: AtomicU32 = AtomicU32::new(1);
+                metadata.node_id = TEMP_ID.fetch_add(1, Ordering::SeqCst).to_string();
+            }
+        }
 
         // Save metadata
         info!("Saving metadata for {} public files", metadata_store.len());

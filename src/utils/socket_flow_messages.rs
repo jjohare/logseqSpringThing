@@ -153,9 +153,18 @@ impl Node {
     /// Create a new node with a specific ID or use a stored ID if available
     pub fn new_with_id(metadata_id: String, stored_node_id: Option<String>) -> Self {
         // Use stored ID if available, otherwise generate a new one
-        let id = match stored_node_id {
-            Some(stored_id) => stored_id,
+        let id = match stored_node_id.clone() {
+            Some(stored_id) if !stored_id.is_empty() && stored_id != "0" && stored_id.parse::<u32>().is_ok() => {
+                // Use the provided ID only if it's a valid numeric ID
+                debug!("Using provided ID {} for node {} in socket flow", stored_id, metadata_id);
+                stored_id
+            },
             None => NEXT_NODE_ID.fetch_add(1, Ordering::SeqCst).to_string(),
+            _ => {
+                let new_id = NEXT_NODE_ID.fetch_add(1, Ordering::SeqCst).to_string();
+                debug!("Generated new ID {} for node {} in socket flow", new_id, metadata_id);
+                new_id
+            }
         };
         
         Self {

@@ -73,6 +73,13 @@ const layoutPresets: Record<string, LayoutPreset> = {
       isOpen: true,
       isDocked: true,
       dockPosition: 'right',
+    },
+    'visualization-top': {
+      position: { x: 20, y: 20 },
+      size: { width: window.innerWidth - 40, height: 300 },
+      isOpen: true,
+      isDocked: true,
+      dockPosition: 'top',
     }
   },
   compact: {
@@ -82,6 +89,13 @@ const layoutPresets: Record<string, LayoutPreset> = {
       isOpen: true,
       isDocked: true,
       dockPosition: 'right',
+    },
+    'visualization-top': {
+      position: { x: 20, y: 20 },
+      size: { width: window.innerWidth - 40, height: 200 },
+      isOpen: true,
+      isDocked: true,
+      dockPosition: 'top',
     }
   },
   expanded: {
@@ -91,6 +105,13 @@ const layoutPresets: Record<string, LayoutPreset> = {
       isOpen: true,
       isDocked: true,
       dockPosition: 'right',
+    },
+    'visualization-top': {
+      position: { x: 20, y: 20 },
+      size: { width: window.innerWidth - 40, height: 350 },
+      isOpen: true,
+      isDocked: true,
+      dockPosition: 'top',
     }
   },
   mobile: {
@@ -118,6 +139,18 @@ const defaultPanels: Record<string, Panel> = {
     zIndex: 100,
     groupId: 'rightGroup', // For panel grouping
     activeInGroup: true,   // Whether this panel is active in its group
+  },
+  'visualization-top': {
+    id: 'visualization-top',
+    title: 'Visualization Settings',
+    position: { x: 0, y: 0 },
+    size: { width: window.innerWidth, height: 300 },
+    isOpen: true,
+    isCollapsed: false,
+    isDocked: true,
+    dockPosition: 'top',
+    zIndex: 100,
+    activeInGroup: true,
   },
   console: {
     id: 'console',
