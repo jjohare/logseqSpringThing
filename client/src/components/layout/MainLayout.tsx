@@ -65,7 +65,7 @@ const MainLayout = ({
             {/* Top Dock Zone */}
             <div 
               id="top-dock-zone" 
-              className="w-full flex-shrink-0 z-20"
+              className="w-full flex-shrink-0 z-20 transition-all duration-200"
               data-dock-zone="top"
             />
             

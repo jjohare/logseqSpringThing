@@ -23,6 +23,12 @@ interface VisualizationPanelProps {
    * Panel ID for the panel system
    */
   panelId: string;
+  
+  /**
+   * Whether this panel is displayed in a horizontal layout (top/bottom)
+   * Automatically detected from panel ID if not specified
+   */
+  horizontal?: boolean;
 }
 
 /**
@@ -30,7 +36,8 @@ interface VisualizationPanelProps {
  * This includes rendering options, node/edge appearance, and physics simulation parameters.
  */
 const VisualizationPanel = ({ 
-  panelId 
+  panelId,
+  horizontal = panelId.includes('-top') || panelId.includes('horizontal') 
 }: VisualizationPanelProps) => {
   const [activeSubsection, setActiveSubsection] = useState('rendering');
   
@@ -60,15 +67,17 @@ const VisualizationPanel = ({
       />
       
       {/* Panel Content */}
-      <div className="flex flex-col h-full">
-        {/* Subsection Tabs */}
-        <div className="flex border-b border-border overflow-x-auto">
+      <div className={`${horizontal ? 'flex flex-row h-full' : 'flex flex-col h-full'}`}>
+        {/* Subsection Tabs - Horizontal layout when in top panel */}
+        <div className={`flex ${horizontal ? 'flex-col border-r' : 'border-b'} border-border overflow-auto`}>
           {VISUALIZATION_SUBSECTIONS.map(subsection => (
             <button
               key={subsection.id}
               className={`flex items-center px-3 py-2 ${
                 activeSubsection === subsection.id
-                  ? 'border-b-2 border-primary font-medium'
+                  ? horizontal 
+                    ? 'border-r-2 border-primary font-medium' 
+                    : 'border-b-2 border-primary font-medium'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
               onClick={() => setActiveSubsection(subsection.id)}
@@ -80,7 +89,7 @@ const VisualizationPanel = ({
         </div>
         
         {/* Settings Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        <div className={`flex-1 overflow-auto p-4 ${horizontal ? 'grid grid-cols-2 gap-4' : 'space-y-6'}`}>
           {/* Dynamic Settings Renderer */}
           {Object.entries(visualizationSettings).map(([key, setting]) => {
             if (typeof setting !== 'object' || setting === null) {
@@ -97,7 +106,7 @@ const VisualizationPanel = ({
             
             // Render appropriate control based on setting type
             return (
-              <div key={key} className="space-y-2">
+              <div key={key} className={`${horizontal ? 'mb-4' : 'space-y-2'} setting-container`}>
                 <div className="flex justify-between items-center">
                   <label className="text-sm font-medium" htmlFor={key}>
                     {label}

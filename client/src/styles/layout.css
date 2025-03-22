@@ -69,7 +69,7 @@
   height: 0; /* Default to collapsed */
 }
 .dock-zone[data-dock-zone="top"].active {
-  height: var(--dock-height, 200px);
+  height: var(--dock-height, 300px);
 }
 
 /* Bottom dock */
@@ -145,6 +145,12 @@
   height: 100%;
   width: 100%;
   overflow: hidden;
+}
+
+/* Horizontal panel group for top/bottom zones */
+.panel-group.flex {
+  flex-direction: row;
+  flex-wrap: wrap;
 }
 
 .panel-group-tabs {

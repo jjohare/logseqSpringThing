@@ -60,7 +60,9 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode, fallbac
 function App() {
   const [isLoading, setIsLoading] = useState(true)
   const [showLeftPanel, setShowLeftPanel] = useState(false)
+  const [showTopPanel, setShowTopPanel] = useState(true)
   const [showRightPanel, setShowRightPanel] = useState(true)
+  const [topPanelDense, setTopPanelDense] = useState(true)
   const { initialized } = useSettingsStore(state => ({
     initialized: state.initialized
   }))
@@ -110,6 +112,11 @@ function App() {
   const handleToggleRightPanel = () => {
     setShowRightPanel(!showRightPanel)
   }
+  
+  // Toggle top visualization panel
+  const handleToggleTopPanel = () => {
+    setShowTopPanel(!showTopPanel)
+  }
 
   return (
     <ThemeProvider defaultTheme="dark">
@@ -156,20 +163,40 @@ function App() {
                           onRotate={handleRotateView}
                           onToggleLeftPanel={handleToggleLeftPanel}
                           onToggleRightPanel={handleToggleRightPanel}
+                          onToggleTopPanel={handleToggleTopPanel}
                         />
                       )}
                     </ViewportContainer>
-                  }
+                 }
                   panels={
                     !isLoading && (
                       <>
                         {/* Left Dock Zone */}
-                        <DockingZone position="left" className={showLeftPanel ? 'active' : ''} />
+                        <DockingZone 
+                          position="left" 
+                          className={showLeftPanel ? 'active' : ''}
+                        />
+                        
+                        {/* Top Dock Zone - Visualization Controls */}
+                        <DockingZone 
+                          position="top" 
+                          className={showTopPanel ? 'active' : ''} 
+                          defaultSize={topPanelDense ? 300 : 450}
+                          expandable={true}
+                        >
+                          <div className="panel-group h-full flex">
+                            <VisualizationPanel panelId="visualization-top" horizontal={true} />
+                            <div className="flex-1"></div>
+                          </div>
+                        </DockingZone>
                         
                         {/* Right Dock Zone */}
-                        <DockingZone position="right" className={showRightPanel ? 'active' : ''}>
+                        <DockingZone 
+                          position="right" 
+                          className={showRightPanel ? 'active' : ''}
+                          expandable={true}
+                        >
                           <div className="panel-group h-full">
-                            <VisualizationPanel panelId="visualization" />
                             <XRPanel panelId="xr" />
                             <SystemPanel panelId="system" />
                           </div>

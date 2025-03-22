@@ -1,6 +1,7 @@
 import React, { useEffect, useState, ReactNode } from 'react';
 import { usePanel, DockPosition } from './PanelContext';
 import { createLogger } from '../../lib/utils/logger';
+import { ChevronUp, ChevronDown, Minimize, Maximize } from 'lucide-react';
 
 const logger = createLogger('DockingZone');
 
@@ -10,6 +11,7 @@ interface DockingZoneProps {
   children?: ReactNode;
   autoSize?: boolean;
   defaultSize?: number;
+  expandable?: boolean;
 }
 
 /**
@@ -21,8 +23,22 @@ const DockingZone: React.FC<DockingZoneProps> = ({
   className = '', 
   children, 
   autoSize = true, 
-  defaultSize = 300 
+  defaultSize,
+  expandable = true
 }) => {
+  // Set appropriate default sizes based on position
+  const getDefaultSize = () => {
+    if (!defaultSize) {
+      switch (position) {
+        case 'top':
+        case 'bottom':
+          return 300; // Taller top/bottom panels
+        default:
+          return 300; // Default side panel width
+      }
+    }
+    return defaultSize;
+  };
   const { panels } = usePanel();
   const [size, setSize] = useState<number>(defaultSize);
   const [isDragResizing, setIsDragResizing] = useState<boolean>(false);
@@ -43,8 +59,8 @@ const DockingZone: React.FC<DockingZoneProps> = ({
       const dockedPanelsSizes = dockedIds.map(id => {
         const panel = panels[id];
         return position === 'left' || position === 'right'
-          ? panel.size?.width || defaultSize
-          : panel.size?.height || defaultSize;
+          ? panel.size?.width || getDefaultSize()
+          : panel.size?.height || getDefaultSize();
       });
       const maxSize = Math.max(...dockedPanelsSizes);
       if (maxSize > 0 && maxSize !== size) {
@@ -52,6 +68,11 @@ const DockingZone: React.FC<DockingZoneProps> = ({
       }
     }
   }, [panels, position, autoSize, defaultSize, size]);
+  
+  // Initialize with proper default size
+  useEffect(() => {
+    setSize(getDefaultSize());
+  }, []);
 
   // Handling resize dragging
   const handleResizeStart = (): void => {
@@ -60,6 +81,11 @@ const DockingZone: React.FC<DockingZoneProps> = ({
 
   const handleResizeEnd = (): void => {
     setIsDragResizing(false);
+  };
+
+  // Toggle expanded/collapsed state for the docking zone
+  const toggleExpand = () => {
+    setSize(size === 0 ? getDefaultSize() : 0);
   };
 
   // Determine if the docking zone has visible panels
@@ -94,6 +120,30 @@ const DockingZone: React.FC<DockingZoneProps> = ({
   const showResizer = hasVisiblePanels;
 
   // Determine resizer position and styling
+  const getCollapseIconAndPosition = (): { icon: JSX.Element, position: string } => {
+    switch (position) {
+      case 'left':
+        return {
+          icon: size === 0 ? <Maximize size={16} /> : <Minimize size={16} />,
+          position: 'absolute -right-6 top-2 bg-background border border-border rounded-r-md p-1'
+        };
+      case 'right':
+        return {
+          icon: size === 0 ? <Minimize size={16} /> : <Maximize size={16} />,
+          position: 'absolute -left-6 top-2 bg-background border border-border rounded-l-md p-1'
+        };
+      case 'top':
+        return {
+          icon: size === 0 ? <ChevronDown size={16} /> : <ChevronUp size={16} />,
+          position: 'absolute bottom-0 left-1/2 -translate-x-1/2 bg-background border border-border rounded-b-md p-1'
+        };
+      case 'bottom':
+        return {
+          icon: size === 0 ? <ChevronUp size={16} /> : <ChevronDown size={16} />,
+          position: 'absolute top-0 left-1/2 -translate-x-1/2 bg-background border border-border rounded-t-md p-1'
+        };
+    }
+  };
   const getResizerClasses = (): string => {
     switch (position) {
       case 'left':
@@ -126,6 +176,15 @@ const DockingZone: React.FC<DockingZoneProps> = ({
           onDoubleClick={() => setSize(defaultSize)}
           title="Drag to resize. Double-click to reset."
         />
+      )}
+      
+      {/* Expand/Collapse Button */}
+      {expandable && hasVisiblePanels && (
+        <button
+          className={`${getCollapseIconAndPosition()?.position} cursor-pointer hover:bg-accent/10 z-30`}
+          onClick={toggleExpand}
+          title={size === 0 ? "Expand panel" : "Collapse panel"}
+        >{getCollapseIconAndPosition()?.icon}</button>
       )}
     </div>
   );

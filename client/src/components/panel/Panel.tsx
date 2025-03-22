@@ -127,6 +127,19 @@ const Panel: React.FC<PanelProps> = ({
   const handleDock = (position: DockPosition): void => {
     dockPanel(id, position);
   };
+  
+  // Determine if this panel is in a horizontal zone (top/bottom) based on its ID
+  const isHorizontalPanel = () => {
+    if (panel.isDocked) {
+      return panel.dockPosition === 'top' || panel.dockPosition === 'bottom';
+    }
+    
+    // Also consider panels with IDs that suggest they belong in the top position
+    if (id.includes('-top') || id.includes('horizontal')) {
+      return true;
+    }
+    return false;
+  };
 
   // Calculate panel dimensions based on collapsed state
   const width = panel.size?.width || initialWidth;
@@ -187,7 +200,7 @@ const Panel: React.FC<PanelProps> = ({
           <div className="flex items-center space-x-1">
             {/* Dock buttons - only show when not collapsed */}
             {!panel.isCollapsed && !panel.isDocked && (
-              <div className="flex mr-2">
+              <div className="flex mr-2 space-x-1">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -197,6 +210,16 @@ const Panel: React.FC<PanelProps> = ({
                   title="Dock to left"
                 >
                   <Anchor className="h-3 w-3 transform rotate-90" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => handleDock('top')}
+                  aria-label="Dock to top"
+                  title="Dock to top"
+                >
+                  <Anchor className="h-3 w-3" />
                 </Button>
                 <Button
                   variant="ghost"
@@ -239,7 +262,7 @@ const Panel: React.FC<PanelProps> = ({
         <AnimatePresence>
           {!panel.isCollapsed && (
             <motion.div
-              className="flex-1 overflow-auto p-4"
+              className={`flex-1 overflow-auto p-4 ${isHorizontalPanel() ? 'flex flex-row flex-wrap gap-4' : ''}`}
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}

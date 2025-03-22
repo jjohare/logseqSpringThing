@@ -114,6 +114,25 @@ const PanelRight = (props: IconProps) => (
   </svg>
 );
 
+const PanelTop = (props: IconProps) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={props.size || 24}
+    height={props.size || 24}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={props.color || "currentColor"}
+    strokeWidth={props.strokeWidth || 2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...props}
+  >
+    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+    <line x1="3" y1="9" x2="21" y2="9" />
+  </svg>
+);
+
+
 import { Button } from '../ui/button';
 import { Tooltip } from '../ui/tooltip';
 import { createLogger } from '../../lib/utils/logger';
@@ -158,6 +177,11 @@ interface ViewportControlsProps {
   onToggleRightPanel?: () => void;
   
   /**
+   * Callback for toggling the top panel
+   */
+  onToggleTopPanel?: () => void;
+  
+  /**
    * Whether the controls should be horizontal or vertical
    * @default 'horizontal'
    */
@@ -186,6 +210,7 @@ const ViewportControls = ({
   onRotate,
   onToggleLeftPanel,
   onToggleRightPanel,
+  onToggleTopPanel,
   orientation = 'horizontal',
   position = 'bottom-right',
   className = ''
@@ -303,6 +328,19 @@ const ViewportControls = ({
       {/* Layout Controls (Only show in desktop mode) */}
       {mode === 'desktop' && (
         <div className={`flex ${orientation === 'vertical' ? 'flex-col' : 'flex-row'} gap-1`}>
+          {onToggleTopPanel && (
+            <Tooltip content="Toggle Top Panel (Shortcut: T)">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggleTopPanel}
+                aria-label="Toggle Top Panel"
+                className="h-8 w-8"
+              >
+                <PanelTop className="h-4 w-4" />
+              </Button>
+            </Tooltip>
+          )}
           <Tooltip content="Toggle Left Panel (Shortcut: [)">
             <Button
               variant="ghost"
