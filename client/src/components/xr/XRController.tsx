@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useThree } from '@react-three/fiber'
+import { XR } from '@react-three/xr'
 import { XRSessionManager } from '../../lib/managers/xr-session-manager'
 import { XRInitializer } from '../../lib/managers/xr-initializer'
 import { SceneManager } from '../../lib/managers/scene-manager'
@@ -116,14 +117,17 @@ const XRController: React.FC = () => {
   // Render HandInteractionSystem (invisible but functional)
   return (
     <>
-      {/* Render HandInteractionSystem with proper callbacks */}
-      <HandInteractionSystem 
-        enabled={handTrackingEnabled}
-        onGestureRecognized={handleGestureRecognized}
-        onHandsVisible={handleHandsVisible}
-      >
-        {/* Children content can be passed here if needed */}
-      </HandInteractionSystem>
+      {/* Wrap HandInteractionSystem in XR component to provide proper context */}
+      <XR>
+        {/* Render HandInteractionSystem with proper callbacks */}
+        <HandInteractionSystem 
+          enabled={handTrackingEnabled}
+          onGestureRecognized={handleGestureRecognized}
+          onHandsVisible={handleHandsVisible}
+        >
+          {/* Children content can be passed here if needed */}
+        </HandInteractionSystem>
+      </XR>
     </>
   )
 }

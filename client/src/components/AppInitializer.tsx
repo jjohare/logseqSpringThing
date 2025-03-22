@@ -2,15 +2,22 @@ import React, { useEffect } from 'react';
 import { createLogger, createErrorMetadata } from '../lib/utils/logger';
 import { debugState } from '../lib/utils/debug-state';
 import { useSettingsStore } from '../lib/settings-store';
-// Import services safely with try/catch in the component
-let WebSocketService: any;
-let graphDataManager: any;
 
-try {
-  WebSocketService = require('../lib/services/websocket-service').default;
-  graphDataManager = require('../lib/managers/graph-data-manager').graphDataManager;
-} catch (error) {
-  console.error('Could not load required services:', error);
+// Initialize as null, will be populated by dynamic imports
+let WebSocketService: any = null;
+let graphDataManager: any = null;
+
+// Use dynamic imports instead of require
+const loadServices = async () => {
+  try {
+    const wsServiceModule = await import('../lib/services/websocket-service');
+    WebSocketService = wsServiceModule.default;
+    
+    const graphManagerModule = await import('../lib/managers/graph-data-manager');
+    graphDataManager = graphManagerModule.graphDataManager;
+  } catch (error) {
+    console.error('Could not load required services:', error);
+  }
 }
 
 const logger = createLogger('AppInitializer');
@@ -24,6 +31,9 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
 
   useEffect(() => {
     const initApp = async () => {
+      // Load services first
+      await loadServices();
+      
       if (debugState.isEnabled()) {
         logger.warn('***************** IMPORTANT NOTICE *******************');
           logger.info('Starting application initialization...');
