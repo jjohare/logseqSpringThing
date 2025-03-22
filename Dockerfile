@@ -3,18 +3,21 @@ FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
 
+# Copy root package.json first to set up the workspace
+COPY package.json ./
+
 # Copy package files and configuration
 # Only copy package.json first (not package-lock.json which might not exist)
-COPY client/package.json ./
-COPY client/tsconfig.json client/vite.config.ts ./
+COPY client/package.json ./client/
+COPY client/tsconfig.json client/vite.config.js ./client/
 
 # Create data/public directory for build output
 RUN mkdir -p data/public
 
 # Copy source files
-COPY client/src ./src
-COPY client/public ./public
-COPY client/index.html ./
+COPY client/src ./client/src
+# data/public is used instead of client/public
+COPY client/index.html ./client/
 
 # Install dependencies with npm install (not npm ci) since package-lock.json might not exist
 RUN npm install 
@@ -37,11 +40,9 @@ RUN npm install --save-dev \
     @types/node
 
 # Clean any previous build artifacts and perform a fresh build
-RUN rm -rf dist && npm run build
+RUN npm run build
 
-# Copy build output to the expected location
-RUN mkdir -p data/public/dist && \
-    cp -r dist/* data/public/dist/
+# Build output is already in data/public/dist due to Vite config
 
 # Stage 2: Rust Dependencies Cache
 FROM nvidia/cuda:12.8.1-devel-ubuntu22.04 AS rust-deps-builder
