@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stats } from '@react-three/drei'
+import { XR } from '@react-three/xr'
 import * as THREE from 'three'
 import { EffectComposer, RenderPass, UnrealBloomPass } from 'three-stdlib' 
 import GraphManager from './GraphManager'
@@ -55,41 +56,6 @@ const Effects = () => {
       composerRef.current.render()
     }
   }, 1) // Higher priority than default (0)
-  
-  return null
-}
-
-// Initialize WebXR in the scene
-const InitializeXR = () => {
-  const { gl } = useThree()
-  const settings = useSettingsStore(state => state.settings?.xr)
-  const xrEnabled = settings?.enabled !== false
-  
-  useEffect(() => {
-    try {
-      if (xrEnabled) {
-        // Enable XR on the renderer
-        gl.xr.enabled = true
-        
-        // Set reference space type based on settings
-        if (settings?.roomScale) {
-          gl.xr.setReferenceSpaceType('local-floor')
-        } else {
-          gl.xr.setReferenceSpaceType('local')
-        }
-        
-        if (debugState.isEnabled()) {
-          logger.info('WebXR enabled on renderer')
-        }
-      }
-    } catch (error) {
-      logger.error('Failed to initialize WebXR:', error);
-      // Don't throw error - we want to continue even if XR fails
-      if (debugState.isEnabled()) {
-        logger.warn('WebXR initialization failed, continuing with standard rendering');
-      }
-    }
-  }, [gl, xrEnabled, settings?.roomScale])
   
   return null
 }
@@ -205,42 +171,65 @@ const GraphCanvas = () => {
           }
         }}
       >
-        {/* Initialize WebXR */}
-        <InitializeXR />
-        
-        {/* Scene setup must come first to initialize properly */}
-        <SceneSetup />
-        <CameraSetup />
-        
-        {/* Graph visualization */}
-        <GraphManager />
-        
-        {/* XR support */}
-        {xrEnabled && <XRController />}
-        
-        {/* Connect hand interaction with visualization */}
-        {xrEnabled && <XRVisualizationConnector />}
-        
-        {/* Camera controls */}
-        <OrbitControls
-          enableDamping
-          dampingFactor={0.1}
-          screenSpacePanning
-          minDistance={1}
-          maxDistance={2000}
-          enableRotate
-          enableZoom
-          enablePan
-          rotateSpeed={1.0}
-          zoomSpeed={1.2}
-          panSpeed={0.8}
-        />
-        
-        {/* Post-processing effects */}
-        <Effects />
-        
-        {/* Performance stats (if enabled) */}
-        {showStats && <Stats />}
+        {xrEnabled ? (
+          <XR referenceSpace={settings?.xr?.roomScale ? 'local-floor' : 'local'}>
+            {/* Scene setup must come first to initialize properly */}
+            <SceneSetup />
+            <CameraSetup />
+            
+            {/* Graph visualization */}
+            <GraphManager />
+            
+            {/* XR Controller - now properly wrapped in XR component */}
+            <XRController />
+            
+            {/* Connect hand interaction with visualization */}
+            <XRVisualizationConnector />
+            
+            {/* Camera controls for non-XR mode */}
+            <OrbitControls
+              enableDamping
+              dampingFactor={0.1}
+              screenSpacePanning
+              minDistance={1}
+              maxDistance={2000}
+              enableRotate
+              enableZoom
+              enablePan
+              rotateSpeed={1.0}
+              zoomSpeed={1.2}
+              panSpeed={0.8}
+            />
+            
+            {/* Post-processing effects */}
+            <Effects />
+            
+            {/* Performance stats (if enabled) */}
+            {showStats && <Stats />}
+          </XR>
+        ) : (
+          <>
+            {/* Non-XR mode rendering */}
+            <SceneSetup />
+            <CameraSetup />
+            <GraphManager />
+            <OrbitControls
+              enableDamping
+              dampingFactor={0.1}
+              screenSpacePanning
+              minDistance={1}
+              maxDistance={2000}
+              enableRotate
+              enableZoom
+              enablePan
+              rotateSpeed={1.0}
+              zoomSpeed={1.2}
+              panSpeed={0.8}
+            />
+            <Effects />
+            {showStats && <Stats />}
+          </>
+        )}
       </Canvas>
     </div>
   )

@@ -1,134 +1,72 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { useThree } from '@react-three/fiber'
-import { XR } from '@react-three/xr'
-import { XRSessionManager } from '../../lib/managers/xr-session-manager'
-import { XRInitializer } from '../../lib/managers/xr-initializer'
-import { SceneManager } from '../../lib/managers/scene-manager'
-import { createLogger } from '../../lib/utils/logger'
+import React, { useState, useCallback } from 'react'
+import { useXR } from '@react-three/xr'
 import HandInteractionSystem, { GestureRecognitionResult } from '../../lib/xr/HandInteractionSystem'
 import { debugState } from '../../lib/utils/debug-state'
 import { useSettingsStore } from '../../lib/settings-store'
+import { createLogger } from '../../lib/utils/logger'
 
 const logger = createLogger('XRController')
 
 /**
- * XRController component initializes and manages WebXR in the React application.
- * This is a non-rendering component that coordinates XR functionality.
+ * XRController component manages WebXR functionality through react-three/xr.
+ * This version is simplified to avoid integration conflicts.
  */
 const XRController: React.FC = () => {
-  const [sessionManager, setSessionManager] = useState<XRSessionManager | null>(null)
-  const [xrInitializer, setXRInitializer] = useState<XRInitializer | null>(null)
-  const { scene, gl, camera } = useThree()
+  const { isPresenting, controllers } = useXR()
   const settings = useSettingsStore(state => state.settings)
   const [handsVisible, setHandsVisible] = useState(false)
-  const [handTrackingEnabled, setHandTrackingEnabled] = useState(true)
+  const [handTrackingEnabled, setHandTrackingEnabled] = useState(settings?.xr?.handInteraction !== false)
   
-  // Initialize XR session manager
-  useEffect(() => {
-    if (!scene || !gl || !camera) return
-    
-    try {
-      // Get the scene manager and initialize XR
-      const sceneManager = SceneManager.getInstance()
-      const xrSessionManager = XRSessionManager.getInstance(sceneManager)
-      
-      // Store reference for other effects
-      setSessionManager(xrSessionManager)
-      
-      if (debugState.isEnabled()) {
-        logger.info('XR session manager initialized')
+  // Log session state changes
+  React.useEffect(() => {
+    if (debugState.isEnabled()) {
+      if (isPresenting) {
+        logger.info('XR session is now active')
+      } else {
+        logger.info('XR session is not active')
       }
-      
-      // Clean up on unmount
-      return () => {
-        if (debugState.isEnabled()) {
-          logger.info('Cleaning up XR session manager')
-        }
-      }
-    } catch (error) {
-      logger.error('Failed to initialize XR session manager:', error)
     }
-  }, [scene, gl, camera])
-  
-  // Initialize XR initializer once session manager is ready
-  useEffect(() => {
-    if (!sessionManager) return
-    
-    try {
-      // Create XR initializer
-      const initializer = XRInitializer.getInstance(sessionManager)
-      setXRInitializer(initializer)
-      
-      if (debugState.isEnabled()) {
-        logger.info('XR initializer created')
-      }
-      
-      // Clean up on unmount
-      return () => {
-        if (debugState.isEnabled()) {
-          logger.info('Cleaning up XR initializer')
-        }
-        initializer.dispose()
-      }
-    } catch (error) {
-      logger.error('Failed to initialize XR:', error)
+  }, [isPresenting])
+
+  // Log controller information
+  React.useEffect(() => {
+    if (isPresenting && controllers && controllers.length > 0 && debugState.isEnabled()) {
+      logger.info(`XR controllers active: ${controllers.length}`)
+      controllers.forEach((controller, index) => {
+        logger.info(`Controller ${index}: ${controller.inputSource.handedness}`)
+      })
     }
-  }, [sessionManager])
-  
-  // Apply settings to XR components when settings change
-  useEffect(() => {
-    if (!settings || !sessionManager || !xrInitializer) return
-    
-    try {
-      // Initialize or update XR components with settings
-      sessionManager.initialize(settings)
-      xrInitializer.initialize(settings)
-      
-      if (debugState.isEnabled()) {
-        logger.info('XR settings applied')
-      }
-    } catch (error) {
-      logger.error('Failed to apply XR settings:', error)
-    }
-  }, [settings, sessionManager, xrInitializer])
+  }, [controllers, isPresenting])
 
   // Handle gesture recognition
   const handleGestureRecognized = useCallback((gesture: GestureRecognitionResult) => {
     if (debugState.isEnabled()) {
       logger.info(`Gesture recognized: ${gesture.gesture} (${gesture.confidence.toFixed(2)}) with ${gesture.hand} hand`)
     }
-    
-    // Forward gesture to session manager if needed
-    if (sessionManager) {
-      sessionManager.notifyGestureRecognized(gesture)
-    }
-  }, [sessionManager])
+  }, [])
 
   // Handle hand visibility changes
   const handleHandsVisible = useCallback((visible: boolean) => {
     setHandsVisible(visible)
     
-    // Forward event to session manager if needed
-    if (sessionManager) {
-      sessionManager.notifyHandsVisibilityChanged(visible)
+    if (debugState.isEnabled()) {
+      logger.info(`Hands visible: ${visible}`)
     }
-  }, [sessionManager])
+  }, [])
   
-  // Render HandInteractionSystem (invisible but functional)
+  // Only render if enabled in settings
+  if (settings?.xr?.enabled === false) {
+    return null
+  }
+  
   return (
-    <>
-      {/* Wrap HandInteractionSystem in XR component to provide proper context */}
-      <XR>
-        {/* Render HandInteractionSystem with proper callbacks */}
-        <HandInteractionSystem 
-          enabled={handTrackingEnabled}
-          onGestureRecognized={handleGestureRecognized}
-          onHandsVisible={handleHandsVisible}
-        >
-          {/* Children content can be passed here if needed */}
-        </HandInteractionSystem>
-      </XR>
-    </>
+    <group name="xr-controller-root">
+      <HandInteractionSystem 
+        enabled={handTrackingEnabled}
+        onGestureRecognized={handleGestureRecognized}
+        onHandsVisible={handleHandsVisible}
+      />
+    </group>
   )
 }
 

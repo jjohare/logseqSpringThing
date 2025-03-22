@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useThree } from '@react-three/fiber';
-import { usePlatform } from '../lib/platform/platform-manager';
+import { useXR } from '@react-three/xr';
 import { MetadataVisualizer, useTextLabelManager } from '../lib/visualization/MetadataVisualizer';
 import { useHandTracking } from '../lib/xr/HandInteractionSystem';
 import { useSettingsStore } from '../lib/stores/settings-store';
@@ -15,7 +14,7 @@ const logger = createLogger('XRVisualizationConnector');
  * This component acts as the dependency injector between these systems.
  */
 const XRVisualizationConnector: React.FC = () => {
-  const { isXRMode } = usePlatform();
+  const { isPresenting: isXRMode } = useXR();
   const settings = useSettingsStore(state => state.settings);
   const handTracking = useHandTracking();
   const labelManager = useTextLabelManager();
