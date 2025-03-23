@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import * as React from 'react' 
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stats } from '@react-three/drei'
 import { XR } from '@react-three/xr'
@@ -10,28 +10,29 @@ import XRVisualizationConnector from '../XRVisualizationConnector'
 import { useSettingsStore } from '../../lib/stores/settings-store'
 import { createLogger } from '../../lib/utils/logger'
 import { debugState } from '../../lib/utils/debug-state'
+ import { useContainerSize } from '../../lib/hooks/useContainerSize';
+
+const { useRef, useEffect, useLayoutEffect, useState } = React
 
 const logger = createLogger('GraphCanvas')
 
 // Composition of post-processing effects
-const Effects = () => {
+const Effects: React.FC = () => {
   const { gl, scene, camera, size } = useThree()
-  const composerRef = useRef<any>()
+  const composerRef = useRef<any>() 
   const bloomSettings = useSettingsStore(state => state.settings?.visualization?.bloom)
   
   useEffect(() => {
     // Create effect composer for post-processing
-    const composer = new EffectComposer(gl as any)
+    const composer = new EffectComposer(gl)
     const renderPass = new RenderPass(scene as any, camera as any)
     composer.addPass(renderPass)
     
     // Add bloom effect if enabled in settings
     if (bloomSettings?.enabled) {
       // Use type assertion to avoid TS errors
-      const sizeVector = new (THREE.Vector2 as any)(size.width, size.height);
-      // Use type assertion to avoid TS constructor errors
       const bloomPass = new (UnrealBloomPass as any)(
-        sizeVector,
+        new (THREE.Vector2 as any)(size.width, size.height),
         bloomSettings.strength || 1.5,
         bloomSettings.radius || 0.4,
         bloomSettings.threshold || 0.85
@@ -41,7 +42,6 @@ const Effects = () => {
     
     composerRef.current = composer
     
-    // Handle resize
     return () => {
       if (composer && composer.dispose) composer.dispose()
     }
@@ -49,7 +49,7 @@ const Effects = () => {
   
   // Update effects on frame render
   useFrame(() => {
-    if (composerRef.current) {
+    if (composerRef.current && typeof composerRef.current.render === 'function') {
       try { composerRef.current.render() } catch (e) { /* Ignore rendering errors */ }
     }
   }, 1) // Higher priority than default (0)
@@ -58,7 +58,7 @@ const Effects = () => {
 }
 
 // Scene setup with lighting and background
-const SceneSetup = () => {
+const SceneSetup: React.FC = () => {
   const { scene } = useThree()
   const visualSettings = useSettingsStore(state => state.settings?.visualization)
   
@@ -85,16 +85,14 @@ const SceneSetup = () => {
       logger.info('Scene setup complete')
     }
     
-    return () => {
-      // Lights are removed with scene, no need to clean up
-    }
+    // Lights are removed with scene automatically, no explicit cleanup needed
   }, [scene, visualSettings])
   
   return null
 }
 
 // Camera setup and configuration
-const CameraSetup = () => {
+const CameraSetup: React.FC = () => {
   const { camera } = useThree()
   const cameraSettings = useSettingsStore(state => state.settings?.visualization?.camera)
   
@@ -120,26 +118,57 @@ const CameraSetup = () => {
 }
 
 // Main GraphCanvas component
-const GraphCanvas = () => {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null) 
+const GraphCanvas: React.FC = () => {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null)
+  const containerRef = React.useRef<HTMLDivElement>(null) 
   const { settings } = useSettingsStore()
   const showStats = settings?.visualization?.showStats ?? false
   const xrEnabled = settings?.xr?.enabled !== false
   const antialias = settings?.visualization?.rendering?.antialias !== false
+  
+  const containerSize = useContainerSize(containerRef);
+  
+  // Renderer size management using useLayoutEffect
+  const RendererSizeManager: React.FC = () => {
+    const { gl, viewport, size, camera } = useThree();
+      
+    useLayoutEffect(() => {
+      if (containerSize.width <= 0 || containerSize.height <= 0) return;
+      
+      try {
+        // Force Three.js to update both the renderer size and the canvas element size
+        (gl as any).setSize(containerSize.width, containerSize.height, false);
+        
+        // Update camera aspect ratio based on new size
+        if (camera instanceof THREE.PerspectiveCamera) {
+          (camera as any).aspect = containerSize.width / containerSize.height;
+          (camera as any).updateProjectionMatrix();
+        }
+        
+        logger.debug(`Canvas size force-updated: ${containerSize.width}px x ${containerSize.height}px`);
+      } catch (e) {
+        logger.error('Error updating renderer size:', e);
+      }
+    }, [gl, camera, containerSize]);
+    return null;
+  };
   const debugEnabled = settings?.debug?.enabled === true
 
-  // Debug logging for container dimensions (only if debug is enabled)
+  // Debug logging for settings and container dimensions
   useEffect(() => {
-    if (containerRef.current && debugEnabled) {
-      const { width, height } = containerRef.current.getBoundingClientRect();
-      logger.debug('GraphCanvas container dimensions:', { 
-        width: Math.round(width), 
-        height: Math.round(height),
-        container: containerRef.current
-      });
+    if (debugEnabled) {
+      logger.debug('GraphCanvas settings:', settings);
+      
+      if (containerRef.current) {
+        const { width, height } = containerRef.current.getBoundingClientRect();
+        logger.debug('GraphCanvas container dimensions:', { 
+          width: Math.round(width), 
+          height: Math.round(height),
+          container: containerRef.current
+        });
+      }
     }
-  }, [debugEnabled]);
+  }, [debugEnabled, settings]);
   
   return (
     <div 
@@ -152,69 +181,47 @@ const GraphCanvas = () => {
       data-testid="graph-canvas-container"
     >
       <Canvas
+        key={`canvas-${containerSize.width}-${containerSize.height}`} // Force canvas recreation on size change
         ref={canvasRef}
         gl={{
           antialias,
           alpha: true,
           powerPreference: 'high-performance',
-          // Don't prevent rendering on devices with poor WebGL performance
-          failIfMajorPerformanceCaveat: false
+          failIfMajorPerformanceCaveat: false,
         }}
         camera={{
           fov: 75,
           near: 0.1,
           far: settings?.visualization?.camera?.far || 2000,
           position: [0, 10, 50],
-          makeDefault: true
+          makeDefault: true,
+          aspect: containerSize.width / Math.max(containerSize.height, 1) // Ensure valid aspect ratio
         }}
-        // Use a specific className with positioning
-        className="r3f-canvas" 
-        style={{ 
-          width: '100%', 
-          height: '100%', 
-          display: 'block',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0
-        }}
+        style={{ width: '100%', height: '100%', display: 'block' }}
         onCreated={({ gl }) => {
-          // Set renderer properties that can't be set via props
           try {
             gl.setClearColor(new (THREE.Color as any)(settings?.visualization?.sceneBackground || '#000000'));
-            const width = containerRef.current?.clientWidth || window.innerWidth;
-            const height = containerRef.current?.clientHeight || window.innerHeight;
-            gl.setSize(width, height);
-            
             if (debugEnabled) {
               logger.info('React Three Fiber canvas created successfully');
-              logger.debug('Renderer initialized with dimensions:', {
+              logger.debug('Initial canvas dimensions:', {
                 width: gl.domElement.width,
                 height: gl.domElement.height
               });
             }
+            // Note: We don't set the size here, as the RendererSizeManager will handle that
           } catch (e) {
             logger.warn('Failed to set renderer properties', e);
           }
         }}
       >
+        <RendererSizeManager />
         {xrEnabled ? (
           <XR referenceSpace={settings?.xr?.roomScale ? 'local-floor' : 'local'}>
-            {/* Scene setup must come first to initialize properly */}
             <SceneSetup />
             <CameraSetup />
-            
-            {/* Graph visualization */}
             <GraphManager />
-            
-            {/* XR Controller - now properly wrapped in XR component */}
             <XRController />
-            
-            {/* Connect hand interaction with visualization */}
             <XRVisualizationConnector />
-            
-            {/* Camera controls for non-XR mode */}
             <OrbitControls
               enableDamping
               dampingFactor={0.1}
@@ -228,16 +235,11 @@ const GraphCanvas = () => {
               zoomSpeed={1.2}
               panSpeed={0.8}
             />
-            
-            {/* Post-processing effects */}
             <Effects />
-            
-            {/* Performance stats (if enabled) */}
             {showStats && <Stats />}
           </XR>
         ) : (
           <>
-            {/* Non-XR mode rendering */}
             <SceneSetup />
             <CameraSetup />
             <GraphManager />

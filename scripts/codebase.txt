@@ -91,7 +91,8 @@ Directories:
 │   │   │   └── default-settings.ts
 │   │   ├── default-settings.ts
 │   │   ├── hooks
-│   │   │   └── useAuth.ts
+│   │   │   ├── useAuth.ts
+│   │   │   └── useContainerSize.ts
 │   │   ├── logger.ts
 │   │   ├── managers
 │   │   │   ├── graph-data-manager.ts
@@ -141,6 +142,7 @@ Directories:
 │       ├── lucide-react.d.ts
 │       ├── node-env.d.ts
 │       ├── react-three-fiber.d.ts
+│       ├── react-three-libraries.d.ts
 │       ├── tailwind-merge.d.ts
 │       ├── three-extensions.d.ts
 │       └── webxr-extensions.d.ts
@@ -272,7 +274,7 @@ Directories:
 
 # Project Codebase
 
-Generated: Sun 23 Mar 09:38:37 GMT 2025
+Generated: Sun 23 Mar 16:45:42 GMT 2025
 
 ## Project Structure
 
@@ -2709,9 +2711,16 @@ fi
                 "IPv4Address": "172.19.0.7/16",
                 "IPv6Address": ""
             },
-            "36b6c6c50170e4212919007797c9e8f79c6b21d6db920675b8cbe409598696cc": {
+            "17e3bfe17fa9ad49ab499b501d6b9408be611ceef5dcd6fe7b68408a1a06a246": {
+                "Name": "logseq-xr-webxr",
+                "EndpointID": "5bed6f94c87574eca5ebc2990a5e3bf6690703a2c9f599abe1d82a7187684b82",
+                "MacAddress": "02:42:ac:13:00:0b",
+                "IPv4Address": "172.19.0.11/16",
+                "IPv6Address": ""
+            },
+            "4db1d304497fd74e62c24bce61c9bff076c15b08ed8c24da4f00af78461e95fa": {
                 "Name": "cloudflared-tunnel",
-                "EndpointID": "d709fa8979125cbc02b08fdbe9e10c2338a93625bce41dfef73ac31af88fc1c2",
+                "EndpointID": "dd1e4337df86a0a541df5ec102e231916c00acb87de9cc71e5fa9782dbe8f881",
                 "MacAddress": "02:42:ac:13:00:08",
                 "IPv4Address": "172.19.0.8/16",
                 "IPv6Address": ""
@@ -2728,13 +2737,6 @@ fi
                 "EndpointID": "66dfba4c06b4ad39ada5bd41608eaae93e449e3ceba6741d70665ccde9f903ea",
                 "MacAddress": "02:42:ac:13:00:03",
                 "IPv4Address": "172.19.0.3/16",
-                "IPv6Address": ""
-            },
-            "726a1f76df74b1bac10664ba8c38a286f529c787d5cf5759923a150da0642ce9": {
-                "Name": "logseq-xr-webxr",
-                "EndpointID": "d3bdf8daf62460436955fca514dc0ef551c7d81be9c00605ea98d0c4facc1116",
-                "MacAddress": "02:42:ac:13:00:0b",
-                "IPv4Address": "172.19.0.11/16",
                 "IPv6Address": ""
             },
             "7ceefccbd020ec3a9a39d41a36b70827c0e5a098e73090b008fb8856cb963f75": {
@@ -2900,7 +2902,15 @@ export default defineConfig({
         outDir: resolve(projectRoot, 'data/public/dist'),
         assetsDir: 'assets',
         sourcemap: true,
+        emptyOutDir: true, // Empty the output directory before building
         minify: false, // Disable minification for better debugging
+        rollupOptions: {
+            onwarn: (warning, warn) => {
+                // Suppress the eval warning from three-stdlib/libs/lottie.js
+                if (warning.code === 'EVAL' && warning.id?.includes('three-stdlib/libs/lottie.js')) return;
+                warn(warning);
+            }
+        }
     },
     resolve: {
         alias: {
@@ -3173,7 +3183,11 @@ function App() {
   }, [initialized])
 
   const handleInitialized = () => {
-    logger.debug('Application initialized')
+    const settings = useSettingsStore.getState().settings;
+    const debugEnabled = settings?.debug?.enabled === true;
+    if (debugEnabled) {
+      logger.debug('Application initialized');
+    }
     setIsLoading(false)
   }
   
@@ -3227,7 +3241,11 @@ function App() {
                   <MainLayout
                     viewportContent={
                       <ViewportContainer onResize={(width, height) => {
-                        logger.debug(`ViewportContainer resized: ${width}×${height}`);
+                        const settings = useSettingsStore.getState().settings;
+                        const debugEnabled = settings?.debug?.enabled === true;
+                        if (debugEnabled) {
+                          logger.debug(`ViewportContainer resized: ${Math.round(width)}×${Math.round(height)}`);
+                        }
                       }}>
                         {/* Error boundary for 3D visualization */}
                         <ErrorBoundary fallback={
@@ -3276,6 +3294,7 @@ function App() {
                           <DockingZone 
                             position="left" 
                             className={showLeftPanel ? 'active' : ''}
+                          defaultSize={300}
                           />
                           
                           {/* Top Dock Zone - Visualization Controls */}
@@ -3284,6 +3303,7 @@ function App() {
                             className={showTopPanel ? 'active' : ''} 
                             defaultSize={topPanelDense ? 300 : 450}
                             expandable={true}
+                          autoSize={false}
                           >
                             <div className="panel-group h-full flex">
                               <VisualizationPanel panelId="visualization-top" horizontal={true} />
@@ -3296,6 +3316,8 @@ function App() {
                             position="right" 
                             className={showRightPanel ? 'active' : ''}
                             expandable={true}
+                          defaultSize={300}
+                          autoSize={false}
                           >
                             <div className="panel-group h-full">
                               <XRPanel panelId="xr" />
@@ -4387,21 +4409,13 @@ import React, { useEffect } from 'react';
 import { createLogger, createErrorMetadata } from '../lib/utils/logger';
 import { debugState } from '../lib/utils/debug-state';
 import { useSettingsStore } from '../lib/settings-store';
+import WebSocketService from '../lib/services/websocket-service';
+import { graphDataManager } from '../lib/managers/graph-data-manager';
 
-// Initialize as null, will be populated by dynamic imports
-let WebSocketService: any = null;
-let graphDataManager: any = null;
-
-// Use dynamic imports instead of require
-const loadServices = async () => {
-  try {
-    const wsServiceModule = await import('../lib/services/websocket-service');
-    WebSocketService = wsServiceModule.default;
-    
-    const graphManagerModule = await import('../lib/managers/graph-data-manager');
-    graphDataManager = graphManagerModule.graphDataManager;
-  } catch (error) {
-    console.error('Could not load required services:', error);
+// Compatibility function to maintain compatibility with code expecting a loadServices function
+const loadServices = async (): Promise<void> => {
+  if (debugState.isEnabled()) {
+    logger.info('Services pre-loaded via direct imports');
   }
 }
 
@@ -4445,7 +4459,7 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
           }
 
           // Try to initialize WebSocket
-          if (WebSocketService && graphDataManager) {
+          if (typeof WebSocketService !== 'undefined' && typeof graphDataManager !== 'undefined') {
             try {
               await initializeWebSocket(settings);
             } catch (wsError) {
@@ -5071,7 +5085,7 @@ export default GraphCanvas;
 
 ----
 src/components/graph/GraphCanvas.tsx
-import React, { useRef, useEffect } from 'react'
+import * as React from 'react' 
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stats } from '@react-three/drei'
 import { XR } from '@react-three/xr'
@@ -5083,36 +5097,38 @@ import XRVisualizationConnector from '../XRVisualizationConnector'
 import { useSettingsStore } from '../../lib/stores/settings-store'
 import { createLogger } from '../../lib/utils/logger'
 import { debugState } from '../../lib/utils/debug-state'
+ import { useContainerSize } from '../../lib/hooks/useContainerSize';
+
+const { useRef, useEffect, useLayoutEffect, useState } = React
 
 const logger = createLogger('GraphCanvas')
 
 // Composition of post-processing effects
-const Effects = () => {
+const Effects: React.FC = () => {
   const { gl, scene, camera, size } = useThree()
-  const composerRef = useRef<any>()
+  const composerRef = useRef<any>() 
   const bloomSettings = useSettingsStore(state => state.settings?.visualization?.bloom)
   
   useEffect(() => {
     // Create effect composer for post-processing
-    const composer = new EffectComposer(gl as any)
+    const composer = new EffectComposer(gl)
     const renderPass = new RenderPass(scene as any, camera as any)
     composer.addPass(renderPass)
     
     // Add bloom effect if enabled in settings
     if (bloomSettings?.enabled) {
       // Use type assertion to avoid TS errors
-      const sizeVector = new THREE.Vector2(size.width, size.height) as any;
-      const bloomPass = new UnrealBloomPass(sizeVector,
-        (bloomSettings.strength || 1.5) as any,
-        (bloomSettings.radius || 0.4) as any,
-        (bloomSettings.threshold || 0.85) as any
-      ) as any;
+      const bloomPass = new (UnrealBloomPass as any)(
+        new (THREE.Vector2 as any)(size.width, size.height),
+        bloomSettings.strength || 1.5,
+        bloomSettings.radius || 0.4,
+        bloomSettings.threshold || 0.85
+      );
       composer.addPass(bloomPass)
     }
     
     composerRef.current = composer
     
-    // Handle resize
     return () => {
       if (composer && composer.dispose) composer.dispose()
     }
@@ -5120,7 +5136,7 @@ const Effects = () => {
   
   // Update effects on frame render
   useFrame(() => {
-    if (composerRef.current) {
+    if (composerRef.current && typeof composerRef.current.render === 'function') {
       try { composerRef.current.render() } catch (e) { /* Ignore rendering errors */ }
     }
   }, 1) // Higher priority than default (0)
@@ -5129,25 +5145,26 @@ const Effects = () => {
 }
 
 // Scene setup with lighting and background
-const SceneSetup = () => {
+const SceneSetup: React.FC = () => {
   const { scene } = useThree()
   const visualSettings = useSettingsStore(state => state.settings?.visualization)
   
   useEffect(() => {
     // Set background color from settings or default
     if (visualSettings?.sceneBackground !== undefined) {
-      (scene as any).background = new THREE.Color(visualSettings.sceneBackground as any)
+      (scene as any).background = new (THREE.Color as any)(visualSettings.sceneBackground)
     } else {
-      (scene as any).background = new THREE.Color('#000000')
+      (scene as any).background = new (THREE.Color as any)('#000000')
     }
     
     // Setup base lighting if not already present
     if (!scene.children.some(child => child instanceof THREE.AmbientLight)) {
-      const ambientLight = new THREE.AmbientLight('#ffffff', 0.6) as any
+      const ambientLight = new (THREE.AmbientLight as any)('#ffffff', 0.6)
       scene.add(ambientLight)
       
-      const directionalLight = new THREE.DirectionalLight('#ffffff', 0.8) as any
-      (directionalLight as any).position.set(1, 1, 1).normalize();
+      const directionalLight = new (THREE.DirectionalLight as any)('#ffffff', 0.8)
+      const dirLightPos = directionalLight.position;
+      dirLightPos.set(1, 1, 1).normalize();
       scene.add(directionalLight)
     }
     
@@ -5155,16 +5172,14 @@ const SceneSetup = () => {
       logger.info('Scene setup complete')
     }
     
-    return () => {
-      // Lights are removed with scene, no need to clean up
-    }
+    // Lights are removed with scene automatically, no explicit cleanup needed
   }, [scene, visualSettings])
   
   return null
 }
 
 // Camera setup and configuration
-const CameraSetup = () => {
+const CameraSetup: React.FC = () => {
   const { camera } = useThree()
   const cameraSettings = useSettingsStore(state => state.settings?.visualization?.camera)
   
@@ -5190,85 +5205,110 @@ const CameraSetup = () => {
 }
 
 // Main GraphCanvas component
-const GraphCanvas = () => {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+const GraphCanvas: React.FC = () => {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null)
+  const containerRef = React.useRef<HTMLDivElement>(null) 
   const { settings } = useSettingsStore()
   const showStats = settings?.visualization?.showStats ?? false
   const xrEnabled = settings?.xr?.enabled !== false
   const antialias = settings?.visualization?.rendering?.antialias !== false
+  
+  const containerSize = useContainerSize(containerRef);
+  
+  // Renderer size management using useLayoutEffect
+  const RendererSizeManager: React.FC = () => {
+    const { gl, viewport, size, camera } = useThree();
+      
+    useLayoutEffect(() => {
+      if (containerSize.width <= 0 || containerSize.height <= 0) return;
+      
+      try {
+        // Force Three.js to update both the renderer size and the canvas element size
+        (gl as any).setSize(containerSize.width, containerSize.height, false);
+        
+        // Update camera aspect ratio based on new size
+        if (camera instanceof THREE.PerspectiveCamera) {
+          (camera as any).aspect = containerSize.width / containerSize.height;
+          (camera as any).updateProjectionMatrix();
+        }
+        
+        logger.debug(`Canvas size force-updated: ${containerSize.width}px x ${containerSize.height}px`);
+      } catch (e) {
+        logger.error('Error updating renderer size:', e);
+      }
+    }, [gl, camera, containerSize]);
+    return null;
+  };
+  const debugEnabled = settings?.debug?.enabled === true
 
-  // Debug logging for container dimensions
+  // Debug logging for settings and container dimensions
   useEffect(() => {
-    if (containerRef.current) {
-      const { width, height } = containerRef.current.getBoundingClientRect();
-      logger.debug('GraphCanvas container dimensions:', { 
-        width: Math.round(width), 
-        height: Math.round(height),
-        container: containerRef.current
-      });
+    if (debugEnabled) {
+      logger.debug('GraphCanvas settings:', settings);
+      
+      if (containerRef.current) {
+        const { width, height } = containerRef.current.getBoundingClientRect();
+        logger.debug('GraphCanvas container dimensions:', { 
+          width: Math.round(width), 
+          height: Math.round(height),
+          container: containerRef.current
+        });
+      }
     }
-  }, []);
+  }, [debugEnabled, settings]);
   
   return (
     <div 
       ref={containerRef}
-      className="absolute inset-0 overflow-hidden"
-      style={{ touchAction: 'none' }} // Prevent touch scrolling/zooming on mobile
+      className="absolute inset-0 overflow-hidden w-full h-full" 
+      style={{ 
+        touchAction: 'none', // Prevent touch scrolling/zooming on mobile
+        zIndex: 5 // Ensure canvas stays below viewport controls
+      }}
+      data-testid="graph-canvas-container"
     >
       <Canvas
+        key={`canvas-${containerSize.width}-${containerSize.height}`} // Force canvas recreation on size change
         ref={canvasRef}
         gl={{
           antialias,
           alpha: true,
           powerPreference: 'high-performance',
-          // Don't prevent rendering on devices with poor WebGL performance
-          failIfMajorPerformanceCaveat: false
+          failIfMajorPerformanceCaveat: false,
         }}
         camera={{
           fov: 75,
           near: 0.1,
           far: settings?.visualization?.camera?.far || 2000,
-          position: [0, 10, 50]
+          position: [0, 10, 50],
+          makeDefault: true,
+          aspect: containerSize.width / Math.max(containerSize.height, 1) // Ensure valid aspect ratio
         }}
-        // Use a specific className with positioning
-        className="r3f-canvas" 
         style={{ width: '100%', height: '100%', display: 'block' }}
         onCreated={({ gl }) => {
-          // Set renderer properties that can't be set via props
           try {
-            (gl as any).setClearColor(new THREE.Color(settings?.visualization?.sceneBackground || '#000000') as any);
-            gl.setSize(containerRef.current?.clientWidth || window.innerWidth, 
-                      containerRef.current?.clientHeight || window.innerHeight);
+            gl.setClearColor(new (THREE.Color as any)(settings?.visualization?.sceneBackground || '#000000'));
+            if (debugEnabled) {
+              logger.info('React Three Fiber canvas created successfully');
+              logger.debug('Initial canvas dimensions:', {
+                width: gl.domElement.width,
+                height: gl.domElement.height
+              });
+            }
+            // Note: We don't set the size here, as the RendererSizeManager will handle that
           } catch (e) {
             logger.warn('Failed to set renderer properties', e);
           }
-
-          if (debugState.isEnabled()) {
-            logger.info('React Three Fiber canvas created successfully');
-            logger.debug('Renderer initialized with dimensions:', {
-              width: gl.domElement.width,
-              height: gl.domElement.height
-            });
-          }
         }}
       >
+        <RendererSizeManager />
         {xrEnabled ? (
           <XR referenceSpace={settings?.xr?.roomScale ? 'local-floor' : 'local'}>
-            {/* Scene setup must come first to initialize properly */}
             <SceneSetup />
             <CameraSetup />
-            
-            {/* Graph visualization */}
             <GraphManager />
-            
-            {/* XR Controller - now properly wrapped in XR component */}
             <XRController />
-            
-            {/* Connect hand interaction with visualization */}
             <XRVisualizationConnector />
-            
-            {/* Camera controls for non-XR mode */}
             <OrbitControls
               enableDamping
               dampingFactor={0.1}
@@ -5282,16 +5322,11 @@ const GraphCanvas = () => {
               zoomSpeed={1.2}
               panSpeed={0.8}
             />
-            
-            {/* Post-processing effects */}
             <Effects />
-            
-            {/* Performance stats (if enabled) */}
             {showStats && <Stats />}
           </XR>
         ) : (
           <>
-            {/* Non-XR mode rendering */}
             <SceneSetup />
             <CameraSetup />
             <GraphManager />
@@ -8740,37 +8775,66 @@ const ViewportContainer = ({
 }: ViewportContainerProps) => {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const { initialized } = useSettingsStore(state => ({
-    initialized: state.initialized
+  const { initialized, settings } = useSettingsStore(state => ({
+    initialized: state.initialized,
+    settings: state.settings
   }));
+  
+  const debugEnabled = settings?.debug?.enabled === true;
 
-  logger.debug("Rendering ViewportContainer");
+  // Only log if debug is enabled
+  if (debugEnabled) {
+    logger.debug("Rendering ViewportContainer");
+  }
 
   // Track resize events to update viewport dimensions
   useEffect(() => {
     const updateDimensions = () => {
       if (viewportRef.current) {
         const { width, height } = viewportRef.current.getBoundingClientRect();
-        setDimensions({ width, height });
         
+        // Only update dimensions if they've actually changed
+        if (Math.abs(dimensions.width - width) > 1 || Math.abs(dimensions.height - height) > 1) {
+          setDimensions({ width, height });
+          
+          
         if (onResize) {
-          onResize(width, height);
+            onResize(width, height);
+          }
+          
+          if (debugEnabled) {
+            logger.debug('Viewport dimensions:', { 
+              width: Math.round(width), 
+              height: Math.round(height),
+              containerElement: viewportRef.current.parentElement
+            });
+          }
         }
-        
-        logger.debug('Viewport dimensions:', { 
-          width: Math.round(width), 
-          height: Math.round(height),
-          containerElement: viewportRef.current.parentElement
-        });
       }
     };
     
-    // Initial size measurement (execute after a small delay to ensure accurate dimensions)
-    updateDimensions();
+    // Enhance the measurement by forcing a layout recalculation
+    const forceLayoutAndMeasure = () => {
+      if (viewportRef.current) {
+        // Force a layout recalculation
+        void viewportRef.current.offsetHeight;
+        // Now measure
+        updateDimensions();
+      }
+    };
+    
+    // Initial size measurement
+    forceLayoutAndMeasure();
+    
     // Also measure after a slight delay to catch any post-render adjustments
     const initialMeasurementTimer = setTimeout(() => {
-      updateDimensions();
+      forceLayoutAndMeasure();
     }, 100);
+    
+    // And another measurement after layout has fully settled
+    const finalMeasurementTimer = setTimeout(() => {
+      forceLayoutAndMeasure();
+    }, 500);
 
     // Add resize event listener
     window.addEventListener('resize', updateDimensions);
@@ -8783,37 +8847,48 @@ const ViewportContainer = ({
     
     return () => {
       clearTimeout(initialMeasurementTimer);
+      clearTimeout(finalMeasurementTimer);
       window.removeEventListener('resize', updateDimensions);
       resizeObserver.disconnect();
     };
-  }, [onResize]);
+  }, [onResize, dimensions, debugEnabled]);
 
   // Trigger resize notification when initialization completes
   useEffect(() => {
     if (initialized && viewportRef.current) {
       const { width, height } = viewportRef.current.getBoundingClientRect();
-      logger.debug('Viewport initialized with dimensions:', { 
-        width: Math.round(width), 
-        height: Math.round(height) 
-      });
+      
+      if (debugEnabled) {
+        logger.debug('Viewport initialized with dimensions:', { 
+          width: Math.round(width), 
+          height: Math.round(height) 
+        });
+      }
 
       if (onResize) {
         onResize(width, height);
       }
     }
-  }, [initialized, onResize]);
+  }, [initialized, onResize, debugEnabled]);
 
   return (
     <div 
       ref={viewportRef}
-      className="relative w-full h-full bg-background viewport-container"
+      className="relative w-full h-full bg-background viewport-container overflow-hidden"
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%'
+      }}
       data-testid="viewport-container"
     >
       {/* Viewport Content (typically Three.js canvas) */}
-      {children}
+      <div className="absolute inset-0 w-full h-full">
+        {children}
+      </div>
       
       {/* Viewport size indicator for debugging */}
-      {process.env.NODE_ENV === 'development' && (
+      {debugEnabled && process.env.NODE_ENV === 'development' && (
         <div className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background/70 px-2 py-1 rounded-md z-10">
           {`${Math.round(dimensions.width)} × ${Math.round(dimensions.height)}`}
         </div>
@@ -8864,15 +8939,22 @@ const MainLayout = ({
   header,
   footer
 }: MainLayoutProps) => {
-  const { initialized } = useSettingsStore(state => ({
-    initialized: state.initialized
+  const { initialized, settings } = useSettingsStore(state => ({
+    initialized: state.initialized,
+    settings: state.settings
   }));
+  
+  const debugEnabled = settings?.debug?.enabled === true;
 
-  logger.debug("Rendering MainLayout"); // Added debug logging line
+  // Only log if debug is enabled
+  if (debugEnabled) {
+    logger.debug("Rendering MainLayout");
+  }
 
   return (
     <PanelProvider>
-      <div className="fixed inset-0 flex flex-col h-screen w-screen overflow-hidden bg-background">
+      <div className="fixed inset-0 flex flex-col h-screen w-screen overflow-hidden bg-background" 
+           data-testid="main-layout">
         {/* Optional Header - z-index: 10 */}
         {header && (
           <header className="w-full border-b border-border bg-background z-10">
@@ -8880,17 +8962,23 @@ const MainLayout = ({
           </header>
         )}
         
-        {/* Main Content Area - This is the flex container that holds the docking zones and viewport */}
-        <main className="flex-1 flex relative overflow-hidden">
+        {/* 
+          Main Content Area - This is the flex container that holds the docking zones and viewport 
+          flex-1: take up all remaining space
+          flex: use flexbox for layout
+          relative: for absolute positioning of children
+          overflow-hidden: prevent scrolling
+        */}
+        <main className="flex-1 flex relative overflow-hidden" data-testid="main-content-area">
           {/* Left Dock Zone - Initially hidden, visible when panels are docked left */}
-          <div 
-            id="left-dock-zone" 
+          <div
+            id="left-dock-zone"
             className="h-full flex-shrink-0 z-20 transition-all duration-200"
             data-dock-zone="left"
           />
           
           {/* Central Viewport - Flex container for top/bottom dock zones and the viewport content */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative" data-testid="central-viewport-container">
             {/* Top Dock Zone - Initially visible with visualization panel */}
             <div 
               id="top-dock-zone" 
@@ -8898,9 +8986,15 @@ const MainLayout = ({
               data-dock-zone="top"
             />
             
-            {/* Viewport Content - The container for the Three.js canvas */}
-            {/* absolute inset-0 ensures it fills the entire container regardless of sibling elements */}
-            <div className="absolute inset-0 overflow-hidden">
+            {/* 
+              Viewport Content - The container for the Three.js canvas 
+              absolute inset-0: fill parent completely
+              overflow-hidden: prevent scrolling
+              z-index: 5: ensure it's above background but below controls
+            */}
+            <div className="absolute inset-0 overflow-hidden"
+                 style={{ zIndex: 5 }}
+                 data-testid="viewport-content-container">
               {viewportContent}
             </div>
             
@@ -8928,9 +9022,10 @@ const MainLayout = ({
         )}
         
         {/* Floating Panel Layer - z-index: 30, highest layer for floating panels */}
-        <div 
-          id="floating-panels-container" 
+        <div
+          id="floating-panels-container"
           className="absolute inset-0 pointer-events-none z-30 floating-panels-container"
+          data-testid="floating-panels-container"
         >
           {/* Panels are rendered here and become pointer-events-auto individually */}
           {panels}
@@ -9225,6 +9320,7 @@ src/components/viewport/ViewportControls.tsx
 import { useState } from 'react';
 import { Maximize, Minimize } from 'lucide-react';
 import { IconProps } from 'lucide-react';
+import { useSettingsStore } from '../../lib/stores/settings-store';
 
 // Custom icon components to replace the missing ones from lucide-react
 const Home = (props: IconProps) => (
@@ -9340,6 +9436,11 @@ const ViewportControls = ({
 }: ViewportControlsProps) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { mode, isXRMode } = useApplicationMode();
+  const { settings } = useSettingsStore(state => ({
+    settings: state.settings
+  }));
+  
+  const debugEnabled = settings?.debug?.enabled === true;
   
   // Hide controls in XR mode
   if (isXRMode) {
@@ -9349,7 +9450,9 @@ const ViewportControls = ({
   // Handle fullscreen toggle
   const handleToggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
-    
+    if (debugEnabled) {
+      logger.debug('Toggling fullscreen mode');
+    }
     if (onToggleFullscreen) {
       onToggleFullscreen();
     }
@@ -9376,7 +9479,8 @@ const ViewportControls = ({
   
   return (
     <div
-      className={`viewport-controls fixed ${getPositionClasses()} flex items-center gap-2 backdrop-blur-sm bg-background/60 rounded-lg p-1 shadow-md z-10 ${orientationClasses} ${className}`}
+      className={`viewport-controls fixed ${getPositionClasses()} flex items-center gap-2 backdrop-blur-sm bg-background/60 rounded-lg p-1 shadow-md z-20 ${orientationClasses} ${className}`}
+      data-testid="viewport-controls"
       aria-label="Viewport Controls"
     >
       {/* Reset View */}
@@ -11379,6 +11483,27 @@ const useAuth = () => {
 };
 
 export default useAuth;
+----
+src/lib/hooks/useContainerSize.ts
+import { useState, useLayoutEffect, RefObject } from 'react';
+
+export function useContainerSize(ref: RefObject<HTMLElement>) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    const updateSize = () => {
+      const rect = ref.current.getBoundingClientRect();
+      setSize({ width: rect.width, height: rect.height });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return size;
+}
 ----
 src/lib/utils/logger.ts
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -17214,23 +17339,36 @@ src/styles/layout.css
 
 /* Viewport container */
 .viewport-container {
-  position: relative;
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+  position: relative !important;
+  flex: 1 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 /* Canvas container styles */
 .r3f-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
   width: 100% !important;
   height: 100% !important;
   touch-action: none;
+  z-index: 1;
+}
+
+/* Three.js canvas element */
+canvas.r3f-canvas {
+  position: absolute !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  outline: none !important;
+  z-index: 5;
 }
 
 /* Dock zones */
@@ -17384,6 +17522,32 @@ src/styles/layout.css
 .panel-group-content {
   flex: 1;
   overflow: hidden;
+}
+
+/* Custom style for overlay controls */
+.viewport-controls {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.5rem;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+/* Size indicator - debug only */
+.size-indicator {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  font-size: 0.75rem;
+  border-radius: 0.25rem;
+  z-index: 15;
+  pointer-events: none;
 }
 
 /* XR Mode specific styles */
@@ -17843,6 +18007,57 @@ declare module 'three' {
     export const FrontSide: typeof ThreeOriginal.FrontSide;
     export const BackSide: typeof ThreeOriginal.BackSide;
     export const DoubleSide: typeof ThreeOriginal.DoubleSide;
+  }
+}
+----
+src/types/react-three-libraries.d.ts
+declare module '@react-three/drei' {
+  import { ReactNode } from 'react';
+  
+  export const OrbitControls: React.FC<{
+    enableDamping?: boolean;
+    dampingFactor?: number;
+    screenSpacePanning?: boolean;
+    minDistance?: number;
+    maxDistance?: number;
+    enableRotate?: boolean;
+    enableZoom?: boolean;
+    enablePan?: boolean;
+    rotateSpeed?: number;
+    zoomSpeed?: number;
+    panSpeed?: number;
+    [key: string]: any;
+  }>;
+  
+  export const Stats: React.FC<any>;
+}
+
+declare module '@react-three/xr' {
+  import { ReactNode } from 'react';
+  
+  export const XR: React.FC<{
+    children?: ReactNode;
+    referenceSpace?: string;
+    [key: string]: any;
+  }>;
+}
+
+declare module 'three-stdlib' {
+  import * as THREE from 'three';
+  
+  export class EffectComposer {
+    constructor(renderer: any);
+    addPass(pass: any): void;
+    render(): void;
+    dispose?(): void;
+  }
+  
+  export class RenderPass {
+    constructor(scene: any, camera: any);
+  }
+  
+  export class UnrealBloomPass {
+    constructor(resolution: any, strength: any, radius: any, threshold: any);
   }
 }
 --END--
