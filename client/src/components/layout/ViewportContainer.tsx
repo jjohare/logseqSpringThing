@@ -27,6 +27,8 @@ const ViewportContainer = ({
     initialized: state.initialized
   }));
 
+  logger.debug("Rendering ViewportContainer");
+
   // Track resize events to update viewport dimensions
   useEffect(() => {
     const updateDimensions = () => {
@@ -38,13 +40,21 @@ const ViewportContainer = ({
           onResize(width, height);
         }
         
-        logger.debug('Viewport resized:', { width, height });
+        logger.debug('Viewport dimensions:', { 
+          width: Math.round(width), 
+          height: Math.round(height),
+          containerElement: viewportRef.current.parentElement
+        });
       }
     };
     
-    // Initial size measurement
+    // Initial size measurement (execute after a small delay to ensure accurate dimensions)
     updateDimensions();
-    
+    // Also measure after a slight delay to catch any post-render adjustments
+    const initialMeasurementTimer = setTimeout(() => {
+      updateDimensions();
+    }, 100);
+
     // Add resize event listener
     window.addEventListener('resize', updateDimensions);
     
@@ -55,6 +65,7 @@ const ViewportContainer = ({
     }
     
     return () => {
+      clearTimeout(initialMeasurementTimer);
       window.removeEventListener('resize', updateDimensions);
       resizeObserver.disconnect();
     };
@@ -64,6 +75,11 @@ const ViewportContainer = ({
   useEffect(() => {
     if (initialized && viewportRef.current) {
       const { width, height } = viewportRef.current.getBoundingClientRect();
+      logger.debug('Viewport initialized with dimensions:', { 
+        width: Math.round(width), 
+        height: Math.round(height) 
+      });
+
       if (onResize) {
         onResize(width, height);
       }
@@ -73,7 +89,7 @@ const ViewportContainer = ({
   return (
     <div 
       ref={viewportRef}
-      className="relative w-full h-full bg-background"
+      className="relative w-full h-full bg-background viewport-container"
       data-testid="viewport-container"
     >
       {/* Viewport Content (typically Three.js canvas) */}
@@ -81,7 +97,7 @@ const ViewportContainer = ({
       
       {/* Viewport size indicator for debugging */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background/50 px-2 py-1 rounded-md z-10">
+        <div className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background/70 px-2 py-1 rounded-md z-10">
           {`${Math.round(dimensions.width)} × ${Math.round(dimensions.height)}`}
         </div>
       )}

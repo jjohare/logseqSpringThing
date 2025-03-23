@@ -67,26 +67,26 @@ export_network_info() {
 # Export both directories and combine them
 export_and_combine() {
     # Export server (src) code
-    python "$EXPORT_REPO/export-repository-to-file.py" "../src"
-    mv output.txt server.txt
+  #  python "$EXPORT_REPO/export-repository-to-file.py" "../src"
+  #  mv output.txt server.txt
 
     # Export client code
     python "$EXPORT_REPO/export-repository-to-file.py" "../client"
     mv output.txt client.txt
 
     # Export docs code
-    python "$EXPORT_REPO/export-repository-to-file.py" "../docs"
-    mv output.txt docs.txt
+  #  python "$EXPORT_REPO/export-repository-to-file.py" "../docs"
+  #  mv output.txt docs.txt
 
     # Combine files with clear separation
-    echo -e "\n\n## Server Code (Rust)\n" >> codebase.txt
-    cat server.txt >> codebase.txt
+  #  echo -e "\n\n## Server Code (Rust)\n" >> codebase.txt
+  #  cat server.txt >> codebase.txt
     
     echo -e "\n\n## Client Code (TypeScript)\n" >> codebase.txt
     cat client.txt >> codebase.txt
     
-    echo -e "\n\n## Documentation\n" >> codebase.txt
-    cat docs.txt >> codebase.txt
+  #  echo -e "\n\n## Documentation\n" >> codebase.txt
+  #  cat docs.txt >> codebase.txt
     
     rm server.txt
     rm client.txt

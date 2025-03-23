@@ -76,6 +76,7 @@ function App() {
   }, [initialized])
 
   const handleInitialized = () => {
+    logger.debug('Application initialized')
     setIsLoading(false)
   }
   
@@ -121,96 +122,99 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark">
       <ErrorBoundary>
-        <ApplicationModeProvider>
-          <PanelProvider>
-            <TooltipProvider>
-              <SafeXRProvider>
-                <div className="app-container">
-                <MainLayout
-                  viewportContent={
-                    <ViewportContainer>
-                      <ErrorBoundary fallback={
-                        <div className="flex items-center justify-center h-full">
-                          <div className="p-4 bg-destructive/20 text-destructive-foreground rounded-md max-w-md">
-                            <h2 className="text-xl font-bold mb-2">Visualization Error</h2>
-                            <p>The 3D visualization component could not be loaded.</p>
-                            <p className="text-sm mt-2">This may be due to WebGL compatibility issues or problems with the graph data.</p>
-                          </div>
-                        </div>
-                      }>
-                        <GraphCanvas />
-                      </ErrorBoundary>
-                      
-                      {/* Loading Overlay */}
-                      {isLoading && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
-                          <div className="flex flex-col items-center space-y-4">
-                            <div className="text-2xl">Loading Graph Visualization</div>
-                            <div className="h-2 w-48 overflow-hidden rounded-full bg-gray-700">
-                              <div className="animate-pulse h-full bg-primary"></div>
+        <ApplicationModeProvider> {/* Application-wide mode context */}
+          <PanelProvider> {/* Panel system management */}
+            <TooltipProvider> {/* UI tooltips */}
+              <SafeXRProvider> {/* XR context with fallbacks */}
+                <div className="app-container"> {/* Main application container */}
+                  <MainLayout
+                    viewportContent={
+                      <ViewportContainer onResize={(width, height) => {
+                        logger.debug(`ViewportContainer resized: ${width}×${height}`);
+                      }}>
+                        {/* Error boundary for 3D visualization */}
+                        <ErrorBoundary fallback={
+                          <div className="flex items-center justify-center h-full">
+                            <div className="p-4 bg-destructive/20 text-destructive-foreground rounded-md max-w-md">
+                              <h2 className="text-xl font-bold mb-2">Visualization Error</h2>
+                              <p>The 3D visualization component could not be loaded.</p>
+                              <p className="text-sm mt-2">This may be due to WebGL compatibility issues or problems with the graph data.</p>
                             </div>
                           </div>
-                        </div>
-                      )}
-                      
-                      {/* Viewport Controls */}
-                      {!isLoading && (
-                        <ViewportControls
-                          onReset={handleResetCamera}
-                          onZoomIn={handleZoomIn}
-                          onZoomOut={handleZoomOut}
-                          onToggleFullscreen={handleToggleFullscreen}
-                          onRotate={handleRotateView}
-                          onToggleLeftPanel={handleToggleLeftPanel}
-                          onToggleRightPanel={handleToggleRightPanel}
-                          onToggleTopPanel={handleToggleTopPanel}
-                        />
-                      )}
-                    </ViewportContainer>
-                 }
-                  panels={
-                    !isLoading && (
-                      <>
-                        {/* Left Dock Zone */}
-                        <DockingZone 
-                          position="left" 
-                          className={showLeftPanel ? 'active' : ''}
-                        />
+                        }>
+                          <GraphCanvas />
+                        </ErrorBoundary>
                         
-                        {/* Top Dock Zone - Visualization Controls */}
-                        <DockingZone 
-                          position="top" 
-                          className={showTopPanel ? 'active' : ''} 
-                          defaultSize={topPanelDense ? 300 : 450}
-                          expandable={true}
-                        >
-                          <div className="panel-group h-full flex">
-                            <VisualizationPanel panelId="visualization-top" horizontal={true} />
-                            <div className="flex-1"></div>
+                        {/* Loading Overlay */}
+                        {isLoading && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+                            <div className="flex flex-col items-center space-y-4">
+                              <div className="text-2xl">Loading Graph Visualization</div>
+                              <div className="h-2 w-48 overflow-hidden rounded-full bg-gray-700">
+                                <div className="animate-pulse h-full bg-primary"></div>
+                              </div>
+                            </div>
                           </div>
-                        </DockingZone>
+                        )}
                         
-                        {/* Right Dock Zone */}
-                        <DockingZone 
-                          position="right" 
-                          className={showRightPanel ? 'active' : ''}
-                          expandable={true}
-                        >
-                          <div className="panel-group h-full">
-                            <XRPanel panelId="xr" />
-                            <SystemPanel panelId="system" />
-                          </div>
-                        </DockingZone>
-                      </>
-                    )
-                  }
-                />
-                <AppInitializer onInitialized={handleInitialized} />
-                </div>
-              </SafeXRProvider>
-            </TooltipProvider>
-          </PanelProvider>
-        </ApplicationModeProvider>
+                        {/* Viewport Controls */}
+                        {!isLoading && (
+                          <ViewportControls
+                            onReset={handleResetCamera}
+                            onZoomIn={handleZoomIn}
+                            onZoomOut={handleZoomOut}
+                            onToggleFullscreen={handleToggleFullscreen}
+                            onRotate={handleRotateView}
+                            onToggleLeftPanel={handleToggleLeftPanel}
+                            onToggleRightPanel={handleToggleRightPanel}
+                            onToggleTopPanel={handleToggleTopPanel}
+                          />
+                        )}
+                      </ViewportContainer>
+                   }
+                    panels={
+                      !isLoading && (
+                        <>
+                          {/* Left Dock Zone */}
+                          <DockingZone 
+                            position="left" 
+                            className={showLeftPanel ? 'active' : ''}
+                          />
+                          
+                          {/* Top Dock Zone - Visualization Controls */}
+                          <DockingZone 
+                            position="top" 
+                            className={showTopPanel ? 'active' : ''} 
+                            defaultSize={topPanelDense ? 300 : 450}
+                            expandable={true}
+                          >
+                            <div className="panel-group h-full flex">
+                              <VisualizationPanel panelId="visualization-top" horizontal={true} />
+                              <div className="flex-1"></div>
+                            </div>
+                          </DockingZone>
+                          
+                          {/* Right Dock Zone */}
+                          <DockingZone 
+                            position="right" 
+                            className={showRightPanel ? 'active' : ''}
+                            expandable={true}
+                          >
+                            <div className="panel-group h-full">
+                              <XRPanel panelId="xr" />
+                              <SystemPanel panelId="system" />
+                            </div>
+                          </DockingZone>
+                        </>
+                      )
+                    }
+                  />
+                  <AppInitializer onInitialized={handleInitialized} />
+                </div> {/* End app-container */}
+              </SafeXRProvider> {/* End SafeXRProvider */}
+            </TooltipProvider> {/* End TooltipProvider */}
+          </PanelProvider> {/* End PanelProvider */}
+        </ApplicationModeProvider> {/* End ApplicationModeProvider */}
         <Toaster />
       </ErrorBoundary>
     </ThemeProvider>
