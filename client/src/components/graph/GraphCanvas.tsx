@@ -28,12 +28,14 @@ const Effects = () => {
     // Add bloom effect if enabled in settings
     if (bloomSettings?.enabled) {
       // Use type assertion to avoid TS errors
-      const sizeVector = new THREE.Vector2(size.width, size.height) as any;
-      const bloomPass = new UnrealBloomPass(sizeVector,
-        (bloomSettings.strength || 1.5) as any,
-        (bloomSettings.radius || 0.4) as any,
-        (bloomSettings.threshold || 0.85) as any
-      ) as any;
+      const sizeVector = new (THREE.Vector2 as any)(size.width, size.height);
+      // Use type assertion to avoid TS constructor errors
+      const bloomPass = new (UnrealBloomPass as any)(
+        sizeVector,
+        bloomSettings.strength || 1.5,
+        bloomSettings.radius || 0.4,
+        bloomSettings.threshold || 0.85
+      );
       composer.addPass(bloomPass)
     }
     
@@ -63,18 +65,19 @@ const SceneSetup = () => {
   useEffect(() => {
     // Set background color from settings or default
     if (visualSettings?.sceneBackground !== undefined) {
-      (scene as any).background = new THREE.Color(visualSettings.sceneBackground as any)
+      (scene as any).background = new (THREE.Color as any)(visualSettings.sceneBackground)
     } else {
-      (scene as any).background = new THREE.Color('#000000')
+      (scene as any).background = new (THREE.Color as any)('#000000')
     }
     
     // Setup base lighting if not already present
     if (!scene.children.some(child => child instanceof THREE.AmbientLight)) {
-      const ambientLight = new THREE.AmbientLight('#ffffff', 0.6) as any
+      const ambientLight = new (THREE.AmbientLight as any)('#ffffff', 0.6)
       scene.add(ambientLight)
       
-      const directionalLight = new THREE.DirectionalLight('#ffffff', 0.8) as any
-      (directionalLight as any).position.set(1, 1, 1).normalize();
+      const directionalLight = new (THREE.DirectionalLight as any)('#ffffff', 0.8)
+      const dirLightPos = directionalLight.position;
+      dirLightPos.set(1, 1, 1).normalize();
       scene.add(directionalLight)
     }
     
@@ -119,15 +122,16 @@ const CameraSetup = () => {
 // Main GraphCanvas component
 const GraphCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null) 
   const { settings } = useSettingsStore()
   const showStats = settings?.visualization?.showStats ?? false
   const xrEnabled = settings?.xr?.enabled !== false
   const antialias = settings?.visualization?.rendering?.antialias !== false
+  const debugEnabled = settings?.debug?.enabled === true
 
-  // Debug logging for container dimensions
+  // Debug logging for container dimensions (only if debug is enabled)
   useEffect(() => {
-    if (containerRef.current) {
+    if (containerRef.current && debugEnabled) {
       const { width, height } = containerRef.current.getBoundingClientRect();
       logger.debug('GraphCanvas container dimensions:', { 
         width: Math.round(width), 
@@ -135,13 +139,17 @@ const GraphCanvas = () => {
         container: containerRef.current
       });
     }
-  }, []);
+  }, [debugEnabled]);
   
   return (
     <div 
       ref={containerRef}
-      className="absolute inset-0 overflow-hidden"
-      style={{ touchAction: 'none' }} // Prevent touch scrolling/zooming on mobile
+      className="absolute inset-0 overflow-hidden w-full h-full" 
+      style={{ 
+        touchAction: 'none', // Prevent touch scrolling/zooming on mobile
+        zIndex: 5 // Ensure canvas stays below viewport controls
+      }}
+      data-testid="graph-canvas-container"
     >
       <Canvas
         ref={canvasRef}
@@ -156,27 +164,38 @@ const GraphCanvas = () => {
           fov: 75,
           near: 0.1,
           far: settings?.visualization?.camera?.far || 2000,
-          position: [0, 10, 50]
+          position: [0, 10, 50],
+          makeDefault: true
         }}
         // Use a specific className with positioning
         className="r3f-canvas" 
-        style={{ width: '100%', height: '100%', display: 'block' }}
+        style={{ 
+          width: '100%', 
+          height: '100%', 
+          display: 'block',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0
+        }}
         onCreated={({ gl }) => {
           // Set renderer properties that can't be set via props
           try {
-            (gl as any).setClearColor(new THREE.Color(settings?.visualization?.sceneBackground || '#000000') as any);
-            gl.setSize(containerRef.current?.clientWidth || window.innerWidth, 
-                      containerRef.current?.clientHeight || window.innerHeight);
+            gl.setClearColor(new (THREE.Color as any)(settings?.visualization?.sceneBackground || '#000000'));
+            const width = containerRef.current?.clientWidth || window.innerWidth;
+            const height = containerRef.current?.clientHeight || window.innerHeight;
+            gl.setSize(width, height);
+            
+            if (debugEnabled) {
+              logger.info('React Three Fiber canvas created successfully');
+              logger.debug('Renderer initialized with dimensions:', {
+                width: gl.domElement.width,
+                height: gl.domElement.height
+              });
+            }
           } catch (e) {
             logger.warn('Failed to set renderer properties', e);
-          }
-
-          if (debugState.isEnabled()) {
-            logger.info('React Three Fiber canvas created successfully');
-            logger.debug('Renderer initialized with dimensions:', {
-              width: gl.domElement.width,
-              height: gl.domElement.height
-            });
           }
         }}
       >

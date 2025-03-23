@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Maximize, Minimize } from 'lucide-react';
 import { IconProps } from 'lucide-react';
+import { useSettingsStore } from '../../lib/stores/settings-store';
 
 // Custom icon components to replace the missing ones from lucide-react
 const Home = (props: IconProps) => (
@@ -217,6 +218,11 @@ const ViewportControls = ({
 }: ViewportControlsProps) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { mode, isXRMode } = useApplicationMode();
+  const { settings } = useSettingsStore(state => ({
+    settings: state.settings
+  }));
+  
+  const debugEnabled = settings?.debug?.enabled === true;
   
   // Hide controls in XR mode
   if (isXRMode) {
@@ -226,7 +232,9 @@ const ViewportControls = ({
   // Handle fullscreen toggle
   const handleToggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
-    
+    if (debugEnabled) {
+      logger.debug('Toggling fullscreen mode');
+    }
     if (onToggleFullscreen) {
       onToggleFullscreen();
     }
@@ -253,7 +261,8 @@ const ViewportControls = ({
   
   return (
     <div
-      className={`viewport-controls fixed ${getPositionClasses()} flex items-center gap-2 backdrop-blur-sm bg-background/60 rounded-lg p-1 shadow-md z-10 ${orientationClasses} ${className}`}
+      className={`viewport-controls fixed ${getPositionClasses()} flex items-center gap-2 backdrop-blur-sm bg-background/60 rounded-lg p-1 shadow-md z-20 ${orientationClasses} ${className}`}
+      data-testid="viewport-controls"
       aria-label="Viewport Controls"
     >
       {/* Reset View */}

@@ -76,7 +76,11 @@ function App() {
   }, [initialized])
 
   const handleInitialized = () => {
-    logger.debug('Application initialized')
+    const settings = useSettingsStore.getState().settings;
+    const debugEnabled = settings?.debug?.enabled === true;
+    if (debugEnabled) {
+      logger.debug('Application initialized');
+    }
     setIsLoading(false)
   }
   
@@ -130,7 +134,11 @@ function App() {
                   <MainLayout
                     viewportContent={
                       <ViewportContainer onResize={(width, height) => {
-                        logger.debug(`ViewportContainer resized: ${width}×${height}`);
+                        const settings = useSettingsStore.getState().settings;
+                        const debugEnabled = settings?.debug?.enabled === true;
+                        if (debugEnabled) {
+                          logger.debug(`ViewportContainer resized: ${Math.round(width)}×${Math.round(height)}`);
+                        }
                       }}>
                         {/* Error boundary for 3D visualization */}
                         <ErrorBoundary fallback={
@@ -179,6 +187,7 @@ function App() {
                           <DockingZone 
                             position="left" 
                             className={showLeftPanel ? 'active' : ''}
+                          defaultSize={300}
                           />
                           
                           {/* Top Dock Zone - Visualization Controls */}
@@ -187,6 +196,7 @@ function App() {
                             className={showTopPanel ? 'active' : ''} 
                             defaultSize={topPanelDense ? 300 : 450}
                             expandable={true}
+                          autoSize={false}
                           >
                             <div className="panel-group h-full flex">
                               <VisualizationPanel panelId="visualization-top" horizontal={true} />
@@ -199,6 +209,8 @@ function App() {
                             position="right" 
                             className={showRightPanel ? 'active' : ''}
                             expandable={true}
+                          defaultSize={300}
+                          autoSize={false}
                           >
                             <div className="panel-group h-full">
                               <XRPanel panelId="xr" />

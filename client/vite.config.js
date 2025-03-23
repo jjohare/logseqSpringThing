@@ -15,7 +15,15 @@ export default defineConfig({
         outDir: resolve(projectRoot, 'data/public/dist'),
         assetsDir: 'assets',
         sourcemap: true,
+        emptyOutDir: true, // Empty the output directory before building
         minify: false, // Disable minification for better debugging
+        rollupOptions: {
+            onwarn: (warning, warn) => {
+                // Suppress the eval warning from three-stdlib/libs/lottie.js
+                if (warning.code === 'EVAL' && warning.id?.includes('three-stdlib/libs/lottie.js')) return;
+                warn(warning);
+            }
+        }
     },
     resolve: {
         alias: {

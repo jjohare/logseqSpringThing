@@ -2,21 +2,13 @@ import React, { useEffect } from 'react';
 import { createLogger, createErrorMetadata } from '../lib/utils/logger';
 import { debugState } from '../lib/utils/debug-state';
 import { useSettingsStore } from '../lib/settings-store';
+import WebSocketService from '../lib/services/websocket-service';
+import { graphDataManager } from '../lib/managers/graph-data-manager';
 
-// Initialize as null, will be populated by dynamic imports
-let WebSocketService: any = null;
-let graphDataManager: any = null;
-
-// Use dynamic imports instead of require
-const loadServices = async () => {
-  try {
-    const wsServiceModule = await import('../lib/services/websocket-service');
-    WebSocketService = wsServiceModule.default;
-    
-    const graphManagerModule = await import('../lib/managers/graph-data-manager');
-    graphDataManager = graphManagerModule.graphDataManager;
-  } catch (error) {
-    console.error('Could not load required services:', error);
+// Compatibility function to maintain compatibility with code expecting a loadServices function
+const loadServices = async (): Promise<void> => {
+  if (debugState.isEnabled()) {
+    logger.info('Services pre-loaded via direct imports');
   }
 }
 
@@ -60,7 +52,7 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
           }
 
           // Try to initialize WebSocket
-          if (WebSocketService && graphDataManager) {
+          if (typeof WebSocketService !== 'undefined' && typeof graphDataManager !== 'undefined') {
             try {
               await initializeWebSocket(settings);
             } catch (wsError) {
