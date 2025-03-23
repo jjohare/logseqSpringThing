@@ -8,7 +8,8 @@ import GraphManager from './GraphManager'
 import XRController from '../xr/XRController'
 import XRVisualizationConnector from '../XRVisualizationConnector'
 import { useSettingsStore } from '../../lib/stores/settings-store'
-import { createLogger } from '../../lib/utils/logger'
+import { createLogger } from '../../lib/utils/logger' 
+import { useWindowSizeContext } from '../../lib/contexts/WindowSizeContext'
 import { debugState } from '../../lib/utils/debug-state'
  import { useContainerSize } from '../../lib/hooks/useContainerSize';
 
@@ -127,28 +128,71 @@ const GraphCanvas: React.FC = () => {
   const antialias = settings?.visualization?.rendering?.antialias !== false
   
   const containerSize = useContainerSize(containerRef);
-  
+
+  // Get global window dimensions from WindowSizeContext
+  const windowSize = useWindowSizeContext();
+
   // Renderer size management using useLayoutEffect
   const RendererSizeManager: React.FC = () => {
     const { gl, viewport, size, camera } = useThree();
+    
+    // Force full re-initialization when container size changes
+    useEffect(() => {
+      if (containerSize.width <= 0 || containerSize.height <= 0) return;
+      
+      try {
+        // Force a buffer/DOM reinitialization by calling gl.dispose
+        (gl as any).dispose();
+        
+        // Create a new rendering context
+        (gl as any).init();
+        logger.debug(`Renderer reinitialized with buffer size ${containerSize.width}x${containerSize.height}`);
+      } catch (e) {
+        logger.error('Error reinitializing renderer:', e);
+      }
+    }, [containerSize.width, containerSize.height, gl]);
       
     useLayoutEffect(() => {
       if (containerSize.width <= 0 || containerSize.height <= 0) return;
       
       try {
-        // Force Three.js to update both the renderer size and the canvas element size
-        (gl as any).setSize(containerSize.width, containerSize.height, false);
+        // Ensure proper pixel ratio for accurate rendering
+      (gl as any).setPixelRatio(1.0); // Force 1:1 pixel ratio for exact matching
+
+      // Update renderer and canvas size with forceUpdate flag true
+      (gl as any).setSize(containerSize.width, containerSize.height, true);
+
+      // Explicitly update the canvas DOM element's intrinsic and CSS sizes
+        if ((gl as any).domElement) {
+        const canvas: HTMLCanvasElement = (gl as any).domElement;
         
+          // Fix for canvas resize in Firefox and Safari
+          requestAnimationFrame(() => {
+            // Reset the canvas buffer size to match the container
+            canvas.width = containerSize.width;
+          canvas.height = containerSize.height;
+            
+            // Set exact pixel dimensions in the style
+            canvas.style.width = containerSize.width + 'px';
+          canvas.style.height = containerSize.height + 'px';
+            
+            // Force a viewport update
+            (gl as any).setViewport(0, 0, containerSize.width, containerSize.height);
+            
+            logger.debug(`Canvas force-updated inside RAF: ${containerSize.width} x ${containerSize.height}`);
+          });
+        }
+
         // Update camera aspect ratio based on new size
         if (camera instanceof THREE.PerspectiveCamera) {
           (camera as any).aspect = containerSize.width / containerSize.height;
           (camera as any).updateProjectionMatrix();
         }
         
-        logger.debug(`Canvas size force-updated: ${containerSize.width}px x ${containerSize.height}px`);
+        logger.debug(`Canvas force-updated: ${containerSize.width}px x ${containerSize.height}px; pixelRatio: ${(gl as any).getPixelRatio()}`);
       } catch (e) {
         logger.error('Error updating renderer size:', e);
-      }
+      } 
     }, [gl, camera, containerSize]);
     return null;
   };
@@ -169,14 +213,26 @@ const GraphCanvas: React.FC = () => {
       }
     }
   }, [debugEnabled, settings]);
+
+  // Force update of canvas element's intrinsic dimensions when container size changes
+  useEffect(() => {
+    if (canvasRef.current && containerSize.width && containerSize.height) {
+      // Multiply by pixel ratio to ensure sufficient resolution on high-DPI screens
+      canvasRef.current.width = containerSize.width;
+      // Adjust for device pixel ratio to address distortion issues
+      canvasRef.current.height = containerSize.height;
+      logger.debug(`Canvas element attributes updated: ${canvasRef.current.width} x ${canvasRef.current.height}`);
+    }
+  }, [containerSize]);
   
   return (
     <div 
       ref={containerRef}
       className="absolute inset-0 overflow-hidden w-full h-full" 
       style={{ 
-        touchAction: 'none', // Prevent touch scrolling/zooming on mobile
-        zIndex: 5 // Ensure canvas stays below viewport controls
+        touchAction: 'none',
+          position: 'relative',
+        zIndex: 5
       }}
       data-testid="graph-canvas-container"
     >
@@ -188,16 +244,19 @@ const GraphCanvas: React.FC = () => {
           alpha: true,
           powerPreference: 'high-performance',
           failIfMajorPerformanceCaveat: false,
+          precision: "highp", // Higher precision for better rendering
+          // Set pixel ratio explicitly
+          pixelRatio: 1.0 // Force 1:1 pixel ratio to avoid scaling issues
         }}
         camera={{
           fov: 75,
           near: 0.1,
           far: settings?.visualization?.camera?.far || 2000,
-          position: [0, 10, 50],
+          position: [0, 0, 50],
           makeDefault: true,
           aspect: containerSize.width / Math.max(containerSize.height, 1) // Ensure valid aspect ratio
         }}
-        style={{ width: '100%', height: '100%', display: 'block' }}
+        style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
         onCreated={({ gl }) => {
           try {
             gl.setClearColor(new (THREE.Color as any)(settings?.visualization?.sceneBackground || '#000000'));
@@ -207,6 +266,13 @@ const GraphCanvas: React.FC = () => {
                 width: gl.domElement.width,
                 height: gl.domElement.height
               });
+              
+              // Force matching dimensions on the canvas
+              const canvas = gl.domElement;
+              canvas.width = containerRef.current?.clientWidth || window.innerWidth;
+              canvas.height = containerRef.current?.clientHeight || window.innerHeight;
+              canvas.style.width = '100%';
+              canvas.style.height = '100%';
             }
             // Note: We don't set the size here, as the RendererSizeManager will handle that
           } catch (e) {

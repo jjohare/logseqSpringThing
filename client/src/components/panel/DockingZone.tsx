@@ -1,5 +1,6 @@
-import React, { useEffect, useState, ReactNode } from 'react';
+import { useEffect, useState, ReactNode, FC, CSSProperties } from 'react';
 import { usePanel, DockPosition } from './PanelContext';
+import { useWindowSizeContext } from '../../lib/contexts/WindowSizeContext';
 import { createLogger } from '../../lib/utils/logger';
 import { ChevronUp, ChevronDown, Minimize, Maximize } from 'lucide-react';
 
@@ -18,7 +19,7 @@ interface DockingZoneProps {
  * DockingZone manages panels that are docked to specific edges of the viewport.
  * It handles resizing and proper stacking of docked panels.
  */
-const DockingZone: React.FC<DockingZoneProps> = ({ 
+const DockingZone: FC<DockingZoneProps> = ({ 
   position, 
   className = '', 
   children, 
@@ -26,6 +27,9 @@ const DockingZone: React.FC<DockingZoneProps> = ({
   defaultSize,
   expandable = true
 }) => {
+  // Get window dimensions from global context
+  const windowSize = useWindowSizeContext();
+  
   // Set appropriate default sizes based on position
   const getDefaultSize = () => {
     if (!defaultSize) {
@@ -43,6 +47,7 @@ const DockingZone: React.FC<DockingZoneProps> = ({
   const [size, setSize] = useState<number>(defaultSize);
   const [isDragResizing, setIsDragResizing] = useState<boolean>(false);
   const [dockedPanelIds, setDockedPanelIds] = useState<string[]>([]);
+  const [previousWindowSize, setPreviousWindowSize] = useState({ width: windowSize.width, height: windowSize.height });
 
   // Track which panels are docked to this zone
   useEffect(() => {
@@ -67,12 +72,29 @@ const DockingZone: React.FC<DockingZoneProps> = ({
         setSize(maxSize);
       }
     }
-  }, [panels, position, autoSize, defaultSize, size]);
+  }, [panels, position, autoSize, defaultSize, size, windowSize]);
   
   // Initialize with proper default size
   useEffect(() => {
     setSize(getDefaultSize());
   }, []);
+  
+  // Adjust the zone size when window is resized
+  useEffect(() => {
+    if (hasVisiblePanels && size > 0) {
+      if (position === 'left' || position === 'right') {
+        // For horizontal panels, scale based on width changes
+        const maxWidth = windowSize.width * 0.8; // Max 80% of window width
+        setSize(prev => Math.min(prev, maxWidth));
+      } else if (position === 'top' || position === 'bottom') {
+        // For vertical panels, scale based on height changes
+        const maxHeight = windowSize.height * 0.8; // Max 80% of window height
+        setSize(prev => Math.min(prev, maxHeight));
+      }
+    }
+    // Update previous window size
+    setPreviousWindowSize({ width: windowSize.width, height: windowSize.height });
+  }, [windowSize.width, windowSize.height, position]);
 
   // Handling resize dragging
   const handleResizeStart = (): void => {
@@ -92,7 +114,7 @@ const DockingZone: React.FC<DockingZoneProps> = ({
   const hasVisiblePanels = dockedPanelIds.length > 0;
 
   // Set up styles based on docking position
-  const getPositionStyles = (): React.CSSProperties => {
+  const getPositionStyles = (): CSSProperties => {
     const isHorizontal = position === 'top' || position === 'bottom';
     const dimensionStyle = isHorizontal
       ? { height: hasVisiblePanels ? `${size}px` : '0px' }

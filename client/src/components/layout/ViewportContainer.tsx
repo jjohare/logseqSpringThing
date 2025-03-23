@@ -6,7 +6,8 @@ const logger = createLogger('ViewportContainer');
 
 interface ViewportContainerProps {
   children: ReactNode;
-  /**
+  
+  /** 
    * Optional callback for when the viewport size changes
    */
   onResize?: (width: number, height: number) => void;
@@ -50,7 +51,7 @@ const ViewportContainer = ({
             onResize(width, height);
           }
           
-          if (debugEnabled) {
+          if (debugEnabled && width > 0 && height > 0) {
             logger.debug('Viewport dimensions:', { 
               width: Math.round(width), 
               height: Math.round(height),
@@ -123,12 +124,20 @@ const ViewportContainer = ({
     <div 
       ref={viewportRef}
       className="relative w-full h-full bg-background viewport-container overflow-hidden"
+      data-testid="viewport-container"
       style={{
         position: 'relative',
         width: '100%',
-        height: '100%'
+        height: '100%',
+        overflow: 'hidden',
+        display: 'block'
       }}
-      data-testid="viewport-container"
+      onResize={() => {
+        if (viewportRef.current) {
+          const { width, height } = viewportRef.current.getBoundingClientRect();
+          if (onResize) onResize(width, height);
+        }
+      }}
     >
       {/* Viewport Content (typically Three.js canvas) */}
       <div className="absolute inset-0 w-full h-full">

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState, Component, ReactNode } from 'react'
 import AppInitializer from './components/AppInitializer'
 import { ThemeProvider } from './components/ui/theme-provider'
 import { ApplicationModeProvider } from './components/context/ApplicationModeContext'
@@ -14,6 +14,7 @@ import { PanelProvider } from './components/panel/PanelContext'
 import VisualizationPanel from './components/settings/panels/VisualizationPanel'
 import XRPanel from './components/settings/panels/XRPanel'
 import SystemPanel from './components/settings/panels/SystemPanel'
+import { WindowSizeProvider } from './lib/contexts/WindowSizeContext'
 import { useSettingsStore } from './lib/stores/settings-store'
 import { createLogger, createErrorMetadata } from './lib/utils/logger'
 import './styles/tokens.css'
@@ -22,9 +23,13 @@ import './styles/layout.css'
 const logger = createLogger('App')
 
 // Error boundary component to catch rendering errors
-class ErrorBoundary extends React.Component<{ children: React.ReactNode, fallback?: React.ReactNode }> {
-  state = { hasError: false, error: null, errorInfo: null };
-  
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, { hasError: boolean; error: any; errorInfo: any }> {
+  state = { hasError: false, error: null, errorInfo: null };  
   static getDerivedStateFromError(error: any) {
     return { hasError: true, error };
   }
@@ -125,7 +130,8 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme="dark">
-      <ErrorBoundary>
+      <WindowSizeProvider>
+        <ErrorBoundary>
         <ApplicationModeProvider> {/* Application-wide mode context */}
           <PanelProvider> {/* Panel system management */}
             <TooltipProvider> {/* UI tooltips */}
@@ -228,7 +234,8 @@ function App() {
           </PanelProvider> {/* End PanelProvider */}
         </ApplicationModeProvider> {/* End ApplicationModeProvider */}
         <Toaster />
-      </ErrorBoundary>
+        </ErrorBoundary>
+      </WindowSizeProvider>
     </ThemeProvider>
   )
 }
