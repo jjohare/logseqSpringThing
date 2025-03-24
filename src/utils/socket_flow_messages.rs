@@ -5,6 +5,7 @@ use crate::types::vec3::Vec3Data;
 use std::sync::atomic::{AtomicU32, Ordering};
 use cudarc::driver::{DeviceRepr, ValidAsZeroBits};
 use glam::Vec3;
+use log::debug;
 
 // Static counter for generating unique numeric IDs
 static NEXT_NODE_ID: AtomicU32 = AtomicU32::new(1);  // Start from 1 (0 could be reserved)

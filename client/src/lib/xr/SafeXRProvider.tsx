@@ -1,70 +1,65 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { createLogger } from '../utils/logger';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { useSettingsStore } from '../../lib/stores/settings-store';
+import { createLogger } from '../../lib/utils/logger';
 
 const logger = createLogger('SafeXRProvider');
 
-// Default empty values for XR context
-export const DEFAULT_XR_STATE = {
-  isPresenting: false,
-  session: null,
-  controllers: [],
-  player: null,
-  isValid: false,
-};
+interface XRContextProps {
+  isXRCapable: boolean;
+  isXRSupported: boolean;
+}
 
-// Create context with default values
-const SafeXRContext = createContext<typeof DEFAULT_XR_STATE>(DEFAULT_XR_STATE);
+const XRContext = createContext<XRContextProps>({
+  isXRCapable: false,
+  isXRSupported: false,
+});
 
-/**
- * Safe XR Provider that prevents errors when XR components are used outside XR context
- * This component wraps the application and provides safe values for XR state
- */
-export const SafeXRProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
-  const [xrState, setXRState] = useState(DEFAULT_XR_STATE);
-  const [isXRLibLoaded, setIsXRLibLoaded] = useState(false);
+export const useXR = () => useContext(XRContext);
 
-  // Try to load the XR library safely
+interface SafeXRProviderProps {
+  children: ReactNode;
+}
+
+const SafeXRProvider: React.FC<SafeXRProviderProps> = ({ children }) => {
+  const [isXRCapable, setIsXRCapable] = useState(false);
+  const [isXRSupported, setIsXRSupported] = useState(false);
+  const { settings } = useSettingsStore();
+
   useEffect(() => {
-    const tryLoadXR = async () => {
+    const checkXRSupport = async () => {
       try {
-        // Dynamic import to prevent errors at module load time
-        const { XR } = await import('@react-three/xr');
-        setIsXRLibLoaded(true);
-        logger.debug('XR library loaded successfully');
+        if ('xr' in navigator) {
+          const supported = await (navigator.xr as any).isSessionSupported('immersive-vr');
+          setIsXRSupported(supported);
+          setIsXRCapable(true);
+          logger.info('XR is capable and immersive VR is supported.');
+        } else {
+          setIsXRCapable(false);
+          setIsXRSupported(false);
+          logger.warn('XR is not available in this browser.');
+        }
       } catch (error) {
-        logger.warn('Failed to load XR library, providing fallback XR context');
-        setIsXRLibLoaded(false);
+        setIsXRCapable(false);
+        setIsXRSupported(false);
+        logger.error('Error checking XR support:', error);
       }
     };
 
-    tryLoadXR();
+    checkXRSupport();
   }, []);
 
-  // Check if document includes a Three.js canvas for XR
   useEffect(() => {
-    const hasXRCanvas = 
-      typeof window !== 'undefined' && 
-      (document.querySelector('[data-xr-canvas="true"]') !== null || 
-       document.querySelector('canvas.__r3f') !== null);
-    
-    if (hasXRCanvas) {
-      logger.debug('Found XR canvas in document');
+      const debugEnabled = settings?.debug?.enabled === true
+    if (debugEnabled) {
+      logger.info(`XR capability changed: capable=${isXRCapable}, supported=${isXRSupported}`);
     }
-  }, []);
+  }, [isXRCapable, isXRSupported, settings?.debug?.enabled]);
 
   return (
-    <SafeXRContext.Provider value={xrState}>
+    <XRContext.Provider value={{ isXRCapable, isXRSupported }}>
       {children}
-    </SafeXRContext.Provider>
+    </XRContext.Provider>
   );
-};
-
-/**
- * Hook to access safe XR state
- * Returns default values when outside XR context
- */
-export const useSafeXRContext = () => {
-  return useContext(SafeXRContext);
 };
 
 export default SafeXRProvider;

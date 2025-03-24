@@ -160,7 +160,7 @@ impl FileService {
         let node_size = Self::calculate_node_size(file_size);
         
         // Check if we already have metadata for this file to preserve the node ID
-        let mut file_metadata = if let Some(existing_metadata) = metadata.get(filename) {
+        let file_metadata = if let Some(existing_metadata) = metadata.get(filename) {
             let mut updated = existing_metadata.clone();
             // Update the fields that might have changed
             updated.file_size = file_size;

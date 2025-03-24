@@ -146,18 +146,25 @@ function App() {
                           logger.debug(`ViewportContainer resized: ${Math.round(width)}×${Math.round(height)}`);
                         }
                       }}>
-                        {/* Error boundary for 3D visualization */}
-                        <ErrorBoundary fallback={
-                          <div className="flex items-center justify-center h-full">
-                            <div className="p-4 bg-destructive/20 text-destructive-foreground rounded-md max-w-md">
-                              <h2 className="text-xl font-bold mb-2">Visualization Error</h2>
-                              <p>The 3D visualization component could not be loaded.</p>
-                              <p className="text-sm mt-2">This may be due to WebGL compatibility issues or problems with the graph data.</p>
+                        {/* Always render GraphCanvas, control visibility with style */}
+                        <div style={{
+                          display: isLoading ? 'none' : 'block', // Hide while loading
+                          height: '100%',
+                          width: '100%',
+                        }}>
+                          <ErrorBoundary fallback={
+                            <div className="flex items-center justify-center h-full">
+                              <div className="p-4 bg-destructive/20 text-destructive-foreground rounded-md max-w-md">
+                                <h2 className="text-xl font-bold mb-2">Visualization Error</h2>
+                                <p>The 3D visualization component could not be loaded.</p>
+                                <p className="text-sm mt-2">This may be due to WebGL compatibility issues or problems with the graph data.</p>
+                              </div>
                             </div>
-                          </div>
-                        }>
-                          <GraphCanvas />
-                        </ErrorBoundary>
+                          }>
+                            <GraphCanvas />
+                          </ErrorBoundary>
+                        </div>
+
                         
                         {/* Loading Overlay */}
                         {isLoading && (

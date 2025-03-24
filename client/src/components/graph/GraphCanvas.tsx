@@ -1,45 +1,41 @@
 import * as React from 'react' 
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stats } from '@react-three/drei'
-import { XR } from '@react-three/xr'
+import { XR, XRController, ARButton, VRButton } from '@react-three/xr'
 import * as THREE from 'three'
 import { EffectComposer, RenderPass, UnrealBloomPass } from 'three-stdlib' 
 import GraphManager from './GraphManager'
-import XRController from '../xr/XRController'
 import XRVisualizationConnector from '../XRVisualizationConnector'
 import { useSettingsStore } from '../../lib/stores/settings-store'
 import { createLogger } from '../../lib/utils/logger' 
 import { useWindowSizeContext } from '../../lib/contexts/WindowSizeContext'
 import { debugState } from '../../lib/utils/debug-state'
- import { useContainerSize } from '../../lib/hooks/useContainerSize';
+import { useContainerSize } from '../../lib/hooks/useContainerSize';
+import { useEffect } from 'react';
 
-const { useRef, useEffect, useLayoutEffect, useState } = React
+const { useRef, useLayoutEffect, useState } = React
 
 const logger = createLogger('GraphCanvas')
 
 // Composition of post-processing effects
 const Effects: React.FC = () => {
   const { gl, scene, camera, size } = useThree()
-  const composerRef = useRef<any>() 
+  const composerRef = useRef<EffectComposer>() 
   const bloomSettings = useSettingsStore(state => state.settings?.visualization?.bloom)
   
   useEffect(() => {
-    // Create effect composer for post-processing
+    if (!bloomSettings?.enabled) return;
+
     const composer = new EffectComposer(gl)
-    const renderPass = new RenderPass(scene as any, camera as any)
-    composer.addPass(renderPass)
+    composer.addPass(new RenderPass(scene, camera))
     
-    // Add bloom effect if enabled in settings
-    if (bloomSettings?.enabled) {
-      // Use type assertion to avoid TS errors
-      const bloomPass = new (UnrealBloomPass as any)(
-        new (THREE.Vector2 as any)(size.width, size.height),
-        bloomSettings.strength || 1.5,
-        bloomSettings.radius || 0.4,
-        bloomSettings.threshold || 0.85
-      );
-      composer.addPass(bloomPass)
-    }
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(size.width, size.height),
+      bloomSettings.strength || 1.5,
+      bloomSettings.radius || 0.4,
+      bloomSettings.threshold || 0.85
+    );
+    composer.addPass(bloomPass)
     
     composerRef.current = composer
     
@@ -50,8 +46,8 @@ const Effects: React.FC = () => {
   
   // Update effects on frame render
   useFrame(() => {
-    if (composerRef.current && typeof composerRef.current.render === 'function') {
-      try { composerRef.current.render() } catch (e) { /* Ignore rendering errors */ }
+    if (composerRef.current) {
+      composerRef.current.render()
     }
   }, 1) // Higher priority than default (0)
   
@@ -225,6 +221,34 @@ const GraphCanvas: React.FC = () => {
     }
   }, [containerSize]);
   
+  // Add useEffect to update renderer size
+  useEffect(() => {
+    if (containerSize.width > 0 && containerSize.height > 0) {
+      gl.setSize(containerSize.width, containerSize.height);
+      camera.aspect = containerSize.width / containerSize.height;
+      camera.updateProjectionMatrix(); // Important! Update camera after aspect change
+    }
+  }, [containerSize, gl, camera]); // Add gl and camera as dependencies
+
+  const sceneContent = (
+    <>
+      <SceneSetup />
+      <GraphManager />
+      <OrbitControls
+        enableDamping
+        dampingFactor={0.1}
+        screenSpacePanning
+        minDistance={1}
+        maxDistance={2000}
+        enableRotate
+        enableZoom
+        enablePan
+      />
+      <Effects />
+      {showStats && <Stats />}
+    </>
+  )
+
   return (
     <div 
       ref={containerRef}
@@ -283,49 +307,11 @@ const GraphCanvas: React.FC = () => {
         <RendererSizeManager />
         {xrEnabled ? (
           <XR referenceSpace={settings?.xr?.roomScale ? 'local-floor' : 'local'}>
-            <SceneSetup />
-            <CameraSetup />
-            <GraphManager />
+            {sceneContent}
             <XRController />
             <XRVisualizationConnector />
-            <OrbitControls
-              enableDamping
-              dampingFactor={0.1}
-              screenSpacePanning
-              minDistance={1}
-              maxDistance={2000}
-              enableRotate
-              enableZoom
-              enablePan
-              rotateSpeed={1.0}
-              zoomSpeed={1.2}
-              panSpeed={0.8}
-            />
-            <Effects />
-            {showStats && <Stats />}
           </XR>
-        ) : (
-          <>
-            <SceneSetup />
-            <CameraSetup />
-            <GraphManager />
-            <OrbitControls
-              enableDamping
-              dampingFactor={0.1}
-              screenSpacePanning
-              minDistance={1}
-              maxDistance={2000}
-              enableRotate
-              enableZoom
-              enablePan
-              rotateSpeed={1.0}
-              zoomSpeed={1.2}
-              panSpeed={0.8}
-            />
-            <Effects />
-            {showStats && <Stats />}
-          </>
-        )}
+        ) : sceneContent}
       </Canvas>
     </div>
   )
