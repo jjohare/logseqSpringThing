@@ -163,7 +163,12 @@ impl GraphService {
         
         // Clone graph_service twice - one for the async block and one for return
         let graph_service_clone = graph_service.clone();
+        // Clone client manager separately to ensure it's available in the simulation loop
+        let client_manager_clone = graph_service.client_manager.clone();
         let return_service = graph_service.clone();
+        
+        // Debug log to verify client manager 
+        info!("[GraphService] Client manager status: {}", client_manager_clone.is_some());
         tokio::spawn(async move {
             let params = SimulationParams {
                 iterations: physics_settings.iterations,
@@ -217,7 +222,19 @@ impl GraphService {
                             debug!("[Graph:{}] Successfully calculated layout for {} nodes", loop_simulation_id, graph.nodes.len());
                             
                             // Broadcast position updates to all clients
-                            Self::broadcast_positions(&graph_service_clone, &graph.nodes).await;
+                            // Use the directly cloned client manager to ensure it's available
+                            if let Some(cm) = &client_manager_clone {
+                                // Clone nodes for broadcasting
+                                let nodes_to_broadcast = graph.nodes.to_vec();
+                                // Broadcast to all clients through the client manager
+                                cm.broadcast_node_positions(nodes_to_broadcast).await;
+                            } else {
+                                debug!("[Graph:{}] No client manager available for broadcasting positions (direct)", 
+                                      loop_simulation_id);
+                                
+                                // Try the original method as fallback
+                                Self::broadcast_positions(&graph_service_clone, &graph.nodes).await;
+                            }
                         }
                     } else {
                         // Use CPU fallback when GPU is not available
@@ -229,7 +246,18 @@ impl GraphService {
                             debug!("[Graph:{}] Successfully calculated layout with CPU fallback for {} nodes", loop_simulation_id, graph.nodes.len());
                             
                             // Broadcast position updates to all clients
-                            Self::broadcast_positions(&graph_service_clone, &graph.nodes).await;
+                            // Use the directly cloned client manager to ensure it's available
+                            if let Some(cm) = &client_manager_clone {
+                                // Clone nodes for broadcasting
+                                let nodes_to_broadcast = graph.nodes.to_vec();
+                                // Broadcast to all clients through the client manager
+                                cm.broadcast_node_positions(nodes_to_broadcast).await;
+                            } else {
+                                debug!("[Graph:{}] No client manager available for broadcasting positions (direct)", 
+                                      loop_simulation_id);
+                                // Try the original method as fallback
+                                Self::broadcast_positions(&graph_service_clone, &graph.nodes).await;
+                            }
                         }
                     }
                 } else {

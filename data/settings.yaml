@@ -137,12 +137,12 @@ system:
     enable_request_validation: false
     session_timeout: 3600
   debug:
-    enabled: false
-    enable_data_debug: false
-    enable_websocket_debug: false
-    log_binary_headers: false
-    log_full_json: false
-    log_level: warn
+    enabled: true
+    enable_data_debug: true
+    enable_websocket_debug: true
+    log_binary_headers: true
+    log_full_json: true
+    log_level: debug
     log_format: json
 xr:
   mode: inline
