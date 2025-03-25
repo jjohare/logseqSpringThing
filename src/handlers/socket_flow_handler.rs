@@ -247,8 +247,28 @@ impl SocketFlowServer {
     }
 
     fn maybe_compress(&mut self, data: Vec<u8>) -> Vec<u8> {
-        // Always compress data to reduce transfer size
-        if data.len() > 100 { // Only compress if data is larger than 100 bytes
+        // Check if compression is enabled in settings
+        let compression_enabled = self.settings
+            .try_read()
+            .map(|s| s.system.websocket.compression_enabled)
+            .unwrap_or(false);
+        
+        // If compression is disabled, return the original data
+        if !compression_enabled {
+            if self.should_log_update() {
+                debug!("Compression disabled in settings, skipping compression for {} bytes", data.len());
+            }
+            return data;
+        }
+        
+        // Get compression threshold from settings
+        let threshold = self.settings
+            .try_read()
+            .map(|s| s.system.websocket.compression_threshold)
+            .unwrap_or(512);
+        
+        // Only compress if data is larger than the threshold
+        if data.len() > threshold as usize {
             let mut encoder = ZlibEncoder::new(Vec::new(), COMPRESSION_LEVEL);
             if encoder.write_all(&data).is_ok() {
                 if let Ok(compressed) = encoder.finish() {
@@ -262,6 +282,11 @@ impl SocketFlowServer {
                     }
                 }
             }
+        }
+        
+        // If compression failed or wasn't beneficial, return the original data
+        if self.should_log_update() && data.len() > threshold as usize {
+            debug!("Skipping compression for {} bytes (not beneficial)", data.len());
         }
         data
     }

@@ -23,6 +23,29 @@ YELLOW='\033[1;33m'
 NC='\033[0m'  # No color
 
 ###############################################################################
+# DOCKER REGISTRY MIRRORS
+###############################################################################
+# Configuration for Docker Hub authentication
+configure_docker_mirrors() {
+    log "${YELLOW}Using authenticated Docker Hub access...${NC}"
+    
+    # We'll use Docker Hub directly now that we're authenticated
+    export DOCKER_REGISTRY_MIRROR="registry-1.docker.io"
+    
+    # Add to .env file if not already present
+    if ! grep -q "DOCKER_REGISTRY_MIRROR" .env; then
+        echo "DOCKER_REGISTRY_MIRROR=registry-1.docker.io" >> .env
+        log "${GREEN}Added DOCKER_REGISTRY_MIRROR to .env file${NC}"
+    else
+        # Update existing value
+        sed -i 's/DOCKER_REGISTRY_MIRROR=.*/DOCKER_REGISTRY_MIRROR=registry-1.docker.io/' .env
+        log "${GREEN}Updated DOCKER_REGISTRY_MIRROR in .env file${NC}"
+    fi
+    
+    log "${GREEN}Docker Hub authentication configured${NC}"
+}
+
+###############################################################################
 # DATA PATHS
 ###############################################################################
 MARKDOWN_DIR="$PROJECT_ROOT/data/markdown"
@@ -440,6 +463,9 @@ fi
 set -a
 source .env
 set +a
+
+# Configure Docker registry mirrors to handle rate limits
+configure_docker_mirrors
 
 # 3. Read settings from TOML (non-fatal if it fails, to allow debugging)
 read_settings || {

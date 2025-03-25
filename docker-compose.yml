@@ -2,7 +2,12 @@ name: logseq-xr
 
 services:
   webxr:
-    build: .
+    build:
+      context: .
+      args:
+        - DOCKER_REGISTRY_MIRROR=${DOCKER_REGISTRY_MIRROR:-docker.io}
+        - GIT_HASH=${GIT_HASH:-development}
+        - DEBUG_MODE=${DEBUG_MODE:-false}
     image: logseq-xr-image:latest
     container_name: logseq-xr-webxr
     read_only: false

@@ -1,30 +1,15 @@
-# Git
 .git
-.gitignore
-.pmpm-store
-
-# Rust
-target/
-
-# Node.js
-node_modules/
-npm-debug.log
-
-# IDEs and editors
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Test files
-tests/
-
-# Environment variables
+.github
+node_modules
+.pnpm-store
+target
 .env
-
-# Cloudflared
-config.yml
+.env.*
+**/node_modules
+**/.DS_Store
+.vscode
+data/piper
+data/markdown/*/assets
+**/*.bk
+**/*.bak
+**/*.tmp

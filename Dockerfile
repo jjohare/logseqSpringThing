@@ -1,5 +1,8 @@
+# Declare build arguments at the top of the file
+ARG DOCKER_REGISTRY_MIRROR=docker.io
+
 # Stage 1: Frontend Build
-FROM node:20-slim AS frontend-builder
+FROM ${DOCKER_REGISTRY_MIRROR}/library/node:20-slim AS frontend-builder
 
 WORKDIR /app
 

@@ -1,5 +1,6 @@
 import { createLogger, createErrorMetadata } from '../utils/logger';
 import { debugState } from '../utils/debug-state';
+import { maybeDecompress, isZlibCompressed } from '../utils/binary-utils';
 
 const logger = createLogger('WebSocketService');
 
@@ -107,7 +108,8 @@ class WebSocketService {
     if (event.data instanceof Blob) {
       // Convert Blob to ArrayBuffer
       event.data.arrayBuffer().then(buffer => {
-        this.handleBinaryMessage(buffer);
+        // Process the ArrayBuffer, with possible decompression
+        this.processBinaryData(buffer);
       }).catch(error => {
         logger.error('Error converting Blob to ArrayBuffer:', createErrorMetadata(error));
       });
@@ -115,7 +117,8 @@ class WebSocketService {
     }
 
     if (event.data instanceof ArrayBuffer) {
-      this.handleBinaryMessage(event.data);
+      // Process the ArrayBuffer directly, with possible decompression
+      this.processBinaryData(event.data);
       return;
     }
 
@@ -148,17 +151,119 @@ class WebSocketService {
     }
   }
 
-  private handleBinaryMessage(data: ArrayBuffer): void {
-    if (debugState.isDataDebugEnabled()) {
-      logger.debug(`Received binary message: ${data.byteLength} bytes`);
+  // New method to handle binary data with decompression
+  private processBinaryData(data: ArrayBuffer): void {
+    if (!data) {
+      logger.warn('Received empty binary data');
+      return;
     }
+
+    // Check if data is compressed
+    const isCompressed = isZlibCompressed(data);
+    
+    if (debugState.isDataDebugEnabled()) {
+      logger.debug(`Received binary data: ${data.byteLength} bytes (${isCompressed ? 'compressed' : 'uncompressed'})`);
+      
+      // Log first few bytes for debugging header detection
+      const viewData = new Uint8Array(data);
+      const hexBytes = [];
+      const maxBytesToShow = Math.min(8, data.byteLength);
+      
+      for (let i = 0; i < maxBytesToShow; i++) {
+        hexBytes.push(viewData[i].toString(16).padStart(2, '0'));
+      }
+      logger.debug(`Data header bytes: ${hexBytes.join(' ')}`);
+    }
+
+    if (isCompressed) {
+      // Decompress the data asynchronously
+      maybeDecompress(data)
+        .then(decompressedData => {
+          // Process the decompressed data
+          if (debugState.isDataDebugEnabled()) {
+            logger.debug(`Successfully decompressed data: ${data.byteLength} bytes → ${decompressedData.byteLength} bytes`);
+          }
+          this.handleBinaryMessage(decompressedData);
+        })
+        .catch(error => {
+          logger.error('Failed to decompress binary data:', createErrorMetadata(error));
+          
+          // Log more details about the data that failed to decompress
+          if (debugState.isEnabled()) {
+            try {
+              const viewData = new Uint8Array(data);
+              const hexBytes = [];
+              const maxBytesToShow = Math.min(32, data.byteLength);
+              
+              for (let i = 0; i < maxBytesToShow; i++) {
+                hexBytes.push(viewData[i].toString(16).padStart(2, '0'));
+              }
+              
+              logger.debug(`Failed decompression of data with header: ${hexBytes.join(' ')}`);
+              
+              // Check if it matches known zlib headers
+              if (viewData[0] === 0x78) {
+                logger.debug(`Data has zlib marker (0x78) but failed decompression with second byte: 0x${viewData[1].toString(16)}`);
+              }
+            } catch (e) {
+              logger.debug('Could not analyze binary data that failed decompression');
+            }
+          }
+          
+          // Try processing the raw data as fallback
+          logger.warn('Falling back to processing raw (compressed) data');
+          this.handleBinaryMessage(data);
+        });
+    } else {
+      // Data is not compressed, process directly
+      this.handleBinaryMessage(data);
+    }
+  }
+
+  private handleBinaryMessage(data: ArrayBuffer): void {
+    if (!data) {
+      logger.warn('Received empty binary message');
+      return;
+    }
+    
+    if (debugState.isDataDebugEnabled()) {
+      logger.debug(`Processing binary message: ${data.byteLength} bytes`);
+      
+      // Add detailed logging for suspicious data sizes
+      if (data.byteLength < 26) { // Less than one node's worth of data
+        logger.warn(`Binary message size (${data.byteLength} bytes) too small for a complete node update`);
+      } else if (data.byteLength % 4 !== 0) { // Not aligned to 4-byte boundary (float32)
+        logger.warn(`Binary message size (${data.byteLength} bytes) not aligned to 4-byte boundary`);
+      }
+    }
+
+    // Create a safe copy of the data to prevent modifications
+    const safeCopy = data.slice(0);
 
     // Notify all binary message handlers
     this.binaryMessageHandlers.forEach(handler => {
       try {
-        handler(data);
+        handler(safeCopy);
       } catch (error) {
         logger.error('Error in binary message handler:', createErrorMetadata(error));
+        
+        // Add detailed error diagnostics
+        if (debugState.isEnabled()) {
+          try {
+            // Display some of the binary data for debugging
+            const view = new DataView(data);
+            const bytesPreview = [];
+            const maxBytes = Math.min(32, data.byteLength);
+            
+            for (let i = 0; i < maxBytes; i++) {
+              bytesPreview.push(view.getUint8(i).toString(16).padStart(2, '0'));
+            }
+            
+            logger.debug(`Binary data preview (${maxBytes} of ${data.byteLength} bytes): ${bytesPreview.join(' ')}`);
+          } catch (e) {
+            logger.debug('Failed to generate binary data preview:', e);
+          }
+        }
       }
     });
   }

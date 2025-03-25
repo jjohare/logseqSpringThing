@@ -88,10 +88,50 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
       // Handle binary position updates from WebSocket
       websocketService.onBinaryMessage((data) => {
         if (data instanceof ArrayBuffer) {
-          // Process binary position update through graph data manager
-          graphDataManager.updateNodePositions(data);
-          if (debugState.isDataDebugEnabled()) {
-            logger.debug('Received binary position update');
+          try {
+            // Process binary position update through graph data manager
+            graphDataManager.updateNodePositions(data);
+            if (debugState.isDataDebugEnabled()) {
+              logger.debug(`Processed binary position update: ${data.byteLength} bytes`);
+            }
+          } catch (error) {
+            logger.error('Failed to process binary position update:', createErrorMetadata(error));
+            
+            // Add diagnostic info in debug mode
+            if (debugState.isEnabled()) {
+              // Display basic info about the data
+              logger.debug(`Binary data size: ${data.byteLength} bytes`);
+              
+              // Display the first few bytes for debugging - helps detect compression headers
+              try {
+                const view = new DataView(data);
+                const hexBytes = [];
+                const maxBytesToShow = Math.min(16, data.byteLength);
+                
+                for (let i = 0; i < maxBytesToShow; i++) {
+                  hexBytes.push(view.getUint8(i).toString(16).padStart(2, '0'));
+                }
+                
+                logger.debug(`First ${maxBytesToShow} bytes: ${hexBytes.join(' ')}`);
+                
+                // Check if data might be compressed (zlib headers)
+                if (data.byteLength >= 2) {
+                  const firstByte = view.getUint8(0);
+                  const secondByte = view.getUint8(1);
+                  if (firstByte === 0x78 && (secondByte === 0x01 || secondByte === 0x9C || secondByte === 0xDA)) {
+                    logger.debug('Data appears to be zlib compressed (has zlib header)');
+                  }
+                }
+              } catch (e) {
+                logger.debug('Could not display binary data preview');
+              }
+              
+              // Check if the data length is a multiple of expected formats
+              const nodeSize = 26; // 2 bytes (ID) + 12 bytes (position) + 12 bytes (velocity)
+              if (data.byteLength % nodeSize !== 0) {
+                logger.debug(`Invalid data length: not a multiple of ${nodeSize} bytes per node (remainder: ${data.byteLength % nodeSize})`);
+              }
+            }
           }
         }
       });

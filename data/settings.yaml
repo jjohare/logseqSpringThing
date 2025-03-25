@@ -115,8 +115,9 @@ system:
     motion_threshold: 0.05  # Consider graph in motion if at least 5% of nodes are moving
     motion_damping: 0.9     # Damping factor for rate changes (higher = smoother transitions)
     binary_message_version: 1
-    compression_enabled: false
-    compression_threshold: 512
+    # Compression settings - now enabled for testing
+    compression_enabled: true
+    compression_threshold: 512  # Only compress messages larger than 512 bytes
     heartbeat_interval: 10000
     heartbeat_timeout: 600000
     max_connections: 100
