@@ -89,7 +89,7 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ onInitialized }) => {
       websocketService.onBinaryMessage((data) => {
         if (data instanceof ArrayBuffer) {
           // Process binary position update through graph data manager
-          graphDataManager.updateNodePositions(new Float32Array(data));
+          graphDataManager.updateNodePositions(data);
           if (debugState.isDataDebugEnabled()) {
             logger.debug('Received binary position update');
           }

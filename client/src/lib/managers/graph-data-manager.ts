@@ -90,6 +90,13 @@ class GraphDataManager {
           edges: Array.isArray(data.edges) ? data.edges : []
         };
         
+        if (debugState.isEnabled()) {
+          logger.info(`Received initial graph data: ${validatedData.nodes.length} nodes, ${validatedData.edges.length} edges`);
+          if (validatedData.nodes.length > 0) {
+            logger.debug(`Sample node: ${JSON.stringify(validatedData.nodes[0])}`);
+          }
+        }
+        
         this.setGraphData(validatedData);
         
         if (debugState.isEnabled()) {
@@ -108,6 +115,10 @@ class GraphDataManager {
 
   // Set graph data and notify listeners
   public setGraphData(data: GraphData): void {
+    if (debugState.isEnabled()) {
+      logger.info(`Setting graph data: ${data.nodes.length} nodes, ${data.edges.length} edges`);
+    }
+
     // Ensure all nodes have valid positions before setting the data
     if (data && data.nodes) {
       const validatedNodes = data.nodes.map(node => this.ensureNodeHasValidPosition(node));
@@ -115,9 +126,14 @@ class GraphDataManager {
         ...data,
         nodes: validatedNodes
       };
+      
+      if (debugState.isEnabled()) {
+        logger.info(`Validated ${validatedNodes.length} nodes with positions`);
+      }
     } else {
       // Initialize with empty arrays if data is invalid
       this.data = { nodes: [], edges: data?.edges || [] };
+      logger.warn('Initialized with empty graph data');
     }
     
     // Reset ID maps
@@ -312,8 +328,8 @@ class GraphDataManager {
   }
 
   // Update node positions from binary data
-  public updateNodePositions(positionData: Float32Array): void {
-    if (!positionData || positionData.length === 0) {
+  public updateNodePositions(positionData: ArrayBuffer): void {
+    if (!positionData || positionData.byteLength === 0) {
       return;
     }
 
@@ -327,12 +343,30 @@ class GraphDataManager {
     }
     this.lastBinaryUpdateTime = now;
 
-    // Process position data (4 values per node: id, x, y, z)
-    for (let i = 0; i < positionData.length; i += 4) {
-      const numericId = positionData[i];
-      const x = positionData[i + 1];
-      const y = positionData[i + 2];
-      const z = positionData[i + 3];
+    // Convert ArrayBuffer to DataView for reading binary data
+    const view = new DataView(positionData);
+    const numNodes = positionData.byteLength / 26; // 26 bytes per node
+
+    if (debugState.isDataDebugEnabled()) {
+      logger.debug(`Processing ${numNodes} node updates from binary data`);
+    }
+
+    // Process position data (26 bytes per node)
+    for (let i = 0; i < numNodes; i++) {
+      const offset = i * 26;
+      
+      // Read node ID (uint16, 2 bytes)
+      const numericId = view.getUint16(offset, true);
+      
+      // Read position (3 float32 values, 12 bytes)
+      const x = view.getFloat32(offset + 2, true);
+      const y = view.getFloat32(offset + 6, true);
+      const z = view.getFloat32(offset + 10, true);
+
+      // Read velocity (3 float32 values, 12 bytes)
+      const vx = view.getFloat32(offset + 14, true);
+      const vy = view.getFloat32(offset + 18, true);
+      const vz = view.getFloat32(offset + 22, true);
 
       // Convert numeric ID back to string ID using the reverse map
       const nodeId = this.reverseNodeIdMap.get(numericId);
@@ -342,15 +376,36 @@ class GraphDataManager {
         const nodeIndex = this.data.nodes.findIndex(node => node.id === nodeId);
         if (nodeIndex >= 0) {
           this.data.nodes[nodeIndex].position = { x, y, z };
+          // Store velocity in metadata if needed
+          this.data.nodes[nodeIndex].metadata = {
+            ...this.data.nodes[nodeIndex].metadata,
+            velocity: { x: vx, y: vy, z: vz }
+          };
         }
       }
     }
 
-    // Notify position update listeners
-    this.notifyPositionUpdateListeners(positionData);
+    // Create Float32Array for position updates (4 values per node: id, x, y, z)
+    const positionArray = new Float32Array(numNodes * 4);
+    for (let i = 0; i < numNodes; i++) {
+      const offset = i * 26;
+      const numericId = view.getUint16(offset, true);
+      const x = view.getFloat32(offset + 2, true);
+      const y = view.getFloat32(offset + 6, true);
+      const z = view.getFloat32(offset + 10, true);
+
+      const arrayOffset = i * 4;
+      positionArray[arrayOffset] = numericId;
+      positionArray[arrayOffset + 1] = x;
+      positionArray[arrayOffset + 2] = y;
+      positionArray[arrayOffset + 3] = z;
+    }
+
+    // Notify position update listeners with the Float32Array
+    this.notifyPositionUpdateListeners(positionArray);
     
     if (debugState.isDataDebugEnabled()) {
-      logger.debug(`Updated ${positionData.length / 4} node positions`);
+      logger.debug(`Updated ${numNodes} node positions`);
     }
   }
 

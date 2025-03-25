@@ -171,7 +171,7 @@ async fn main() -> std::io::Result<()> {
                         app_state.graph_service = GraphService::new(
                             settings.clone(), 
                             app_state.gpu_compute.clone(),
-                            None
+                            Some(client_manager.clone())
                         ).await;
                         
                         info!("Graph service successfully reinitialized with GPU compute");
@@ -193,7 +193,7 @@ async fn main() -> std::io::Result<()> {
                         app_state.graph_service = GraphService::new(
                             settings.clone(), 
                             None,
-                            None
+                            Some(client_manager.clone())
                         ).await;
                         
                         info!("Graph service initialized with CPU fallback");

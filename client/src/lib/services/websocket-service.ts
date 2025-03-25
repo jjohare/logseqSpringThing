@@ -103,14 +103,24 @@ class WebSocketService {
   }
 
   private handleMessage(event: MessageEvent): void {
-    // Check for binary data
+    // Check for binary data first
+    if (event.data instanceof Blob) {
+      // Convert Blob to ArrayBuffer
+      event.data.arrayBuffer().then(buffer => {
+        this.handleBinaryMessage(buffer);
+      }).catch(error => {
+        logger.error('Error converting Blob to ArrayBuffer:', createErrorMetadata(error));
+      });
+      return;
+    }
+
     if (event.data instanceof ArrayBuffer) {
       this.handleBinaryMessage(event.data);
       return;
     }
 
+    // If not binary, try to parse as JSON
     try {
-      // Parse JSON message
       const message = JSON.parse(event.data) as WebSocketMessage;
       
       if (debugState.isDataDebugEnabled()) {

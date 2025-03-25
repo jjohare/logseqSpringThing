@@ -44,6 +44,9 @@ const GraphManager = () => {
 
     // Set up subscription to graph data changes
     const unsubscribe = graphDataManager.onGraphDataChange((data) => {
+      if (debugState.isEnabled()) {
+        logger.info(`Graph data updated: ${data.nodes.length} nodes, ${data.edges.length} edges`);
+      }
       setGraphData(data)
       updateNodeInstances(data.nodes)
       updateEdges(data.edges, data.nodes)
@@ -51,8 +54,19 @@ const GraphManager = () => {
 
     // Set up subscription to binary position updates
     const unsubscribePositions = graphDataManager.onPositionUpdate((positions) => {
+      if (debugState.isEnabled()) {
+        logger.info(`Received position update: ${positions.length / 4} nodes`);
+      }
       updateNodePositions(positions)
     })
+
+    // Add camera position logging
+    useEffect(() => {
+      if (debugState.isEnabled()) {
+        logger.info(`Camera position: ${camera.position.x}, ${camera.position.y}, ${camera.position.z}`);
+        logger.info(`Camera target: ${camera.target?.x}, ${camera.target?.y}, ${camera.target?.z}`);
+      }
+    }, [camera]);
 
     if (debugState.isEnabled()) {
       logger.info('GraphManager initialized')
